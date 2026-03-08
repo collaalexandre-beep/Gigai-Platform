@@ -13,6 +13,7 @@ import {
   activityTimeline,
   companyLookupLogs,
   automationJobs,
+  paymentTerms,
   type User,
   type InsertUser,
   type Client,
@@ -34,6 +35,8 @@ import {
   type Timeline,
   type InsertTimeline,
   type DashboardStats,
+  type PaymentTerm,
+  type InsertPaymentTerm,
 } from "@shared/schema";
 import { addDays } from "date-fns";
 
@@ -125,6 +128,12 @@ export interface IStorage {
 
   // Dashboard
   getDashboardStats(): Promise<DashboardStats>;
+
+  // Payment Terms
+  getPaymentTerms(): Promise<PaymentTerm[]>;
+  createPaymentTerm(term: InsertPaymentTerm): Promise<PaymentTerm>;
+  updatePaymentTerm(id: string, data: Partial<InsertPaymentTerm>): Promise<PaymentTerm | undefined>;
+  deletePaymentTerm(id: string): Promise<void>;
 }
 
 // ─── DATABASE STORAGE ─────────────────────────────────────────────────────────
@@ -589,6 +598,30 @@ export class DatabaseStorage implements IStorage {
       aniversariosProximos,
       ultimasAtividades,
     };
+  }
+
+  // ─── PAYMENT TERMS ─────────────────────────────────────────────────────────
+
+  async getPaymentTerms(): Promise<PaymentTerm[]> {
+    return db.select().from(paymentTerms).orderBy(asc(paymentTerms.nome));
+  }
+
+  async createPaymentTerm(term: InsertPaymentTerm): Promise<PaymentTerm> {
+    const [result] = await db.insert(paymentTerms).values(term).returning();
+    return result;
+  }
+
+  async updatePaymentTerm(id: string, data: Partial<InsertPaymentTerm>): Promise<PaymentTerm | undefined> {
+    const [result] = await db
+      .update(paymentTerms)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(paymentTerms.id, id))
+      .returning();
+    return result;
+  }
+
+  async deletePaymentTerm(id: string): Promise<void> {
+    await db.delete(paymentTerms).where(eq(paymentTerms.id, id));
   }
 }
 

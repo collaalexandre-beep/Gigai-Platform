@@ -6,7 +6,7 @@ Sistema de gestão empresarial para gráfica comercial, construído com React + 
 
 - **Frontend**: React 18, Wouter (routing), TanStack Query v5, Shadcn/ui, Tailwind CSS
 - **Backend**: Express.js, Drizzle ORM, PostgreSQL
-- **CNPJ Lookup**: BrasilAPI (primário) + ReceitaWS (fallback)
+- **CNPJ Lookup**: publica.cnpj.ws (primário, com IE) → BrasilAPI → ReceitaWS (fallbacks)
 - **Auth**: Session-based com express-session (SESSION_SECRET)
 
 ## Arquitetura
@@ -18,14 +18,16 @@ client/src/
     clients/
       index.tsx            — Lista de clientes com busca/filtro/paginação
       detail.tsx           — Detalhe do cliente (tabs: Geral, Contatos, CRM, Histórico)
-      form.tsx             — Cadastro/edição com CNPJ auto-fill
+      form.tsx             — Cadastro/edição; toggle PF/PJ; PJ=CNPJ auto-fill, PF=CPF
     sellers/
       index.tsx            — Lista de vendedores (cards)
       detail.tsx           — Detalhe do vendedor
-      form.tsx             — Cadastro/edição com dados bancários
+      form.tsx             — Cadastro/edição; toggle PF/PJ; PJ=CNPJ auto-fill + nomeFantasia
+    payment-terms/
+      index.tsx            — Gestão de prazos de pagamento (nome + dias em array)
     crm.tsx                — CRM com kanban de tarefas
   components/
-    app-sidebar.tsx        — Navegação lateral (Dashboard, Clientes, Vendedores, CRM)
+    app-sidebar.tsx        — Navegação lateral (Principal + Configurações com Prazos)
     contacts-panel.tsx     — Gestão de contatos (add/edit/delete com permissões)
     timeline-feed.tsx      — Feed de atividades/histórico do cliente
     status-badge.tsx       — Badges coloridos por status/tipo

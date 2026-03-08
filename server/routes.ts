@@ -12,6 +12,7 @@ import {
   insertInteractionSchema,
   insertTaskSchema,
   insertTagSchema,
+  insertPaymentTermSchema,
 } from "@shared/schema";
 
 function handleError(res: Response, err: unknown) {
@@ -564,6 +565,50 @@ export async function registerRoutes(
     try {
       const timeline = await storage.getTimeline(req.params.clientId);
       res.json(timeline);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  // ─── PAYMENT TERMS ─────────────────────────────────────────────────────────
+
+  app.get("/api/payment-terms", async (req: Request, res: Response) => {
+    try {
+      const terms = await storage.getPaymentTerms();
+      res.json(terms);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.post("/api/payment-terms", async (req: Request, res: Response) => {
+    try {
+      const validated = validateBody(insertPaymentTermSchema, req.body);
+      if ("error" in validated) return res.status(400).json({ error: validated.error });
+      const term = await storage.createPaymentTerm(validated.data);
+      res.status(201).json(term);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.patch("/api/payment-terms/:id", async (req: Request, res: Response) => {
+    try {
+      const partial = insertPaymentTermSchema.partial();
+      const validated = validateBody(partial, req.body);
+      if ("error" in validated) return res.status(400).json({ error: validated.error });
+      const term = await storage.updatePaymentTerm(req.params.id, validated.data);
+      if (!term) return res.status(404).json({ error: "Prazo não encontrado" });
+      res.json(term);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.delete("/api/payment-terms/:id", async (req: Request, res: Response) => {
+    try {
+      await storage.deletePaymentTerm(req.params.id);
+      res.json({ success: true });
     } catch (err) {
       handleError(res, err);
     }

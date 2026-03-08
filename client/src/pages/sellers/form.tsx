@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useParams, useLocation } from "wouter";
 import {
   ArrowLeft, ChevronRight, Loader2, User, Phone, MapPin, Percent, CreditCard,
+  Search, CheckCircle2, AlertCircle, Building2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,8 +21,11 @@ import { useToast } from "@/hooks/use-toast";
 import type { Seller, SellerBankAccount } from "@shared/schema";
 
 interface SellerFormData {
+  tipoPessoa: "fisica" | "juridica";
   nomeCompleto: string;
+  nomeFantasia: string;
   cpf: string;
+  cnpj: string;
   rg: string;
   dataNascimento: string;
   telefone: string;
@@ -53,7 +58,8 @@ interface BankFormData {
 }
 
 const emptySellerForm: SellerFormData = {
-  nomeCompleto: "", cpf: "", rg: "", dataNascimento: "",
+  tipoPessoa: "fisica",
+  nomeCompleto: "", nomeFantasia: "", cpf: "", cnpj: "", rg: "", dataNascimento: "",
   telefone: "", whatsapp: "", email: "", instagram: "",
   logradouro: "", numero: "", complemento: "", bairro: "",
   cidade: "", estado: "", cep: "",
@@ -79,6 +85,8 @@ function FormField({ label, id, required, children }: {
   );
 }
 
+type LookupStatus = "idle" | "loading" | "success" | "error";
+
 export default function SellerFormPage() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
@@ -95,11 +103,19 @@ export default function SellerFormPage() {
   const [bankForm, setBankForm] = useState<BankFormData>(emptyBankForm);
   const [addBankAccount, setAddBankAccount] = useState(false);
 
+  const [cnpjInput, setCnpjInput] = useState("");
+  const [lookupStatus, setLookupStatus] = useState<LookupStatus>("idle");
+  const [lookupError, setLookupError] = useState("");
+  const [autoFilledFields, setAutoFilledFields] = useState<Set<string>>(new Set());
+
   useEffect(() => {
     if (existingData) {
       setForm({
+        tipoPessoa: (existingData as any).tipoPessoa || "fisica",
         nomeCompleto: existingData.nomeCompleto || "",
+        nomeFantasia: (existingData as any).nomeFantasia || "",
         cpf: existingData.cpf || "",
+        cnpj: (existingData as any).cnpj || "",
         rg: existingData.rg || "",
         dataNascimento: existingData.dataNascimento || "",
         telefone: existingData.telefone || "",
@@ -119,6 +135,7 @@ export default function SellerFormPage() {
         percentualComissao: existingData.percentualComissao || "",
         observacoes: existingData.observacoes || "",
       });
+      setCnpjInput((existingData as any).cnpj || "");
       if (existingData.bankAccounts?.[0]) {
         const acc = existingData.bankAccounts[0];
         setBankForm({
@@ -139,11 +156,71 @@ export default function SellerFormPage() {
   const set = (f: keyof SellerFormData, v: string) => setForm((p) => ({ ...p, [f]: v }));
   const setBank = (f: keyof BankFormData, v: string) => setBankForm((p) => ({ ...p, [f]: v }));
 
+  const isPF = form.tipoPessoa === "fisica";
+
+  function formatCnpj(value: string): string {
+    const clean = value.replace(/\D/g, "").slice(0, 14);
+    return clean
+      .replace(/^(\d{2})(\d)/, "$1.$2")
+      .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
+      .replace(/\.(\d{3})(\d)/, ".$1/$2")
+      .replace(/(\d{4})(\d)/, "$1-$2");
+  }
+
+  async function handleCnpjLookup() {
+    const clean = cnpjInput.replace(/\D/g, "");
+    if (clean.length !== 14) {
+      toast({ title: "CNPJ deve ter 14 dígitos.", variant: "destructive" });
+      return;
+    }
+    setLookupStatus("loading");
+    setLookupError("");
+    try {
+      const res = await fetch(`/api/cnpj/${clean}`);
+      const result = await res.json();
+      if (result.success && result.data) {
+        const d = result.data;
+        const newFields = new Set<string>();
+        const updates: Partial<SellerFormData> = {};
+        const fieldMap: Record<string, string | undefined> = {
+          nomeCompleto: d.razaoSocial,
+          nomeFantasia: d.nomeFantasia,
+          logradouro: d.logradouro,
+          numero: d.numero,
+          bairro: d.bairro,
+          cidade: d.cidade,
+          estado: d.estado,
+          cep: d.cep,
+          telefone: d.telefone,
+          email: d.email,
+        };
+        for (const [key, value] of Object.entries(fieldMap)) {
+          if (value) { (updates as any)[key] = value; newFields.add(key); }
+        }
+        setForm((prev) => ({ ...prev, ...updates, cnpj: formatCnpj(clean) }));
+        setAutoFilledFields(newFields);
+        setLookupStatus("success");
+        toast({ title: `Dados obtidos via ${result.provider}` });
+      } else {
+        setLookupStatus("error");
+        setLookupError(result.error || "CNPJ não encontrado.");
+        setForm((prev) => ({ ...prev, cnpj: formatCnpj(clean) }));
+      }
+    } catch {
+      setLookupStatus("error");
+      setLookupError("Erro ao consultar CNPJ. Verifique sua conexão.");
+    }
+  }
+
   const saveMutation = useMutation({
     mutationFn: async (data: SellerFormData) => {
       const payload = {
         ...data,
         percentualComissao: data.percentualComissao || undefined,
+        cpf: isPF ? data.cpf : undefined,
+        cnpj: !isPF ? data.cnpj : undefined,
+        rg: isPF ? data.rg : undefined,
+        dataNascimento: isPF ? data.dataNascimento : undefined,
       };
       let seller: Seller;
       if (isEdit) {
@@ -177,7 +254,7 @@ export default function SellerFormPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.nomeCompleto.trim()) {
-      toast({ title: "Nome completo é obrigatório.", variant: "destructive" });
+      toast({ title: isPF ? "Nome completo é obrigatório." : "Razão social é obrigatória.", variant: "destructive" });
       return;
     }
     saveMutation.mutate(form);
@@ -218,64 +295,190 @@ export default function SellerFormPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Dados Pessoais */}
+
+        {/* Tipo de Pessoa Toggle */}
+        <Card>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-foreground">Tipo de cadastro:</span>
+              <div className="flex rounded-lg border border-border overflow-hidden" data-testid="toggle-seller-tipo">
+                <button
+                  type="button"
+                  onClick={() => { set("tipoPessoa", "fisica"); setLookupStatus("idle"); }}
+                  className={`px-4 py-1.5 text-sm font-medium transition-colors ${
+                    isPF
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-background text-muted-foreground hover:bg-muted"
+                  }`}
+                  data-testid="button-seller-tipo-fisica"
+                >
+                  Pessoa Física
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { set("tipoPessoa", "juridica"); setLookupStatus("idle"); }}
+                  className={`px-4 py-1.5 text-sm font-medium transition-colors ${
+                    !isPF
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-background text-muted-foreground hover:bg-muted"
+                  }`}
+                  data-testid="button-seller-tipo-juridica"
+                >
+                  Pessoa Jurídica
+                </button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* CNPJ Lookup — only for PJ */}
+        {!isPF && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Search className="w-4 h-4 text-muted-foreground" />
+                Busca por CNPJ
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-2">
+                <Input
+                  value={cnpjInput}
+                  onChange={(e) => {
+                    const fmt = formatCnpj(e.target.value);
+                    setCnpjInput(fmt);
+                    set("cnpj", fmt);
+                    setLookupStatus("idle");
+                  }}
+                  placeholder="00.000.000/0000-00"
+                  className="font-mono max-w-xs"
+                  data-testid="input-seller-cnpj"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleCnpjLookup}
+                  disabled={lookupStatus === "loading" || cnpjInput.replace(/\D/g, "").length !== 14}
+                  data-testid="button-seller-lookup-cnpj"
+                >
+                  {lookupStatus === "loading" ? (
+                    <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                  ) : (
+                    <Search className="w-4 h-4 mr-1.5" />
+                  )}
+                  {lookupStatus === "loading" ? "Consultando..." : "Consultar"}
+                </Button>
+              </div>
+              {lookupStatus === "success" && (
+                <div className="mt-3 flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Dados preenchidos automaticamente</span>
+                  <Badge variant="secondary" className="text-xs no-default-active-elevate bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                    {autoFilledFields.size} campos
+                  </Badge>
+                </div>
+              )}
+              {lookupStatus === "error" && (
+                <div className="mt-3 flex items-center gap-2 text-sm text-destructive">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>{lookupError}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Dados Pessoais / Empresa */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <User className="w-4 h-4 text-muted-foreground" />
-              Dados Pessoais
+              {isPF ? <User className="w-4 h-4 text-muted-foreground" /> : <Building2 className="w-4 h-4 text-muted-foreground" />}
+              {isPF ? "Dados Pessoais" : "Dados da Empresa"}
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
-                <FormField label="Nome Completo" id="nomeCompleto" required>
-                  <Input
-                    id="nomeCompleto"
-                    value={form.nomeCompleto}
-                    onChange={(e) => set("nomeCompleto", e.target.value)}
-                    placeholder="Nome completo do vendedor"
-                    data-testid="input-seller-nome"
-                  />
+                <FormField label={isPF ? "Nome Completo" : "Razão Social"} id="nomeCompleto" required>
+                  <div className="relative">
+                    <Input
+                      id="nomeCompleto"
+                      value={form.nomeCompleto}
+                      onChange={(e) => set("nomeCompleto", e.target.value)}
+                      placeholder={isPF ? "Nome completo do vendedor" : "Razão social da empresa"}
+                      data-testid="input-seller-nome"
+                    />
+                    {!isPF && autoFilledFields.has("nomeCompleto") && (
+                      <Badge className="absolute right-2 top-1/2 -translate-y-1/2 text-xs no-default-active-elevate bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                        Auto
+                      </Badge>
+                    )}
+                  </div>
                 </FormField>
               </div>
-              <FormField label="CPF" id="cpf">
-                <Input
-                  id="cpf"
-                  value={form.cpf}
-                  onChange={(e) => set("cpf", e.target.value)}
-                  placeholder="000.000.000-00"
-                  className="font-mono"
-                  data-testid="input-seller-cpf"
-                />
-              </FormField>
-              <FormField label="RG" id="rg">
-                <Input
-                  id="rg"
-                  value={form.rg}
-                  onChange={(e) => set("rg", e.target.value)}
-                  placeholder="RG do vendedor"
-                  data-testid="input-seller-rg"
-                />
-              </FormField>
-              <FormField label="Data de Nascimento" id="dataNascimento">
-                <Input
-                  id="dataNascimento"
-                  type="date"
-                  value={form.dataNascimento}
-                  onChange={(e) => set("dataNascimento", e.target.value)}
-                  data-testid="input-seller-nascimento"
-                />
-              </FormField>
-              <FormField label="Instagram" id="instagram">
-                <Input
-                  id="instagram"
-                  value={form.instagram}
-                  onChange={(e) => set("instagram", e.target.value)}
-                  placeholder="@usuario"
-                  data-testid="input-seller-instagram"
-                />
-              </FormField>
+
+              {isPF ? (
+                <>
+                  <FormField label="CPF" id="cpf">
+                    <Input
+                      id="cpf"
+                      value={form.cpf}
+                      onChange={(e) => set("cpf", e.target.value)}
+                      placeholder="000.000.000-00"
+                      className="font-mono"
+                      data-testid="input-seller-cpf"
+                    />
+                  </FormField>
+                  <FormField label="RG" id="rg">
+                    <Input
+                      id="rg"
+                      value={form.rg}
+                      onChange={(e) => set("rg", e.target.value)}
+                      placeholder="RG do vendedor"
+                      data-testid="input-seller-rg"
+                    />
+                  </FormField>
+                  <FormField label="Data de Nascimento" id="dataNascimento">
+                    <Input
+                      id="dataNascimento"
+                      type="date"
+                      value={form.dataNascimento}
+                      onChange={(e) => set("dataNascimento", e.target.value)}
+                      data-testid="input-seller-nascimento"
+                    />
+                  </FormField>
+                  <FormField label="Instagram" id="instagram">
+                    <Input
+                      id="instagram"
+                      value={form.instagram}
+                      onChange={(e) => set("instagram", e.target.value)}
+                      placeholder="@usuario"
+                      data-testid="input-seller-instagram"
+                    />
+                  </FormField>
+                </>
+              ) : (
+                <>
+                  <FormField label="Nome Fantasia" id="nomeFantasia">
+                    <Input
+                      id="nomeFantasia"
+                      value={form.nomeFantasia}
+                      onChange={(e) => set("nomeFantasia", e.target.value)}
+                      placeholder="Nome fantasia ou marca"
+                      data-testid="input-seller-fantasia"
+                    />
+                  </FormField>
+                  <FormField label="Instagram" id="instagram">
+                    <Input
+                      id="instagram"
+                      value={form.instagram}
+                      onChange={(e) => set("instagram", e.target.value)}
+                      placeholder="@empresa"
+                      data-testid="input-seller-instagram"
+                    />
+                  </FormField>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>

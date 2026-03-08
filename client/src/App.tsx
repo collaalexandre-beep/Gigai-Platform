@@ -16,6 +16,7 @@ import SellersPage from "@/pages/sellers/index";
 import SellerDetailPage from "@/pages/sellers/detail";
 import SellerFormPage from "@/pages/sellers/form";
 import CrmPage from "@/pages/crm";
+import PaymentTermsPage from "@/pages/payment-terms/index";
 
 function Router() {
   return (
@@ -31,6 +32,7 @@ function Router() {
       <Route path="/sellers/:id/edit" component={SellerFormPage} />
       <Route path="/sellers/:id" component={SellerDetailPage} />
       <Route path="/crm" component={CrmPage} />
+      <Route path="/payment-terms" component={PaymentTermsPage} />
       <Route component={NotFound} />
     </Switch>
   );

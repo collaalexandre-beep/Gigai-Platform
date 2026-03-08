@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useParams, useLocation } from "wouter";
 import {
   ArrowLeft, Search, Loader2, CheckCircle2, AlertCircle, ChevronRight,
-  Building2, MapPin, Phone, Globe, Tag, FileText,
+  Building2, MapPin, Phone, Globe, Tag, FileText, User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,6 +21,8 @@ import { useToast } from "@/hooks/use-toast";
 import type { Client } from "@shared/schema";
 
 interface ClientFormData {
+  tipoPessoa: "fisica" | "juridica";
+  cpf: string;
   cnpj: string;
   razaoSocial: string;
   nomeFantasia: string;
@@ -53,6 +55,8 @@ interface ClientFormData {
 }
 
 const emptyForm: ClientFormData = {
+  tipoPessoa: "juridica",
+  cpf: "",
   cnpj: "",
   razaoSocial: "",
   nomeFantasia: "",
@@ -86,6 +90,8 @@ const emptyForm: ClientFormData = {
 
 function clientToForm(c: Client): ClientFormData {
   return {
+    tipoPessoa: (c as any).tipoPessoa || "juridica",
+    cpf: (c as any).cpf || "",
     cnpj: c.cnpj || "",
     razaoSocial: c.razaoSocial || "",
     nomeFantasia: c.nomeFantasia || "",
@@ -176,8 +182,10 @@ export default function ClientFormPage() {
     }
   }, [existingClient]);
 
-  const set = (field: keyof ClientFormData, value: string) =>
+  const set = (field: keyof ClientFormData, value: string | boolean | null) =>
     setForm((prev) => ({ ...prev, [field]: value }));
+
+  const isPF = form.tipoPessoa === "fisica";
 
   function formatCnpjInput(value: string): string {
     const clean = value.replace(/\D/g, "").slice(0, 14);
@@ -261,10 +269,9 @@ export default function ClientFormPage() {
     mutationFn: async (data: Partial<ClientFormData>) => {
       const payload = {
         ...data,
-        cnpj: data.cnpj?.replace(/\D/g, "") ? data.cnpj : undefined,
-        cnpjConsultadoEm: data.cnpjConsultadoEm
-          ? new Date(data.cnpjConsultadoEm)
-          : undefined,
+        cnpj: data.tipoPessoa === "juridica" && data.cnpj?.replace(/\D/g, "") ? data.cnpj : undefined,
+        cpf: data.tipoPessoa === "fisica" ? data.cpf : undefined,
+        cnpjConsultadoEm: data.cnpjConsultadoEm ? new Date(data.cnpjConsultadoEm) : undefined,
         regimeTributario: data.regimeTributario || undefined,
         origemLead: data.origemLead || undefined,
       };
@@ -293,7 +300,7 @@ export default function ClientFormPage() {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.razaoSocial.trim()) {
-      toast({ title: "Razão social é obrigatória.", variant: "destructive" });
+      toast({ title: isPF ? "Nome é obrigatório." : "Razão social é obrigatória.", variant: "destructive" });
       return;
     }
     saveMutation.mutate(form);
@@ -338,158 +345,233 @@ export default function ClientFormPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
-        {/* CNPJ Lookup Card */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Search className="w-4 h-4 text-muted-foreground" />
-              Busca por CNPJ
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-2">
-              <div className="relative flex-1 max-w-xs">
-                <Input
-                  value={cnpjInput}
-                  onChange={(e) => {
-                    const fmt = formatCnpjInput(e.target.value);
-                    setCnpjInput(fmt);
-                    set("cnpj", fmt);
-                    setLookupStatus("idle");
-                  }}
-                  placeholder="00.000.000/0000-00"
-                  className="font-mono"
-                  data-testid="input-cnpj"
-                />
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={handleCnpjLookup}
-                disabled={lookupStatus === "loading" || cnpjInput.replace(/\D/g, "").length !== 14}
-                data-testid="button-lookup-cnpj"
-              >
-                {lookupStatus === "loading" ? (
-                  <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                ) : (
-                  <Search className="w-4 h-4 mr-1.5" />
-                )}
-                {lookupStatus === "loading" ? "Consultando..." : "Consultar"}
-              </Button>
-            </div>
 
-            {lookupStatus === "success" && (
-              <div className="mt-3 flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Dados obtidos automaticamente via <strong>{form.cnpjFonteConsulta}</strong></span>
-                <Badge variant="secondary" className="text-xs no-default-active-elevate bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                  {autoFilledFields.size} campos preenchidos
-                </Badge>
+        {/* Tipo de Pessoa Toggle */}
+        <Card>
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-foreground">Tipo de cadastro:</span>
+              <div className="flex rounded-lg border border-border overflow-hidden" data-testid="toggle-tipo-pessoa">
+                <button
+                  type="button"
+                  onClick={() => { set("tipoPessoa", "juridica"); setLookupStatus("idle"); }}
+                  className={`px-4 py-1.5 text-sm font-medium transition-colors ${
+                    !isPF
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-background text-muted-foreground hover:bg-muted"
+                  }`}
+                  data-testid="button-tipo-juridica"
+                >
+                  Pessoa Jurídica
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { set("tipoPessoa", "fisica"); setLookupStatus("idle"); }}
+                  className={`px-4 py-1.5 text-sm font-medium transition-colors ${
+                    isPF
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-background text-muted-foreground hover:bg-muted"
+                  }`}
+                  data-testid="button-tipo-fisica"
+                >
+                  Pessoa Física
+                </button>
               </div>
-            )}
-            {lookupStatus === "error" && (
-              <div className="mt-3 flex items-center gap-2 text-sm text-destructive">
-                <AlertCircle className="w-4 h-4" />
-                <span>{lookupError} Você pode preencher os dados manualmente.</span>
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground mt-2">
-              Digite o CNPJ para buscar automaticamente os dados da empresa
-            </p>
+            </div>
           </CardContent>
         </Card>
 
-        {/* Dados Fiscais */}
+        {/* CNPJ Lookup Card — only for PJ */}
+        {!isPF && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Search className="w-4 h-4 text-muted-foreground" />
+                Busca por CNPJ
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-2">
+                <div className="relative flex-1 max-w-xs">
+                  <Input
+                    value={cnpjInput}
+                    onChange={(e) => {
+                      const fmt = formatCnpjInput(e.target.value);
+                      setCnpjInput(fmt);
+                      set("cnpj", fmt);
+                      setLookupStatus("idle");
+                    }}
+                    placeholder="00.000.000/0000-00"
+                    className="font-mono"
+                    data-testid="input-cnpj"
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleCnpjLookup}
+                  disabled={lookupStatus === "loading" || cnpjInput.replace(/\D/g, "").length !== 14}
+                  data-testid="button-lookup-cnpj"
+                >
+                  {lookupStatus === "loading" ? (
+                    <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                  ) : (
+                    <Search className="w-4 h-4 mr-1.5" />
+                  )}
+                  {lookupStatus === "loading" ? "Consultando..." : "Consultar"}
+                </Button>
+              </div>
+
+              {lookupStatus === "success" && (
+                <div className="mt-3 flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Dados obtidos automaticamente via <strong>{form.cnpjFonteConsulta}</strong></span>
+                  <Badge variant="secondary" className="text-xs no-default-active-elevate bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                    {autoFilledFields.size} campos preenchidos
+                  </Badge>
+                </div>
+              )}
+              {lookupStatus === "error" && (
+                <div className="mt-3 flex items-center gap-2 text-sm text-destructive">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>{lookupError} Você pode preencher os dados manualmente.</span>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground mt-2">
+                Digite o CNPJ para buscar automaticamente os dados da empresa
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Dados Principais */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Building2 className="w-4 h-4 text-muted-foreground" />
-              Dados Fiscais
+              {isPF ? <User className="w-4 h-4 text-muted-foreground" /> : <Building2 className="w-4 h-4 text-muted-foreground" />}
+              {isPF ? "Dados Pessoais" : "Dados Fiscais"}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="md:col-span-2">
-                <FormField label="Razão Social" id="razaoSocial" required>
-                  <div className="relative">
-                    <Input
-                      id="razaoSocial"
-                      value={form.razaoSocial}
-                      onChange={(e) => set("razaoSocial", e.target.value)}
-                      placeholder="Razão Social da empresa"
-                      data-testid="input-razao-social"
-                    />
-                    {autoFilledFields.has("razaoSocial") && (
-                      <Badge className="absolute right-2 top-1/2 -translate-y-1/2 text-xs no-default-active-elevate bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                        Auto
-                      </Badge>
-                    )}
+              {isPF ? (
+                <>
+                  <div className="md:col-span-2">
+                    <FormField label="Nome Completo" id="razaoSocial" required>
+                      <Input
+                        id="razaoSocial"
+                        value={form.razaoSocial}
+                        onChange={(e) => set("razaoSocial", e.target.value)}
+                        placeholder="Nome completo do cliente"
+                        data-testid="input-razao-social"
+                      />
+                    </FormField>
                   </div>
-                </FormField>
-              </div>
-              <FormField label="Nome Fantasia" id="nomeFantasia">
-                <Input
-                  id="nomeFantasia"
-                  value={form.nomeFantasia}
-                  onChange={(e) => set("nomeFantasia", e.target.value)}
-                  placeholder="Como a empresa é conhecida"
-                  data-testid="input-nome-fantasia"
-                />
-              </FormField>
-              <FormField label="Inscrição Estadual" id="inscricaoEstadual">
-                <Input
-                  id="inscricaoEstadual"
-                  value={form.inscricaoEstadual}
-                  onChange={(e) => set("inscricaoEstadual", e.target.value)}
-                  placeholder="IE da empresa"
-                  data-testid="input-ie"
-                />
-              </FormField>
-              <FormField label="Situação Cadastral" id="situacaoCadastral">
-                <Input
-                  id="situacaoCadastral"
-                  value={form.situacaoCadastral}
-                  onChange={(e) => set("situacaoCadastral", e.target.value)}
-                  placeholder="ATIVA, BAIXADA..."
-                  data-testid="input-situacao"
-                />
-              </FormField>
-              <FormField label="Data de Abertura" id="dataAbertura">
-                <Input
-                  id="dataAbertura"
-                  type="date"
-                  value={form.dataAbertura}
-                  onChange={(e) => set("dataAbertura", e.target.value)}
-                  data-testid="input-data-abertura"
-                />
-              </FormField>
-              <div className="md:col-span-2">
-                <FormField label="Natureza Jurídica" id="naturezaJuridica">
-                  <Input
-                    id="naturezaJuridica"
-                    value={form.naturezaJuridica}
-                    onChange={(e) => set("naturezaJuridica", e.target.value)}
-                    placeholder="Ex: Sociedade Limitada"
-                    data-testid="input-natureza"
-                  />
-                </FormField>
-              </div>
-              <FormField label="Regime Tributário" id="regimeTributario">
-                <Select value={form.regimeTributario || "none"} onValueChange={(v) => set("regimeTributario", v === "none" ? "" : v)}>
-                  <SelectTrigger id="regimeTributario" data-testid="select-regime">
-                    <SelectValue placeholder="Selecione..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Não informado</SelectItem>
-                    <SelectItem value="simples_nacional">Simples Nacional</SelectItem>
-                    <SelectItem value="lucro_presumido">Lucro Presumido</SelectItem>
-                    <SelectItem value="lucro_real">Lucro Real</SelectItem>
-                    <SelectItem value="mei">MEI</SelectItem>
-                    <SelectItem value="isento">Isento</SelectItem>
-                    <SelectItem value="outro">Outro</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormField>
+                  <FormField label="Apelido / Nome Social" id="nomeFantasia">
+                    <Input
+                      id="nomeFantasia"
+                      value={form.nomeFantasia}
+                      onChange={(e) => set("nomeFantasia", e.target.value)}
+                      placeholder="Como é conhecido"
+                      data-testid="input-nome-fantasia"
+                    />
+                  </FormField>
+                  <FormField label="CPF" id="cpf">
+                    <Input
+                      id="cpf"
+                      value={form.cpf}
+                      onChange={(e) => set("cpf", e.target.value)}
+                      placeholder="000.000.000-00"
+                      className="font-mono"
+                      data-testid="input-client-cpf"
+                    />
+                  </FormField>
+                </>
+              ) : (
+                <>
+                  <div className="md:col-span-2">
+                    <FormField label="Razão Social" id="razaoSocial" required>
+                      <div className="relative">
+                        <Input
+                          id="razaoSocial"
+                          value={form.razaoSocial}
+                          onChange={(e) => set("razaoSocial", e.target.value)}
+                          placeholder="Razão Social da empresa"
+                          data-testid="input-razao-social"
+                        />
+                        {autoFilledFields.has("razaoSocial") && (
+                          <Badge className="absolute right-2 top-1/2 -translate-y-1/2 text-xs no-default-active-elevate bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                            Auto
+                          </Badge>
+                        )}
+                      </div>
+                    </FormField>
+                  </div>
+                  <FormField label="Nome Fantasia" id="nomeFantasia">
+                    <Input
+                      id="nomeFantasia"
+                      value={form.nomeFantasia}
+                      onChange={(e) => set("nomeFantasia", e.target.value)}
+                      placeholder="Como a empresa é conhecida"
+                      data-testid="input-nome-fantasia"
+                    />
+                  </FormField>
+                  <FormField label="Inscrição Estadual" id="inscricaoEstadual">
+                    <Input
+                      id="inscricaoEstadual"
+                      value={form.inscricaoEstadual}
+                      onChange={(e) => set("inscricaoEstadual", e.target.value)}
+                      placeholder="IE da empresa"
+                      data-testid="input-ie"
+                    />
+                  </FormField>
+                  <FormField label="Situação Cadastral" id="situacaoCadastral">
+                    <Input
+                      id="situacaoCadastral"
+                      value={form.situacaoCadastral}
+                      onChange={(e) => set("situacaoCadastral", e.target.value)}
+                      placeholder="ATIVA, BAIXADA..."
+                      data-testid="input-situacao"
+                    />
+                  </FormField>
+                  <FormField label="Data de Abertura" id="dataAbertura">
+                    <Input
+                      id="dataAbertura"
+                      type="date"
+                      value={form.dataAbertura}
+                      onChange={(e) => set("dataAbertura", e.target.value)}
+                      data-testid="input-data-abertura"
+                    />
+                  </FormField>
+                  <div className="md:col-span-2">
+                    <FormField label="Natureza Jurídica" id="naturezaJuridica">
+                      <Input
+                        id="naturezaJuridica"
+                        value={form.naturezaJuridica}
+                        onChange={(e) => set("naturezaJuridica", e.target.value)}
+                        placeholder="Ex: Sociedade Limitada"
+                        data-testid="input-natureza"
+                      />
+                    </FormField>
+                  </div>
+                  <FormField label="Regime Tributário" id="regimeTributario">
+                    <Select value={form.regimeTributario || "none"} onValueChange={(v) => set("regimeTributario", v === "none" ? "" : v)}>
+                      <SelectTrigger id="regimeTributario" data-testid="select-regime">
+                        <SelectValue placeholder="Selecione..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Não informado</SelectItem>
+                        <SelectItem value="simples_nacional">Simples Nacional</SelectItem>
+                        <SelectItem value="lucro_presumido">Lucro Presumido</SelectItem>
+                        <SelectItem value="lucro_real">Lucro Real</SelectItem>
+                        <SelectItem value="mei">MEI</SelectItem>
+                        <SelectItem value="isento">Isento</SelectItem>
+                        <SelectItem value="outro">Outro</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormField>
+                </>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -617,13 +699,17 @@ export default function ClientFormPage() {
                 />
               </FormField>
               <FormField label="Site" id="site">
-                <Input
-                  id="site"
-                  value={form.site}
-                  onChange={(e) => set("site", e.target.value)}
-                  placeholder="https://www.empresa.com.br"
-                  data-testid="input-site"
-                />
+                <div className="relative">
+                  <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <Input
+                    id="site"
+                    value={form.site}
+                    onChange={(e) => set("site", e.target.value)}
+                    placeholder="https://www.empresa.com.br"
+                    className="pl-8"
+                    data-testid="input-site"
+                  />
+                </div>
               </FormField>
               <FormField label="Instagram" id="instagram">
                 <Input
@@ -638,7 +724,7 @@ export default function ClientFormPage() {
           </CardContent>
         </Card>
 
-        {/* CRM */}
+        {/* Classificação e CRM */}
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
@@ -650,7 +736,7 @@ export default function ClientFormPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <FormField label="Status do Cliente" id="status">
                 <Select value={form.status} onValueChange={(v) => set("status", v)}>
-                  <SelectTrigger id="status" data-testid="select-client-status">
+                  <SelectTrigger id="status" data-testid="select-status">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -663,7 +749,7 @@ export default function ClientFormPage() {
               </FormField>
               <FormField label="Origem do Lead" id="origemLead">
                 <Select value={form.origemLead || "none"} onValueChange={(v) => set("origemLead", v === "none" ? "" : v)}>
-                  <SelectTrigger id="origemLead" data-testid="select-origem-lead">
+                  <SelectTrigger id="origemLead" data-testid="select-origem">
                     <SelectValue placeholder="Selecione..." />
                   </SelectTrigger>
                   <SelectContent>
@@ -683,7 +769,7 @@ export default function ClientFormPage() {
               <FormField label="Potencial de Compra" id="potencialCompra">
                 <Select value={form.potencialCompra || "none"} onValueChange={(v) => set("potencialCompra", v === "none" ? "" : v)}>
                   <SelectTrigger id="potencialCompra" data-testid="select-potencial">
-                    <SelectValue placeholder="Selecione..." />
+                    <SelectValue placeholder="Não avaliado" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Não avaliado</SelectItem>
@@ -723,19 +809,12 @@ export default function ClientFormPage() {
         {/* Actions */}
         <div className="flex items-center justify-between pt-2">
           <Button type="button" variant="outline" asChild>
-            <Link href={isEdit ? `/clients/${id}` : "/clients"}>
-              Cancelar
-            </Link>
+            <Link href={isEdit ? `/clients/${id}` : "/clients"}>Cancelar</Link>
           </Button>
           <Button type="submit" disabled={saveMutation.isPending} data-testid="button-save-client">
             {saveMutation.isPending ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                Salvando...
-              </>
-            ) : (
-              isEdit ? "Salvar alterações" : "Cadastrar cliente"
-            )}
+              <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" />Salvando...</>
+            ) : isEdit ? "Salvar alterações" : "Cadastrar cliente"}
           </Button>
         </div>
       </form>

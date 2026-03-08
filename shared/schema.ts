@@ -109,6 +109,8 @@ export const bankAccountTypeEnum = pgEnum("bank_account_type", [
   "poupanca",
 ]);
 
+export const tipoPessoaEnum = pgEnum("tipo_pessoa", ["fisica", "juridica"]);
+
 export const taxRegimeEnum = pgEnum("tax_regime", [
   "simples_nacional",
   "lucro_presumido",
@@ -147,6 +149,8 @@ export const clients = pgTable(
   "clients",
   {
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    tipoPessoa: tipoPessoaEnum("tipo_pessoa").notNull().default("juridica"),
+    cpf: varchar("cpf", { length: 14 }),
     // Fiscal
     cnpj: varchar("cnpj", { length: 18 }),
     razaoSocial: text("razao_social").notNull(),
@@ -287,8 +291,11 @@ export const sellers = pgTable(
   "sellers",
   {
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    tipoPessoa: tipoPessoaEnum("tipo_pessoa").notNull().default("fisica"),
     nomeCompleto: text("nome_completo").notNull(),
+    nomeFantasia: text("nome_fantasia"),
     cpf: varchar("cpf", { length: 14 }),
+    cnpj: varchar("cnpj", { length: 18 }),
     rg: text("rg"),
     dataNascimento: date("data_nascimento"),
     telefone: text("telefone"),
@@ -536,6 +543,27 @@ export const automationJobs = pgTable(
     index("idx_jobs_client").on(t.clientId),
   ]
 );
+
+// ─── PAYMENT TERMS ────────────────────────────────────────────────────────────
+
+export const paymentTerms = pgTable("payment_terms", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  nome: text("nome").notNull(),
+  dias: integer("dias").array().notNull().default([]),
+  ativo: boolean("ativo").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertPaymentTermSchema = createInsertSchema(paymentTerms).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  dias: z.array(z.number().int().min(0)).min(1, "Informe ao menos um prazo"),
+});
+export type InsertPaymentTerm = z.infer<typeof insertPaymentTermSchema>;
+export type PaymentTerm = typeof paymentTerms.$inferSelect;
 
 // ─── DASHBOARD STATS (view types) ────────────────────────────────────────────
 
