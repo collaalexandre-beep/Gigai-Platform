@@ -1,0 +1,367 @@
+Crie um sistema web profissional, escalável e minimalista de ERP + CRM avançado para uma gráfica/comunicação visual.
+
+OBJETIVO GERAL
+Quero a base de um sistema que comece pelo cadastro de clientes, contatos e vendedores, mas que já seja arquitetado para evoluir para um ERP completo com orçamento, pedidos, ordem de produção, financeiro, comissões, follow-up comercial, automações e integrações futuras.
+
+O sistema deve ter visual moderno, minimalista, limpo, profissional e muito organizado, com excelente experiência de uso em desktop. O design deve parecer software SaaS moderno, com espaçamento bom, tipografia agradável, poucos excessos visuais, navegação clara e foco em produtividade.
+
+STACK E ARQUITETURA
+- Criar aplicação web full-stack.
+- Estruturar backend, frontend e banco de dados de forma organizada e escalável.
+- O código deve ser limpo, modular e preparado para crescimento.
+- Criar autenticação de usuários.
+- Criar estrutura para múltiplos módulos no futuro.
+- Preparar o banco de dados e a arquitetura para ERP completo.
+- Criar APIs internas bem organizadas.
+- Criar sistema de logs de erros e ações relevantes.
+- Criar validações de dados no frontend e backend.
+- Criar estrutura pronta para integrações futuras com:
+  - WhatsApp
+  - Instagram
+  - APIs fiscais
+  - consulta de CNPJ
+  - emissão de orçamento/pedido
+  - financeiro
+  - automações por agenda
+  - envio de mensagens
+  - comissões
+  - ordens de produção
+
+FOCO INICIAL
+O primeiro módulo a ser criado deve ser:
+1. Cadastro de clientes
+2. Cadastro de contatos por cliente
+3. Cadastro de vendedores
+4. Estrutura inicial de CRM
+5. Base de dados preparada para ERP completo
+
+MÓDULO 1: CADASTRO DE CLIENTES
+Criar tela completa de cadastro de clientes com:
+- botão “Novo cliente”
+- listagem de clientes
+- busca por nome, CNPJ, telefone, cidade, nome fantasia
+- filtros
+- ordenação
+- paginação
+- tela de detalhes do cliente
+- tela de edição
+
+Campos do cliente:
+- CNPJ
+- Razão social
+- Nome fantasia
+- Inscrição Estadual
+- Situação cadastral
+- Data de abertura
+- Natureza jurídica
+- Regime tributário (campo editável/manual)
+- Endereço completo
+- Número
+- Complemento
+- Bairro
+- Cidade
+- Estado
+- CEP
+- Telefone principal
+- WhatsApp
+- E-mail principal
+- Site
+- Instagram da empresa
+- Observações internas
+- Status do cliente (ativo, inativo, prospect, bloqueado)
+- Origem do lead
+- Segmento
+- Data de cadastro
+- Última atualização
+
+IMPORTANTE SOBRE O CNPJ
+Quero que o usuário digite SOMENTE o CNPJ e o sistema tente buscar automaticamente os dados da empresa, preenchendo o máximo possível, inclusive:
+- razão social
+- nome fantasia
+- inscrição estadual
+- endereço completo
+- telefone
+- email, se disponível
+- situação cadastral
+- natureza jurídica
+- data de abertura
+
+IMPORTANTE:
+- Implementar integração de busca por CNPJ com arquitetura flexível.
+- Criar um serviço de consulta de CNPJ desacoplado, para que eu possa trocar a fonte depois.
+- Se uma fonte falhar, o sistema deve tentar outra estratégia/fallback.
+- Deixar preparado um provider para consulta de dados empresariais.
+- Priorizar a captura da Inscrição Estadual, pois isso é muito importante.
+- Se algum dado não vier automaticamente, permitir edição manual sem travar o fluxo.
+- Exibir claramente quais dados vieram automaticamente e quais foram inseridos manualmente.
+- Salvar a data/hora da consulta do CNPJ.
+- Criar campo “fonte da consulta”.
+- Criar campo “consulta automática bem-sucedida: sim/não”.
+
+OBSERVAÇÃO IMPORTANTE DE PROJETO
+Eu sei que algumas fontes de consulta podem ter dificuldade em encontrar dados completos. Estruture o sistema para aceitar uma fonte principal e fontes alternativas de consulta empresarial. Não acople essa lógica diretamente à interface. Quero isso bem organizado no backend.
+
+MÓDULO 2: CONTATOS DO CLIENTE
+Na tela de cliente deve existir uma área de contatos muito prática, com botão de adicionar usando um ícone de “+”.
+
+Quero uma experiência excelente para adicionar vários contatos rapidamente.
+
+Cada cliente poderá ter vários contatos.
+
+Campos de cada contato:
+- Nome completo
+- Cargo / função
+- Setor
+- Telefone
+- WhatsApp
+- E-mail
+- Data de aniversário
+- Instagram
+- LinkedIn
+- Observações
+- Contato principal (sim/não)
+- Pode aprovar compras? (sim/não)
+- Pode aprovar orçamento? (sim/não)
+- Recebe financeiro? (sim/não)
+- Recebe produção/status? (sim/não)
+- Status do contato (ativo/inativo)
+
+Regras importantes:
+- Deve ser fácil adicionar, editar e excluir contatos.
+- O botão com “+” deve abrir modal ou painel lateral elegante e rápido.
+- Deve ser possível marcar um contato como principal.
+- Deve ser possível visualizar os contatos em cards ou tabela muito organizada.
+- Deve aparecer aniversário próximo dos contatos em destaque no CRM.
+- Criar estrutura para futuras automações de relacionamento.
+
+INSTAGRAM / SEGUIR AUTOMATICAMENTE
+Quero que o sistema já fique preparado para fluxo de relacionamento via Instagram.
+Para cada contato e para cada cliente, deve haver campo de Instagram.
+
+IMPORTANTE:
+- Não criar automação acoplada diretamente sem configuração.
+- Criar uma estrutura preparada para integração futura com automações.
+- Criar no banco campos como:
+  - instagram_handle
+  - follow_desired (sim/não)
+  - follow_status
+  - follow_requested_at
+  - follow_completed_at
+  - follow_error_log
+- Criar uma fila/tabela de tarefas de automação para futuras integrações.
+- Quando um cliente ou contato novo for cadastrado com Instagram, o sistema deve poder marcar automaticamente uma tarefa pendente de relacionamento, para execução futura.
+- Mostrar na interface um status como:
+  - pendente
+  - em processamento
+  - concluído
+  - erro
+- Não depender da automação para salvar o cadastro.
+
+MÓDULO 3: CADASTRO DE VENDEDORES
+Criar módulo de vendedores com o mesmo nível de qualidade visual e estrutural.
+
+Campos dos vendedores:
+- Nome completo
+- CPF
+- RG
+- Data de nascimento
+- Telefone
+- WhatsApp
+- E-mail
+- Instagram
+- Endereço completo
+- Cidade
+- Estado
+- CEP
+- Cargo
+- Data de entrada
+- Status
+- Chave Pix
+- Tipo de chave Pix
+- Banco
+- Agência
+- Conta
+- Tipo de conta
+- Nome do favorecido
+- Documento do favorecido
+- Percentual de comissão padrão
+- Observações internas
+
+Importante:
+- O vendedor deve poder ser relacionado a clientes.
+- O vendedor deve poder ser relacionado futuramente a pedidos, comissões e metas.
+- Preparar estrutura para histórico de comissões.
+- Preparar estrutura para pagamento de comissão.
+- Criar campo de dados bancários organizado e seguro.
+- Separar dados pessoais, dados comerciais e dados financeiros em abas ou seções.
+
+CRM AVANÇADO
+O sistema deve ser a base de um CRM avançado, então já deixe pronto:
+- cadastro de leads
+- pipeline comercial
+- status do relacionamento
+- origem do lead
+- responsável comercial
+- tarefas futuras
+- lembretes
+- registro de interações
+- observações cronológicas
+- tags
+- classificação do cliente
+- potencial de compra
+- data do último contato
+- data do próximo follow-up
+
+Criar estrutura inicial de timeline do cliente:
+- cadastro criado
+- consulta de CNPJ realizada
+- contato adicionado
+- vendedor vinculado
+- observação criada
+- mudança de status
+
+Cada ação relevante deve poder aparecer na timeline.
+
+LAYOUT / UX / UI
+Quero um layout:
+- minimalista
+- limpo
+- profissional
+- moderno
+- bem espaçado
+- altamente organizado
+- com foco em produtividade
+- com excelente leitura visual
+- sem poluição
+- agradável para uso diário intenso
+
+Diretrizes:
+- sidebar elegante
+- topo limpo
+- cards discretos
+- tabela muito boa
+- modais bonitos
+- campos bem alinhados
+- responsividade boa, mas foco principal em desktop
+- ações rápidas e intuitivas
+- cores sóbrias
+- tipografia moderna
+- ícones discretos
+- sensação de software premium
+
+Estruturar a navegação inicial assim:
+- Dashboard
+- Clientes
+- Contatos
+- Vendedores
+- CRM
+- Configurações
+
+DASHBOARD INICIAL
+Criar dashboard inicial com visão executiva, mesmo simples, contendo:
+- total de clientes
+- total de prospects
+- total de contatos
+- aniversários próximos
+- vendedores cadastrados
+- tarefas pendentes de follow-up
+- últimas atividades
+
+BANCO DE DADOS
+Criar banco de dados já preparado para expansão.
+Sugestão de entidades principais:
+- users
+- clients
+- client_addresses
+- client_contacts
+- sellers
+- sellers_bank_accounts
+- client_seller_links
+- crm_interactions
+- crm_tasks
+- crm_tags
+- client_tags
+- activity_timeline
+- company_lookup_logs
+- automation_jobs
+
+Criar relacionamentos corretamente.
+Criar campos de created_at, updated_at e deleted_at quando fizer sentido.
+Usar soft delete onde fizer sentido.
+Adicionar índices para buscas importantes.
+
+REGRAS IMPORTANTES
+- Não criar apenas protótipo visual. Criar sistema funcional.
+- Não deixar hardcoded.
+- Não criar código desorganizado.
+- Não criar arquitetura improvisada.
+- Não criar telas genéricas sem lógica.
+- Criar sistema pronto para continuar evoluindo.
+- Criar componentes reutilizáveis.
+- Criar estrutura preparada para permissões de usuários no futuro.
+- Criar estrutura preparada para multiempresa no futuro, mesmo que inicialmente use uma empresa só.
+- Criar seeds/dados de exemplo para facilitar testes.
+- Criar tratamento de erros amigável.
+- Criar mensagens de sucesso e erro elegantes.
+- Criar máscaras e validações para CNPJ, CPF, telefone, CEP, data e Pix.
+
+DETALHE MUITO IMPORTANTE
+Na tela do cliente, quero algo que pareça software de verdade:
+- cabeçalho com dados principais
+- status visível
+- abas ou seções como:
+  - geral
+  - contatos
+  - CRM
+  - financeiro futuro
+  - histórico
+- botão para editar
+- botão para adicionar contato com ícone “+”
+- botão para vincular vendedor
+- botão para registrar interação
+- timeline lateral ou inferior
+
+ESTRUTURA PARA ERP COMPLETO
+Mesmo que agora o foco seja cadastro + CRM, o projeto precisa nascer preparado para módulos futuros:
+- orçamentos
+- pedidos
+- ordens de serviço
+- ordens de produção
+- produção
+- estoque
+- compras
+- contas a pagar
+- contas a receber
+- fluxo de caixa
+- comissões
+- faturamento
+- relatórios
+- integração com WhatsApp
+- automações com IA
+- agentes internos
+
+Por isso, organize nomes, entidades, menus e arquitetura pensando em crescimento real.
+
+ENTREGA
+Quero que você:
+1. Crie a estrutura completa do projeto
+2. Crie as tabelas/modelos necessários
+3. Crie as telas iniciais
+4. Crie o fluxo funcional de cadastro de clientes
+5. Crie o fluxo funcional de contatos com botão +
+6. Crie o fluxo funcional de vendedores
+7. Crie o dashboard inicial
+8. Crie a timeline básica
+9. Crie a camada de consulta de CNPJ preparada para múltiplos providers
+10. Deixe tudo pronto para continuar o ERP depois
+
+NO FINAL
+Mostre claramente:
+- estrutura de pastas
+- models/tabelas criadas
+- rotas criadas
+- páginas criadas
+- componentes criados
+- próximos passos sugeridos
+
+Quero um resultado com aparência de software real e base sólida, não um MVP bagunçado.
