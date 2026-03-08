@@ -1,0 +1,420 @@
+import { db } from "./db";
+import { clients, clientContacts, sellers, sellerBankAccounts, clientSellerLinks, crmTasks, activityTimeline } from "@shared/schema";
+import { sql } from "drizzle-orm";
+
+export async function seedDatabase() {
+  // Check if already seeded
+  const [existingClient] = await db.select({ count: sql<number>`count(*)` }).from(clients);
+  if (Number(existingClient.count) > 0) return;
+
+  console.log("[Seed] Populando banco de dados com dados de exemplo...");
+
+  // ─── SELLERS ─────────────────────────────────────────────────────────────
+
+  const [seller1] = await db.insert(sellers).values({
+    nomeCompleto: "Rafael Mendonça",
+    cpf: "123.456.789-01",
+    rg: "12.345.678-9",
+    dataNascimento: "1988-03-15",
+    telefone: "(11) 91234-5678",
+    whatsapp: "(11) 91234-5678",
+    email: "rafael.mendonca@graficaplus.com.br",
+    cargo: "Consultor Comercial Sênior",
+    dataEntrada: "2020-01-10",
+    status: "ativo",
+    percentualComissao: "5.00",
+    cidade: "São Paulo",
+    estado: "SP",
+    cep: "01310-100",
+    observacoes: "Especialista em clientes corporativos e grandes volumes.",
+  }).returning();
+
+  const [seller2] = await db.insert(sellers).values({
+    nomeCompleto: "Juliana Ferreira",
+    cpf: "987.654.321-00",
+    dataNascimento: "1993-07-22",
+    telefone: "(11) 98765-4321",
+    whatsapp: "(11) 98765-4321",
+    email: "juliana.ferreira@graficaplus.com.br",
+    cargo: "Consultora Comercial",
+    dataEntrada: "2022-04-05",
+    status: "ativo",
+    percentualComissao: "4.00",
+    cidade: "São Paulo",
+    estado: "SP",
+  }).returning();
+
+  // Bank accounts
+  await db.insert(sellerBankAccounts).values({
+    sellerId: seller1.id,
+    banco: "Itaú Unibanco",
+    agencia: "1234",
+    conta: "12345-6",
+    tipoConta: "corrente",
+    nomeFavorecido: "Rafael Mendonça",
+    documentoFavorecido: "123.456.789-01",
+    pixTipoChave: "cpf",
+    pixChave: "123.456.789-01",
+    principal: true,
+  });
+
+  // ─── CLIENTS ─────────────────────────────────────────────────────────────
+
+  const [client1] = await db.insert(clients).values({
+    cnpj: "33.014.556/0001-96",
+    razaoSocial: "Rede Globo de Comunicações S/A",
+    nomeFantasia: "Globo",
+    inscricaoEstadual: "112.397.150.111",
+    situacaoCadastral: "ATIVA",
+    dataAbertura: "1965-04-26",
+    naturezaJuridica: "Sociedade Anônima Fechada",
+    regimeTributario: "lucro_real",
+    cep: "22775-044",
+    logradouro: "Rua Lopes Quintas",
+    numero: "303",
+    complemento: "Andar 10",
+    bairro: "Jardim Botânico",
+    cidade: "Rio de Janeiro",
+    estado: "RJ",
+    telefone: "(21) 2159-6000",
+    whatsapp: "(21) 99999-0001",
+    email: "contato@globo.com",
+    site: "https://www.globo.com",
+    instagram: "@tvglobo",
+    status: "ativo",
+    origemLead: "indicacao",
+    segmento: "Comunicação & Mídia",
+    potencialCompra: "alto",
+    observacoes: "Cliente premium. Contratos anuais de impressão para programas e eventos.",
+    cnpjConsultaBemSucedida: true,
+    cnpjFonteConsulta: "BrasilAPI",
+    cnpjConsultadoEm: new Date(),
+    instagramHandle: "tvglobo",
+    followDesired: false,
+  }).returning();
+
+  const [client2] = await db.insert(clients).values({
+    cnpj: "60.872.504/0001-23",
+    razaoSocial: "Magazine Luiza S/A",
+    nomeFantasia: "Magalu",
+    situacaoCadastral: "ATIVA",
+    dataAbertura: "1992-11-10",
+    naturezaJuridica: "Sociedade Anônima Aberta",
+    regimeTributario: "lucro_presumido",
+    cep: "14401-135",
+    logradouro: "Rua Voluntário Paulistano",
+    numero: "2061",
+    bairro: "Centro",
+    cidade: "Franca",
+    estado: "SP",
+    telefone: "(16) 3714-3000",
+    email: "marketing@magazineluiza.com.br",
+    site: "https://www.magazineluiza.com.br",
+    instagram: "@magazineluiza",
+    status: "ativo",
+    origemLead: "prospeccao_ativa",
+    segmento: "Varejo",
+    potencialCompra: "alto",
+    observacoes: "Demanda mensal de materiais PDV, banners e folhetos para toda a rede.",
+    cnpjConsultaBemSucedida: true,
+    cnpjFonteConsulta: "BrasilAPI",
+    cnpjConsultadoEm: new Date(),
+    instagramHandle: "magazineluiza",
+    followDesired: true,
+  }).returning();
+
+  const [client3] = await db.insert(clients).values({
+    cnpj: "17.245.234/0001-00",
+    razaoSocial: "Boutique Arte & Estilo LTDA",
+    nomeFantasia: "Arte & Estilo",
+    situacaoCadastral: "ATIVA",
+    dataAbertura: "2018-06-12",
+    naturezaJuridica: "Sociedade Limitada",
+    regimeTributario: "simples_nacional",
+    cep: "01421-001",
+    logradouro: "Alameda Santos",
+    numero: "882",
+    bairro: "Jardim Paulista",
+    cidade: "São Paulo",
+    estado: "SP",
+    telefone: "(11) 3456-7890",
+    email: "contato@arteeestilo.com.br",
+    instagram: "@arteestilo_boutique",
+    status: "ativo",
+    origemLead: "instagram",
+    segmento: "Moda & Vestuário",
+    potencialCompra: "medio",
+    observacoes: "Trabalha com sacolas personalizadas, etiquetas e embalagens premium.",
+    instagramHandle: "arteestilo_boutique",
+    followDesired: true,
+  }).returning();
+
+  const [client4] = await db.insert(clients).values({
+    cnpj: "08.447.077/0001-05",
+    razaoSocial: "Construtora Andrade Ferreira S/A",
+    nomeFantasia: "AF Construções",
+    situacaoCadastral: "ATIVA",
+    dataAbertura: "2005-09-20",
+    naturezaJuridica: "Sociedade Anônima Fechada",
+    regimeTributario: "lucro_presumido",
+    cep: "04038-001",
+    logradouro: "Avenida Paulista",
+    numero: "1374",
+    bairro: "Bela Vista",
+    cidade: "São Paulo",
+    estado: "SP",
+    telefone: "(11) 4567-8901",
+    email: "comercial@afconstrucoes.com.br",
+    site: "https://www.afconstrucoes.com.br",
+    status: "prospect",
+    origemLead: "google",
+    segmento: "Construção Civil",
+    potencialCompra: "alto",
+    observacoes: "Interessada em placas de obra, fachadas e sinalização interna.",
+  }).returning();
+
+  const [client5] = await db.insert(clients).values({
+    razaoSocial: "Tech Solutions Brasil LTDA",
+    nomeFantasia: "TechSol",
+    situacaoCadastral: "ATIVA",
+    regimeTributario: "lucro_presumido",
+    cep: "05303-000",
+    logradouro: "Rua Butantã",
+    numero: "1021",
+    bairro: "Butantã",
+    cidade: "São Paulo",
+    estado: "SP",
+    telefone: "(11) 5678-9012",
+    email: "contato@techsol.com.br",
+    status: "inativo",
+    origemLead: "site",
+    segmento: "Tecnologia",
+    potencialCompra: "medio",
+    observacoes: "Cliente antigo, retornar contato para reativar.",
+    dataUltimoContato: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000),
+  }).returning();
+
+  // ─── CONTACTS ────────────────────────────────────────────────────────────
+
+  await db.insert(clientContacts).values([
+    {
+      clientId: client1.id,
+      nomeCompleto: "Carla Nascimento",
+      cargo: "Gerente de Marketing",
+      setor: "Marketing",
+      telefone: "(21) 2159-6100",
+      whatsapp: "(21) 99100-2200",
+      email: "carla.nascimento@globo.com",
+      dataNascimento: "1985-05-14",
+      contatoPrincipal: true,
+      podeAprovarCompras: true,
+      podeAprovarOrcamento: true,
+      recebeFinanceiro: false,
+      recebeProducao: true,
+      status: true,
+      instagram: "@carlana_globo",
+    },
+    {
+      clientId: client1.id,
+      nomeCompleto: "Thiago Barbosa",
+      cargo: "Analista de Compras",
+      setor: "Compras",
+      telefone: "(21) 2159-6200",
+      whatsapp: "(21) 99200-3300",
+      email: "thiago.barbosa@globo.com",
+      dataNascimento: "1990-11-30",
+      contatoPrincipal: false,
+      podeAprovarCompras: false,
+      podeAprovarOrcamento: false,
+      recebeFinanceiro: true,
+      recebeProducao: false,
+      status: true,
+    },
+    {
+      clientId: client2.id,
+      nomeCompleto: "Amanda Rocha",
+      cargo: "Diretora de Marketing Regional",
+      setor: "Marketing",
+      telefone: "(16) 3714-3100",
+      whatsapp: "(16) 99800-1234",
+      email: "amanda.rocha@magazineluiza.com.br",
+      dataNascimento: "1982-08-22",
+      contatoPrincipal: true,
+      podeAprovarCompras: true,
+      podeAprovarOrcamento: true,
+      recebeFinanceiro: false,
+      recebeProducao: false,
+      status: true,
+      instagram: "@amandinha_magalu",
+    },
+    {
+      clientId: client3.id,
+      nomeCompleto: "Priscila Andrade",
+      cargo: "Proprietária",
+      setor: "Diretoria",
+      telefone: "(11) 3456-7891",
+      whatsapp: "(11) 99456-7891",
+      email: "priscila@arteeestilo.com.br",
+      dataNascimento: "1988-03-08",
+      contatoPrincipal: true,
+      podeAprovarCompras: true,
+      podeAprovarOrcamento: true,
+      recebeFinanceiro: true,
+      recebeProducao: true,
+      status: true,
+      instagram: "@pri_arte_estilo",
+    },
+    {
+      clientId: client4.id,
+      nomeCompleto: "Eduardo Ferreira",
+      cargo: "Diretor Comercial",
+      setor: "Comercial",
+      telefone: "(11) 4567-8902",
+      whatsapp: "(11) 99567-8902",
+      email: "eduardo.ferreira@afconstrucoes.com.br",
+      dataNascimento: "1975-12-05",
+      contatoPrincipal: true,
+      podeAprovarCompras: true,
+      podeAprovarOrcamento: true,
+      recebeFinanceiro: false,
+      recebeProducao: false,
+      status: true,
+    },
+  ]);
+
+  // ─── CLIENT-SELLER LINKS ─────────────────────────────────────────────────
+
+  await db.insert(clientSellerLinks).values([
+    { clientId: client1.id, sellerId: seller1.id, principal: true },
+    { clientId: client2.id, sellerId: seller1.id, principal: true },
+    { clientId: client3.id, sellerId: seller2.id, principal: true },
+    { clientId: client4.id, sellerId: seller2.id, principal: true },
+  ]);
+
+  // ─── CRM TASKS ───────────────────────────────────────────────────────────
+
+  await db.insert(crmTasks).values([
+    {
+      clientId: client4.id,
+      titulo: "Enviar proposta de sinalização",
+      descricao: "Preparar e enviar proposta de sinalização interna para obra do Butantã",
+      status: "pendente",
+      prioridade: "alta",
+      dataVencimento: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+    },
+    {
+      clientId: client5.id,
+      titulo: "Retornar contato para reativação",
+      descricao: "Cliente inativo há mais de 60 dias. Tentar reagendamento de visita.",
+      status: "pendente",
+      prioridade: "media",
+      dataVencimento: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    },
+    {
+      clientId: client2.id,
+      titulo: "Follow-up proposta mensal Magalu",
+      descricao: "Confirmar aprovação do orçamento de materiais PDV para Q2",
+      status: "pendente",
+      prioridade: "alta",
+      dataVencimento: new Date(Date.now() + 1 * 24 * 60 * 60 * 1000),
+    },
+    {
+      titulo: "Revisar tabela de preços",
+      descricao: "Atualizar planilha de custos e repassar para a equipe comercial",
+      status: "pendente",
+      prioridade: "baixa",
+      dataVencimento: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
+    },
+  ]);
+
+  // ─── ACTIVITY TIMELINE ───────────────────────────────────────────────────
+
+  await db.insert(activityTimeline).values([
+    {
+      clientId: client1.id,
+      eventType: "cadastro_criado",
+      titulo: "Cliente cadastrado",
+      descricao: "Rede Globo foi cadastrada no sistema",
+      createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+    },
+    {
+      clientId: client1.id,
+      eventType: "cnpj_consultado",
+      titulo: "CNPJ consultado automaticamente",
+      descricao: "Dados preenchidos via BrasilAPI",
+      createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+    },
+    {
+      clientId: client1.id,
+      eventType: "contato_adicionado",
+      titulo: "Contato adicionado",
+      descricao: "Carla Nascimento foi adicionada como contato",
+      createdAt: new Date(Date.now() - 28 * 24 * 60 * 60 * 1000),
+    },
+    {
+      clientId: client1.id,
+      eventType: "vendedor_vinculado",
+      titulo: "Vendedor vinculado",
+      descricao: "Rafael Mendonça foi vinculado ao cliente",
+      createdAt: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000),
+    },
+    {
+      clientId: client2.id,
+      eventType: "cadastro_criado",
+      titulo: "Cliente cadastrado",
+      descricao: "Magazine Luiza foi cadastrada no sistema",
+      createdAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000),
+    },
+    {
+      clientId: client2.id,
+      eventType: "interacao_registrada",
+      titulo: "Interação: reuniao",
+      descricao: "Reunião de apresentação realizada com Amanda Rocha",
+      createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+    },
+    {
+      clientId: client4.id,
+      eventType: "cadastro_criado",
+      titulo: "Cliente cadastrado",
+      descricao: "AF Construções foi cadastrada como prospect",
+      createdAt: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000),
+    },
+    {
+      clientId: client4.id,
+      eventType: "tarefa_criada",
+      titulo: "Tarefa criada",
+      descricao: "Enviar proposta de sinalização",
+      createdAt: new Date(Date.now() - 9 * 24 * 60 * 60 * 1000),
+    },
+    {
+      clientId: client3.id,
+      eventType: "cadastro_criado",
+      titulo: "Cliente cadastrado",
+      descricao: "Arte & Estilo foi cadastrada no sistema",
+      createdAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000),
+    },
+    {
+      clientId: client3.id,
+      eventType: "contato_adicionado",
+      titulo: "Contato adicionado",
+      descricao: "Priscila Andrade foi adicionada como contato principal",
+      createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000),
+    },
+    {
+      clientId: client5.id,
+      eventType: "cadastro_criado",
+      titulo: "Cliente cadastrado",
+      descricao: "TechSol foi cadastrada como prospect",
+      createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+    },
+    {
+      clientId: client5.id,
+      eventType: "interacao_registrada",
+      titulo: "Interação: ligacao",
+      descricao: "Primeiro contato com equipe de TI da TechSol",
+      createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000),
+    },
+  ]);
+
+  console.log("[Seed] Dados de exemplo inseridos com sucesso.");
+}
