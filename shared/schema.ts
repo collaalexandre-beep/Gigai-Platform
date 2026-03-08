@@ -209,11 +209,19 @@ export const clients = pgTable(
   ]
 );
 
+const coerceDate = z.union([z.date(), z.string().transform((s) => new Date(s))]).optional().nullable();
+
 export const insertClientSchema = createInsertSchema(clients).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
+}).extend({
+  cnpjConsultadoEm: coerceDate,
+  dataUltimoContato: coerceDate,
+  dataProximoFollowup: coerceDate,
+  followRequestedAt: coerceDate,
+  followCompletedAt: coerceDate,
 });
 export type InsertClient = z.infer<typeof insertClientSchema>;
 export type Client = typeof clients.$inferSelect;
@@ -266,6 +274,9 @@ export const insertContactSchema = createInsertSchema(clientContacts).omit({
   createdAt: true,
   updatedAt: true,
   deletedAt: true,
+}).extend({
+  followRequestedAt: coerceDate,
+  followCompletedAt: coerceDate,
 });
 export type InsertContact = z.infer<typeof insertContactSchema>;
 export type Contact = typeof clientContacts.$inferSelect;
@@ -401,7 +412,9 @@ export const crmInteractions = pgTable(
 
 export const insertInteractionSchema = createInsertSchema(
   crmInteractions
-).omit({ id: true, createdAt: true });
+).omit({ id: true, createdAt: true }).extend({
+  dataInteracao: coerceDate,
+});
 export type InsertInteraction = z.infer<typeof insertInteractionSchema>;
 export type Interaction = typeof crmInteractions.$inferSelect;
 
@@ -435,6 +448,9 @@ export const insertTaskSchema = createInsertSchema(crmTasks).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  dataVencimento: coerceDate,
+  dataConclusao: coerceDate,
 });
 export type InsertTask = z.infer<typeof insertTaskSchema>;
 export type Task = typeof crmTasks.$inferSelect;

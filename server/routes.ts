@@ -21,11 +21,23 @@ function handleError(res: Response, err: unknown) {
   res.status(500).json({ error: message });
 }
 
+function nullifyEmpty(obj: unknown): unknown {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj === "string") return obj === "" ? null : obj;
+  if (Array.isArray(obj)) return obj.map(nullifyEmpty);
+  if (typeof obj === "object") {
+    return Object.fromEntries(
+      Object.entries(obj as Record<string, unknown>).map(([k, v]) => [k, nullifyEmpty(v)])
+    );
+  }
+  return obj;
+}
+
 function validateBody<T>(
   schema: z.ZodSchema<T>,
   body: unknown
 ): { data: T } | { error: string } {
-  const result = schema.safeParse(body);
+  const result = schema.safeParse(nullifyEmpty(body));
   if (!result.success) {
     return {
       error: result.error.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; "),
