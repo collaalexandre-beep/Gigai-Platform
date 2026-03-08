@@ -2,13 +2,18 @@
  * CNPJ Lookup Service
  * Desacoplado da interface — suporta múltiplos providers com fallback automático.
  * Para adicionar um novo provider: implementar CnpjProvider e adicionar à lista.
+ *
+ * Providers (em ordem de tentativa):
+ *   1. publica.cnpj.ws — dados completos + inscrição estadual via SINTEGRA
+ *   2. BrasilAPI       — dados básicos oficiais da Receita Federal
+ *   3. ReceitaWS       — fallback geral
  */
 
 export interface CnpjData {
   cnpj: string;
   razaoSocial?: string;
   nomeFantasia?: string;
-  inscricaoEstadual?: string;
+  inscricaoEstadual?: string;     // IE principal formatada (pode conter múltiplas: "SP: 000 / MG: 111")
   situacaoCadastral?: string;
   dataAbertura?: string;
   naturezaJuridica?: string;
@@ -35,6 +40,91 @@ interface CnpjProvider {
   name: string;
   lookup(cnpj: string): Promise<CnpjLookupResult>;
 }
+
+// ─── Provider: publica.cnpj.ws ────────────────────────────────────────────────
+// Fonte: https://publica.cnpj.ws — dados Receita Federal + SINTEGRA (IE)
+// Endpoint: GET /cnpj/{cnpj14}
+// Retorna inscrição estadual por UF quando disponível via Sintegra
+
+const publicaCnpjWsProvider: CnpjProvider = {
+  name: "publica.cnpj.ws",
+  async lookup(cnpj: string): Promise<CnpjLookupResult> {
+    const clean = cnpj.replace(/\D/g, "");
+    const url = `https://publica.cnpj.ws/cnpj/${clean}`;
+    try {
+      const res = await fetch(url, {
+        headers: {
+          "User-Agent": "GraficaERP/1.0",
+          "Accept": "application/json",
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        return { success: false, provider: "publica.cnpj.ws", error: `HTTP ${res.status}: ${text.slice(0, 200)}` };
+      }
+      const raw = await res.json();
+
+      // A resposta tem dados da empresa (raiz) + dados do estabelecimento (filial/matriz) aninhados
+      const estab = raw.estabelecimento || {};
+
+      // Extrair inscrição(ões) estadual(is) — pode haver mais de uma UF
+      let inscricaoEstadual: string | undefined;
+      const ies = Array.isArray(estab.inscricoes_estaduais) ? estab.inscricoes_estaduais : [];
+      if (ies.length > 0) {
+        const ativas = ies.filter((ie: any) => ie.ativo);
+        const lista = ativas.length > 0 ? ativas : ies;
+        // Formatar: "SP: 310.035.324.119 / PE: 0916078-76"
+        inscricaoEstadual = lista
+          .map((ie: any) => {
+            const uf = ie.estado?.sigla || "";
+            const num = String(ie.inscricao_estadual || "").trim();
+            return uf ? `${uf}: ${num}` : num;
+          })
+          .filter(Boolean)
+          .join(" / ");
+        if (!inscricaoEstadual) inscricaoEstadual = undefined;
+      }
+
+      // Telefone principal
+      let telefone: string | undefined;
+      if (estab.ddd1 && estab.telefone1) {
+        telefone = `(${estab.ddd1}) ${String(estab.telefone1).replace(/(\d{4,5})(\d{4})$/, "$1-$2")}`;
+      }
+
+      // CEP formatado
+      const cep = estab.cep
+        ? String(estab.cep).replace(/\D/g, "").replace(/(\d{5})(\d{3})/, "$1-$2")
+        : undefined;
+
+      const data: CnpjData = {
+        cnpj: clean,
+        razaoSocial: raw.razao_social,
+        nomeFantasia: estab.nome_fantasia || undefined,
+        inscricaoEstadual,
+        situacaoCadastral: estab.situacao_cadastral,
+        dataAbertura: estab.data_inicio_atividade,
+        naturezaJuridica: raw.natureza_juridica?.descricao,
+        logradouro: estab.logradouro
+          ? `${estab.tipo_logradouro ? estab.tipo_logradouro + " " : ""}${estab.logradouro}`.trim()
+          : undefined,
+        numero: estab.numero || undefined,
+        complemento: estab.complemento || undefined,
+        bairro: estab.bairro || undefined,
+        cidade: estab.cidade?.nome || undefined,
+        estado: estab.estado?.sigla || undefined,
+        cep,
+        telefone,
+        email: estab.email || undefined,
+      };
+
+      return { success: true, provider: "publica.cnpj.ws", data, rawResponse: raw };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, provider: "publica.cnpj.ws", error: msg };
+    }
+  },
+};
 
 // ─── Provider: BrasilAPI ──────────────────────────────────────────────────────
 
@@ -131,7 +221,12 @@ const receitaWsProvider: CnpjProvider = {
 
 // ─── Service ─────────────────────────────────────────────────────────────────
 
-const providers: CnpjProvider[] = [brasilApiProvider, receitaWsProvider];
+// Ordem de tentativa: publica.cnpj.ws (tem IE) → BrasilAPI → ReceitaWS
+const providers: CnpjProvider[] = [
+  publicaCnpjWsProvider,
+  brasilApiProvider,
+  receitaWsProvider,
+];
 
 export async function lookupCnpj(cnpj: string): Promise<CnpjLookupResult> {
   for (const provider of providers) {
