@@ -1,0 +1,285 @@
+Agora implemente os módulos de:
+1. cadastro de matérias-primas
+2. cadastro de produtos
+3. geração assistida por IA de composição de produtos
+4. orçamentos
+5. pedidos
+
+CONTEXTO
+O sistema é um ERP para gráfica e comunicação visual.
+O módulo de clientes já existe.
+Agora quero criar a base técnica para que o sistema consiga montar produtos e orçamentos de forma inteligente.
+
+OBJETIVO PRINCIPAL
+Eu não quero depender de cadastro manual demorado de produtos.
+Quero poder cadastrar produtos de forma assistida por IA.
+
+FLUXO DESEJADO
+1. Cadastrar matérias-primas
+2. Criar produto manualmente ou por IA
+3. Informar um prompt descrevendo o produto desejado
+4. A IA sugerir:
+   - categoria do produto
+   - nome comercial
+   - descrição técnica
+   - unidade de venda
+   - matérias-primas necessárias
+   - componentes
+   - acabamentos
+   - fórmula de cálculo
+   - consumo estimado
+   - dúvidas pendentes
+5. O usuário revisa, ajusta e salva
+6. O produto salvo pode ser usado em orçamentos
+7. O orçamento pode ser convertido em pedido
+
+MÓDULO 1 — MATÉRIAS-PRIMAS
+
+Criar cadastro completo de matérias-primas com:
+- nome
+- categoria
+- código interno
+- descrição
+- unidade de compra
+- unidade de uso
+- custo unitário
+- perda padrão percentual
+- fornecedor
+- marca
+- observações
+- status ativo/inativo
+
+Categorias de exemplo:
+- chapas
+- impressão
+- estruturas
+- iluminação
+- fixação
+- adesivos
+- tintas
+- acabamento
+- instalação
+- serviços terceirizados
+
+Criar:
+- listagem
+- filtros
+- busca
+- edição
+- exclusão lógica
+
+MÓDULO 2 — PRODUTOS
+
+Criar cadastro de produtos com:
+- nome
+- categoria
+- descrição comercial
+- descrição técnica
+- unidade de venda
+- tipo de cálculo
+- status
+- aceita medidas variáveis: sim/não
+- requer instalação: sim/não
+- requer arte: sim/não
+- observações internas
+
+Tipos de cálculo aceitos:
+- por m²
+- por unidade
+- por metro linear
+- por perímetro
+- por projeto
+- fixo + variável
+
+Criar estrutura de composição do produto:
+Cada produto pode ter vários componentes/matérias-primas.
+
+Cada componente deve ter:
+- matéria-prima relacionada
+- tipo de consumo
+- fórmula
+- quantidade base
+- perda adicional
+- opcional sim/não
+- observação técnica
+
+MÓDULO 3 — GERADOR DE PRODUTO COM IA
+
+Criar uma tela chamada:
+“Gerar produto com IA”
+
+Nessa tela o usuário digita um prompt como:
+“fachada em ACM preto com estrutura tubular, letras caixa iluminadas e instalação”
+ou
+“banner 2x1 m com ilhós”
+ou
+“adesivo de vitrine perfurado com aplicação”
+
+A IA deve interpretar o prompt e sugerir:
+- nome do produto
+- categoria
+- descrição comercial
+- descrição técnica
+- unidade de venda
+- tipo de cálculo
+- componentes/matérias-primas
+- acabamentos
+- serviços necessários
+- perguntas pendentes
+- grau de confiança
+
+IMPORTANTE
+A IA não deve salvar automaticamente.
+Ela deve gerar uma proposta editável.
+O usuário revisa e confirma.
+
+A IA deve agir como especialista técnico em gráfica e comunicação visual.
+Ela deve reconhecer itens como:
+- banner
+- lona
+- adesivo
+- ACM
+- fachada
+- placa
+- PVC
+- PS
+- MDF
+- acrílico
+- letra caixa
+- LED
+- estrutura metálica
+- instalação
+- impressão UV
+- impressão solvente
+- recorte
+- router
+- laser
+
+Criar arquitetura desacoplada:
+- serviço de IA separado
+- interface separada
+- dados salvos no banco
+- histórico das gerações
+
+Criar tabela para registrar:
+- prompt original
+- resposta da IA
+- composição sugerida
+- dúvidas
+- confiança
+- usuário que aprovou
+
+MÓDULO 4 — ORÇAMENTOS
+
+Criar módulo completo de orçamentos com:
+- lista
+- filtros
+- busca
+- criação
+- edição
+- PDF
+- conversão em pedido
+
+Campos:
+- número do orçamento
+- cliente
+- contato
+- vendedor
+- data
+- validade
+- status
+- desconto
+- impostos
+- prazo de produção
+- forma de pagamento
+- observações
+- valor total
+
+Itens do orçamento:
+- produto
+- descrição
+- largura
+- altura
+- área calculada
+- quantidade
+- unidade
+- componentes sugeridos
+- custo calculado
+- preço unitário
+- preço total
+
+Regras:
+- se houver largura e altura, calcular área automaticamente
+- buscar composição do produto
+- calcular custo com base nas matérias-primas
+- aplicar perdas
+- aplicar margem
+- permitir edição manual
+
+Criar botão:
+“Montar item com IA”
+
+Esse botão deve permitir ao usuário descrever o item do cliente e a IA sugerir o item do orçamento usando os produtos e matérias-primas cadastrados.
+
+MÓDULO 5 — PEDIDOS
+
+Criar conversão de orçamento em pedido.
+
+Campos do pedido:
+- número do pedido
+- cliente
+- data
+- status
+- valor total
+- forma de pagamento
+- prazo
+- observações
+
+Status:
+- aguardando produção
+- em produção
+- finalizado
+- entregue
+- cancelado
+
+Itens do pedido devem ser herdados do orçamento.
+
+BANCO DE DADOS
+
+Criar tabelas:
+- raw_materials
+- products
+- product_components
+- ai_product_generations
+- quotes
+- quote_items
+- orders
+- order_items
+
+Adicionar:
+- created_at
+- updated_at
+- deleted_at
+
+Criar índices para busca e relacionamento.
+
+LAYOUT
+
+Manter layout:
+- minimalista
+- moderno
+- profissional
+- focado em desktop
+- organizado
+- com excelente usabilidade
+
+ENTREGA
+
+No final mostrar:
+- tabelas criadas
+- rotas criadas
+- páginas criadas
+- componentes criados
+- fluxo de geração de produto com IA
+- fluxo de orçamento
+- fluxo de pedido
