@@ -750,11 +750,14 @@ export async function registerRoutes(
 
   app.put("/api/products/:id/components", async (req: Request, res: Response) => {
     try {
-      const componentsSchema = z.array(insertProductComponentSchema);
+      const productId = getParam(req, "id");
+      const componentSchemaNoId = insertProductComponentSchema.omit({ productId: true });
+      const componentsSchema = z.array(componentSchemaNoId);
       const bodyData = Array.isArray(req.body) ? req.body : (req.body?.components ?? []);
       const validated = validateBody(componentsSchema, bodyData);
       if ("error" in validated) return res.status(400).json({ error: validated.error });
-      await storage.setProductComponents(getParam(req, "id"), validated.data);
+      const withProductId = validated.data.map(c => ({ ...c, productId }));
+      await storage.setProductComponents(productId, withProductId);
       res.json({ success: true });
     } catch (err) {
       handleError(res, err);
