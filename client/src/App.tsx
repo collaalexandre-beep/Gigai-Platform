@@ -17,6 +17,16 @@ import SellerDetailPage from "@/pages/sellers/detail";
 import SellerFormPage from "@/pages/sellers/form";
 import CrmPage from "@/pages/crm";
 import PaymentTermsPage from "@/pages/payment-terms/index";
+import RawMaterialsPage from "@/pages/raw-materials/index";
+import RawMaterialFormPage from "@/pages/raw-materials/form";
+import ProductsPage from "@/pages/products/index";
+import ProductFormPage from "@/pages/products/form";
+import AiGeneratorPage from "@/pages/products/ai-generator";
+import QuotesPage from "@/pages/quotes/index";
+import QuoteFormPage from "@/pages/quotes/form";
+import QuoteDetailPage from "@/pages/quotes/detail";
+import OrdersPage from "@/pages/orders/index";
+import OrderDetailPage from "@/pages/orders/detail";
 
 function Router() {
   return (
@@ -33,6 +43,19 @@ function Router() {
       <Route path="/sellers/:id" component={SellerDetailPage} />
       <Route path="/crm" component={CrmPage} />
       <Route path="/payment-terms" component={PaymentTermsPage} />
+      <Route path="/raw-materials" component={RawMaterialsPage} />
+      <Route path="/raw-materials/new" component={RawMaterialFormPage} />
+      <Route path="/raw-materials/:id/edit" component={RawMaterialFormPage} />
+      <Route path="/products" component={ProductsPage} />
+      <Route path="/products/ai-generator" component={AiGeneratorPage} />
+      <Route path="/products/new" component={ProductFormPage} />
+      <Route path="/products/:id/edit" component={ProductFormPage} />
+      <Route path="/quotes" component={QuotesPage} />
+      <Route path="/quotes/new" component={QuoteFormPage} />
+      <Route path="/quotes/:id/edit" component={QuoteFormPage} />
+      <Route path="/quotes/:id" component={QuoteDetailPage} />
+      <Route path="/orders" component={OrdersPage} />
+      <Route path="/orders/:id" component={OrderDetailPage} />
       <Route component={NotFound} />
     </Switch>
   );

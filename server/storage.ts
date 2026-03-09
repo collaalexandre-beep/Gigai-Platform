@@ -14,6 +14,14 @@ import {
   companyLookupLogs,
   automationJobs,
   paymentTerms,
+  rawMaterials,
+  products,
+  productComponents,
+  aiProductGenerations,
+  quotes,
+  quoteItems,
+  orders,
+  orderItems,
   type User,
   type InsertUser,
   type Client,
@@ -37,6 +45,22 @@ import {
   type DashboardStats,
   type PaymentTerm,
   type InsertPaymentTerm,
+  type RawMaterial,
+  type InsertRawMaterial,
+  type Product,
+  type InsertProduct,
+  type ProductComponent,
+  type InsertProductComponent,
+  type AiProductGeneration,
+  type InsertAiProductGeneration,
+  type Quote,
+  type InsertQuote,
+  type QuoteItem,
+  type InsertQuoteItem,
+  type Order,
+  type InsertOrder,
+  type OrderItem,
+  type InsertOrderItem,
 } from "@shared/schema";
 import { addDays } from "date-fns";
 
@@ -134,6 +158,65 @@ export interface IStorage {
   createPaymentTerm(term: InsertPaymentTerm): Promise<PaymentTerm>;
   updatePaymentTerm(id: string, data: Partial<InsertPaymentTerm>): Promise<PaymentTerm | undefined>;
   deletePaymentTerm(id: string): Promise<void>;
+
+  // Raw Materials
+  getRawMaterials(params?: {
+    search?: string;
+    categoria?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: RawMaterial[]; total: number }>;
+  getRawMaterial(id: string): Promise<RawMaterial | undefined>;
+  createRawMaterial(data: InsertRawMaterial): Promise<RawMaterial>;
+  updateRawMaterial(id: string, data: Partial<InsertRawMaterial>): Promise<RawMaterial | undefined>;
+  deleteRawMaterial(id: string): Promise<void>;
+
+  // Products
+  getProducts(params?: {
+    search?: string;
+    categoria?: string;
+    tipoCalculo?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: Product[]; total: number }>;
+  getProduct(id: string): Promise<Product | undefined>;
+  createProduct(data: InsertProduct): Promise<Product>;
+  updateProduct(id: string, data: Partial<InsertProduct>): Promise<Product | undefined>;
+  deleteProduct(id: string): Promise<void>;
+
+  // Product Components
+  getProductComponents(productId: string): Promise<ProductComponent[]>;
+  setProductComponents(productId: string, components: InsertProductComponent[]): Promise<void>;
+
+  // AI Product Generations
+  createAiGeneration(data: InsertAiProductGeneration): Promise<AiProductGeneration>;
+  getAiGenerations(): Promise<AiProductGeneration[]>;
+
+  // Quotes
+  getQuotes(params?: {
+    clientId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: Quote[]; total: number }>;
+  getQuote(id: string): Promise<Quote | undefined>;
+  createQuote(data: InsertQuote): Promise<Quote>;
+  updateQuote(id: string, data: Partial<InsertQuote>): Promise<Quote | undefined>;
+  deleteQuote(id: string): Promise<void>;
+  getQuoteItems(quoteId: string): Promise<QuoteItem[]>;
+  setQuoteItems(quoteId: string, items: InsertQuoteItem[]): Promise<void>;
+  convertQuoteToOrder(quoteId: string): Promise<Order>;
+
+  // Orders
+  getOrders(params?: {
+    clientId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: Order[]; total: number }>;
+  getOrder(id: string): Promise<Order | undefined>;
+  updateOrderStatus(id: string, status: string): Promise<Order | undefined>;
+  getOrderItems(orderId: string): Promise<OrderItem[]>;
 }
 
 // ─── DATABASE STORAGE ─────────────────────────────────────────────────────────
@@ -622,6 +705,411 @@ export class DatabaseStorage implements IStorage {
 
   async deletePaymentTerm(id: string): Promise<void> {
     await db.delete(paymentTerms).where(eq(paymentTerms.id, id));
+  }
+
+  // ─── RAW MATERIALS ──────────────────────────────────────────────────────────
+
+  async getRawMaterials(params: {
+    search?: string;
+    categoria?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<{ data: RawMaterial[]; total: number }> {
+    const { search, categoria, page = 1, limit = 25 } = params;
+    const offset = (page - 1) * limit;
+
+    const conditions = [isNull(rawMaterials.deletedAt)];
+
+    if (search) {
+      conditions.push(
+        or(
+          ilike(rawMaterials.nome, `%${search}%`),
+          ilike(rawMaterials.codigoInterno, `%${search}%`),
+          ilike(rawMaterials.descricao, `%${search}%`)
+        )!
+      );
+    }
+
+    if (categoria) {
+      conditions.push(eq(rawMaterials.categoria, categoria as any));
+    }
+
+    const where = and(...conditions);
+
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(rawMaterials)
+      .where(where);
+
+    const data = await db
+      .select()
+      .from(rawMaterials)
+      .where(where)
+      .orderBy(asc(rawMaterials.nome))
+      .limit(limit)
+      .offset(offset);
+
+    return { data, total: Number(countResult.count) };
+  }
+
+  async getRawMaterial(id: string): Promise<RawMaterial | undefined> {
+    const [result] = await db
+      .select()
+      .from(rawMaterials)
+      .where(and(eq(rawMaterials.id, id), isNull(rawMaterials.deletedAt)));
+    return result;
+  }
+
+  async createRawMaterial(data: InsertRawMaterial): Promise<RawMaterial> {
+    const [result] = await db.insert(rawMaterials).values(data).returning();
+    return result;
+  }
+
+  async updateRawMaterial(id: string, data: Partial<InsertRawMaterial>): Promise<RawMaterial | undefined> {
+    const [result] = await db
+      .update(rawMaterials)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(rawMaterials.id, id))
+      .returning();
+    return result;
+  }
+
+  async deleteRawMaterial(id: string): Promise<void> {
+    await db
+      .update(rawMaterials)
+      .set({ deletedAt: new Date() })
+      .where(eq(rawMaterials.id, id));
+  }
+
+  // ─── PRODUCTS ───────────────────────────────────────────────────────────────
+
+  async getProducts(params: {
+    search?: string;
+    categoria?: string;
+    tipoCalculo?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<{ data: Product[]; total: number }> {
+    const { search, categoria, tipoCalculo, page = 1, limit = 25 } = params;
+    const offset = (page - 1) * limit;
+
+    const conditions = [isNull(products.deletedAt)];
+
+    if (search) {
+      conditions.push(ilike(products.nome, `%${search}%`));
+    }
+
+    if (categoria) {
+      conditions.push(eq(products.categoria, categoria));
+    }
+
+    if (tipoCalculo) {
+      conditions.push(eq(products.tipoCalculo, tipoCalculo as any));
+    }
+
+    const where = and(...conditions);
+
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(products)
+      .where(where);
+
+    const data = await db
+      .select()
+      .from(products)
+      .where(where)
+      .orderBy(asc(products.nome))
+      .limit(limit)
+      .offset(offset);
+
+    return { data, total: Number(countResult.count) };
+  }
+
+  async getProduct(id: string): Promise<Product | undefined> {
+    const [result] = await db
+      .select()
+      .from(products)
+      .where(and(eq(products.id, id), isNull(products.deletedAt)));
+    return result;
+  }
+
+  async createProduct(data: InsertProduct): Promise<Product> {
+    const [result] = await db.insert(products).values(data).returning();
+    return result;
+  }
+
+  async updateProduct(id: string, data: Partial<InsertProduct>): Promise<Product | undefined> {
+    const [result] = await db
+      .update(products)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(products.id, id))
+      .returning();
+    return result;
+  }
+
+  async deleteProduct(id: string): Promise<void> {
+    await db
+      .update(products)
+      .set({ deletedAt: new Date() })
+      .where(eq(products.id, id));
+  }
+
+  // ─── PRODUCT COMPONENTS ──────────────────────────────────────────────────────
+
+  async getProductComponents(productId: string): Promise<ProductComponent[]> {
+    return db
+      .select()
+      .from(productComponents)
+      .where(eq(productComponents.productId, productId))
+      .orderBy(asc(productComponents.ordem));
+  }
+
+  async setProductComponents(productId: string, components: InsertProductComponent[]): Promise<void> {
+    await db.transaction(async (tx) => {
+      await tx.delete(productComponents).where(eq(productComponents.productId, productId));
+      if (components.length > 0) {
+        await tx.insert(productComponents).values(
+          components.map((c) => ({ ...c, productId }))
+        );
+      }
+    });
+  }
+
+  // ─── AI PRODUCT GENERATIONS ───────────────────────────────────────────────────
+
+  async createAiGeneration(data: InsertAiProductGeneration): Promise<AiProductGeneration> {
+    const [result] = await db.insert(aiProductGenerations).values(data).returning();
+    return result;
+  }
+
+  async getAiGenerations(): Promise<AiProductGeneration[]> {
+    return db
+      .select()
+      .from(aiProductGenerations)
+      .orderBy(desc(aiProductGenerations.createdAt))
+      .limit(50);
+  }
+
+  // ─── QUOTES ────────────────────────────────────────────────────────────────
+
+  async getQuotes(params: {
+    clientId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<{ data: Quote[]; total: number }> {
+    const { clientId, status, page = 1, limit = 25 } = params;
+    const offset = (page - 1) * limit;
+    const conditions = [isNull(quotes.deletedAt)];
+
+    if (clientId) conditions.push(eq(quotes.clientId, clientId));
+    if (status) conditions.push(eq(quotes.status, status as any));
+
+    const where = and(...conditions);
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(quotes)
+      .where(where);
+
+    const data = await db
+      .select()
+      .from(quotes)
+      .where(where)
+      .orderBy(desc(quotes.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    return { data, total: Number(countResult.count) };
+  }
+
+  async getQuote(id: string): Promise<Quote | undefined> {
+    const [quote] = await db
+      .select()
+      .from(quotes)
+      .where(and(eq(quotes.id, id), isNull(quotes.deletedAt)));
+    return quote;
+  }
+
+  async createQuote(data: InsertQuote): Promise<Quote> {
+    const year = new Date().getFullYear();
+    const [lastQuote] = await db
+      .select()
+      .from(quotes)
+      .where(sql`extract(year from ${quotes.createdAt}) = ${year}`)
+      .orderBy(desc(quotes.createdAt))
+      .limit(1);
+
+    let nextNumber = 1;
+    if (lastQuote && lastQuote.numero) {
+      const parts = lastQuote.numero.split("-");
+      if (parts.length === 3) {
+        nextNumber = parseInt(parts[2]) + 1;
+      }
+    }
+    const numero = `ORC-${year}-${nextNumber.toString().padStart(4, "0")}`;
+
+    const [result] = await db.insert(quotes).values({ ...data, numero }).returning();
+    return result;
+  }
+
+  async updateQuote(id: string, data: Partial<InsertQuote>): Promise<Quote | undefined> {
+    const [result] = await db
+      .update(quotes)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(quotes.id, id))
+      .returning();
+    return result;
+  }
+
+  async deleteQuote(id: string): Promise<void> {
+    await db.update(quotes).set({ deletedAt: new Date() }).where(eq(quotes.id, id));
+  }
+
+  async getQuoteItems(quoteId: string): Promise<QuoteItem[]> {
+    return db
+      .select()
+      .from(quoteItems)
+      .where(eq(quoteItems.quoteId, quoteId))
+      .orderBy(asc(quoteItems.ordem));
+  }
+
+  async setQuoteItems(quoteId: string, items: InsertQuoteItem[]): Promise<void> {
+    await db.transaction(async (tx) => {
+      await tx.delete(quoteItems).where(eq(quoteItems.quoteId, quoteId));
+      if (items.length > 0) {
+        await tx.insert(quoteItems).values(
+          items.map((item, index) => ({ ...item, quoteId, ordem: item.ordem ?? index }))
+        );
+      }
+    });
+  }
+
+  async convertQuoteToOrder(quoteId: string): Promise<Order> {
+    return await db.transaction(async (tx) => {
+      const [quote] = await tx
+        .select()
+        .from(quotes)
+        .where(and(eq(quotes.id, quoteId), isNull(quotes.deletedAt)));
+      if (!quote) throw new Error("Orçamento não encontrado");
+
+      const year = new Date().getFullYear();
+      const [lastOrder] = await tx
+        .select()
+        .from(orders)
+        .where(sql`extract(year from ${orders.createdAt}) = ${year}`)
+        .orderBy(desc(orders.createdAt))
+        .limit(1);
+
+      let nextNumber = 1;
+      if (lastOrder && lastOrder.numero) {
+        const parts = lastOrder.numero.split("-");
+        if (parts.length === 3) {
+          nextNumber = parseInt(parts[2]) + 1;
+        }
+      }
+      const numero = `PED-${year}-${nextNumber.toString().padStart(4, "0")}`;
+
+      const [order] = await tx
+        .insert(orders)
+        .values({
+          numero,
+          quoteId,
+          clientId: quote.clientId!,
+          data: new Date().toISOString().split("T")[0],
+          status: "aguardando_producao",
+          valorTotal: quote.valorTotal,
+          prazosPagamentoId: quote.prazosPagamentoId,
+          formaPagamento: quote.formaPagamento,
+          observacoes: quote.observacoes,
+        })
+        .returning();
+
+      const items = await tx
+        .select()
+        .from(quoteItems)
+        .where(eq(quoteItems.quoteId, quoteId))
+        .orderBy(asc(quoteItems.ordem));
+
+      if (items.length > 0) {
+        await tx.insert(orderItems).values(
+          items.map((item) => ({
+            orderId: order.id,
+            productId: item.productId,
+            descricao: item.descricao,
+            largura: item.largura,
+            altura: item.altura,
+            area: item.area,
+            quantidade: item.quantidade,
+            unidade: item.unidade,
+            precoUnitario: item.precoUnitario,
+            precoTotal: item.precoTotal,
+            observacoes: item.observacoes,
+            ordem: item.ordem,
+          }))
+        );
+      }
+
+      await tx.update(quotes).set({ status: "aprovado" }).where(eq(quotes.id, quoteId));
+
+      return order;
+    });
+  }
+
+  // ─── ORDERS ────────────────────────────────────────────────────────────────
+
+  async getOrders(params: {
+    clientId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<{ data: Order[]; total: number }> {
+    const { clientId, status, page = 1, limit = 25 } = params;
+    const offset = (page - 1) * limit;
+    const conditions = [isNull(orders.deletedAt)];
+
+    if (clientId) conditions.push(eq(orders.clientId, clientId));
+    if (status) conditions.push(eq(orders.status, status as any));
+
+    const where = and(...conditions);
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(orders)
+      .where(where);
+
+    const data = await db
+      .select()
+      .from(orders)
+      .where(where)
+      .orderBy(desc(orders.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    return { data, total: Number(countResult.count) };
+  }
+
+  async getOrder(id: string): Promise<Order | undefined> {
+    const [order] = await db
+      .select()
+      .from(orders)
+      .where(and(eq(orders.id, id), isNull(orders.deletedAt)));
+    return order;
+  }
+
+  async updateOrderStatus(id: string, status: string): Promise<Order | undefined> {
+    const [result] = await db
+      .update(orders)
+      .set({ status: status as any, updatedAt: new Date() })
+      .where(eq(orders.id, id))
+      .returning();
+    return result;
+  }
+
+  async getOrderItems(orderId: string): Promise<OrderItem[]> {
+    return db
+      .select()
+      .from(orderItems)
+      .where(eq(orderItems.orderId, orderId))
+      .orderBy(asc(orderItems.ordem));
   }
 }
 

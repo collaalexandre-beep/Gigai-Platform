@@ -20,6 +20,10 @@ import {
   Printer,
   ChevronRight,
   Clock,
+  FlaskConical,
+  Box,
+  FileText,
+  Package,
 } from "lucide-react";
 
 const navItems = [
@@ -27,6 +31,16 @@ const navItems = [
   { title: "Clientes", url: "/clients", icon: Users },
   { title: "Vendedores", url: "/sellers", icon: UserCheck },
   { title: "CRM", url: "/crm", icon: Kanban },
+];
+
+const comercialItems = [
+  { title: "Orçamentos", url: "/quotes", icon: FileText },
+  { title: "Pedidos", url: "/orders", icon: Package },
+];
+
+const cadastroItems = [
+  { title: "Matérias-primas", url: "/raw-materials", icon: FlaskConical },
+  { title: "Produtos", url: "/products", icon: Box },
 ];
 
 const configItems = [
@@ -39,6 +53,33 @@ export function AppSidebar() {
   const isActive = (url: string) => {
     if (url === "/dashboard") return location === "/dashboard" || location === "/";
     return location.startsWith(url);
+  };
+
+  const renderMenuItems = (items: { title: string, url: string, icon: any }[]) => {
+    return items.map((item) => {
+      const active = isActive(item.url);
+      return (
+        <SidebarMenuItem key={item.title}>
+          <SidebarMenuButton
+            asChild
+            className={
+              active
+                ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                : "text-sidebar-foreground"
+            }
+            data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, "-")}`}
+          >
+            <Link href={item.url} className="flex items-center gap-2.5">
+              <item.icon className="w-4 h-4 flex-shrink-0" />
+              <span className="text-sm">{item.title}</span>
+              {active && (
+                <ChevronRight className="w-3 h-3 ml-auto text-muted-foreground" />
+              )}
+            </Link>
+          </SidebarMenuButton>
+        </SidebarMenuItem>
+      );
+    });
   };
 
   return (
@@ -62,30 +103,29 @@ export function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => {
-                const active = isActive(item.url);
-                return (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton
-                      asChild
-                      className={
-                        active
-                          ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                          : "text-sidebar-foreground"
-                      }
-                      data-testid={`nav-${item.title.toLowerCase()}`}
-                    >
-                      <Link href={item.url} className="flex items-center gap-2.5">
-                        <item.icon className="w-4 h-4 flex-shrink-0" />
-                        <span className="text-sm">{item.title}</span>
-                        {active && (
-                          <ChevronRight className="w-3 h-3 ml-auto text-muted-foreground" />
-                        )}
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              {renderMenuItems(navItems)}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup className="mt-4">
+          <SidebarGroupLabel className="text-xs text-muted-foreground font-medium px-2 mb-1">
+            Comercial
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {renderMenuItems(comercialItems)}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup className="mt-4">
+          <SidebarGroupLabel className="text-xs text-muted-foreground font-medium px-2 mb-1">
+            Cadastros
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {renderMenuItems(cadastroItems)}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
@@ -96,30 +136,7 @@ export function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {configItems.map((item) => {
-                const active = isActive(item.url);
-                return (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton
-                      asChild
-                      className={
-                        active
-                          ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                          : "text-sidebar-foreground"
-                      }
-                      data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, "-")}`}
-                    >
-                      <Link href={item.url} className="flex items-center gap-2.5">
-                        <item.icon className="w-4 h-4 flex-shrink-0" />
-                        <span className="text-sm">{item.title}</span>
-                        {active && (
-                          <ChevronRight className="w-3 h-3 ml-auto text-muted-foreground" />
-                        )}
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              {renderMenuItems(configItems)}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

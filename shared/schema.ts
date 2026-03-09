@@ -567,6 +567,302 @@ export const automationJobs = pgTable(
   ]
 );
 
+// ─── RAW MATERIALS ───────────────────────────────────────────────────────────
+
+export const rawMaterialCategoryEnum = pgEnum("raw_material_category", [
+  "chapas",
+  "impressao",
+  "estruturas",
+  "iluminacao",
+  "fixacao",
+  "adesivos",
+  "tintas",
+  "acabamento",
+  "instalacao",
+  "servicos_terceirizados",
+  "outros",
+]);
+
+export const rawMaterials = pgTable(
+  "raw_materials",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    nome: text("nome").notNull(),
+    categoria: rawMaterialCategoryEnum("categoria").notNull(),
+    codigoInterno: text("codigo_interno"),
+    descricao: text("descricao"),
+    unidadeCompra: text("unidade_compra").notNull(),
+    unidadeUso: text("unidade_uso"),
+    custoUnitario: decimal("custo_unitario", { precision: 12, scale: 4 }),
+    perdaPadrao: decimal("perda_padrao", { precision: 5, scale: 2 }),
+    fornecedor: text("fornecedor"),
+    marca: text("marca"),
+    observacoes: text("observacoes"),
+    ativo: boolean("ativo").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at"),
+  },
+  (t) => [
+    index("idx_raw_materials_categoria").on(t.categoria),
+    index("idx_raw_materials_deleted_at").on(t.deletedAt),
+  ]
+);
+
+export const insertRawMaterialSchema = createInsertSchema(rawMaterials).omit({
+  id: true, createdAt: true, updatedAt: true, deletedAt: true,
+});
+export type InsertRawMaterial = z.infer<typeof insertRawMaterialSchema>;
+export type RawMaterial = typeof rawMaterials.$inferSelect;
+
+// ─── PRODUCTS ─────────────────────────────────────────────────────────────────
+
+export const calcTypeEnum = pgEnum("calc_type", [
+  "m2",
+  "unidade",
+  "metro_linear",
+  "perimetro",
+  "projeto",
+  "fixo_variavel",
+]);
+
+export const products = pgTable(
+  "products",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    nome: text("nome").notNull(),
+    categoria: text("categoria").notNull(),
+    descricaoComercial: text("descricao_comercial"),
+    descricaoTecnica: text("descricao_tecnica"),
+    unidadeVenda: text("unidade_venda").notNull(),
+    tipoCalculo: calcTypeEnum("tipo_calculo").notNull(),
+    aceitaMedidasVariaveis: boolean("aceita_medidas_variaveis").notNull().default(true),
+    requerInstalacao: boolean("requer_instalacao").notNull().default(false),
+    requerArte: boolean("requer_arte").notNull().default(false),
+    observacoesInternas: text("observacoes_internas"),
+    ativo: boolean("ativo").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at"),
+  },
+  (t) => [
+    index("idx_products_categoria").on(t.categoria),
+    index("idx_products_deleted_at").on(t.deletedAt),
+  ]
+);
+
+export const insertProductSchema = createInsertSchema(products).omit({
+  id: true, createdAt: true, updatedAt: true, deletedAt: true,
+});
+export type InsertProduct = z.infer<typeof insertProductSchema>;
+export type Product = typeof products.$inferSelect;
+
+// ─── PRODUCT COMPONENTS ───────────────────────────────────────────────────────
+
+export const productComponents = pgTable(
+  "product_components",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    productId: varchar("product_id").notNull().references(() => products.id, { onDelete: "cascade" }),
+    rawMaterialId: varchar("raw_material_id").references(() => rawMaterials.id),
+    tipoConsumo: text("tipo_consumo"),
+    formula: text("formula"),
+    quantidadeBase: decimal("quantidade_base", { precision: 12, scale: 4 }),
+    perdaAdicional: decimal("perda_adicional", { precision: 5, scale: 2 }),
+    opcional: boolean("opcional").notNull().default(false),
+    observacaoTecnica: text("observacao_tecnica"),
+    ordem: integer("ordem").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_product_components_product").on(t.productId),
+  ]
+);
+
+export const insertProductComponentSchema = createInsertSchema(productComponents).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertProductComponent = z.infer<typeof insertProductComponentSchema>;
+export type ProductComponent = typeof productComponents.$inferSelect;
+
+// ─── AI PRODUCT GENERATIONS ───────────────────────────────────────────────────
+
+export const aiProductGenerations = pgTable(
+  "ai_product_generations",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    promptOriginal: text("prompt_original").notNull(),
+    respostaRaw: text("resposta_raw"),
+    composicaoSugerida: jsonb("composicao_sugerida"),
+    duvidas: text("duvidas"),
+    confianca: integer("confianca"),
+    aprovadoPor: varchar("aprovado_por").references(() => users.id),
+    productIdGerado: varchar("product_id_gerado").references(() => products.id),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  }
+);
+
+export const insertAiProductGenerationSchema = createInsertSchema(aiProductGenerations).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertAiProductGeneration = z.infer<typeof insertAiProductGenerationSchema>;
+export type AiProductGeneration = typeof aiProductGenerations.$inferSelect;
+
+// ─── QUOTES ───────────────────────────────────────────────────────────────────
+
+export const quoteStatusEnum = pgEnum("quote_status", [
+  "rascunho",
+  "enviado",
+  "aprovado",
+  "reprovado",
+  "cancelado",
+]);
+
+export const quotes = pgTable(
+  "quotes",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    numero: text("numero").unique().notNull(),
+    clientId: varchar("client_id").notNull().references(() => clients.id),
+    contactId: varchar("contact_id").references(() => clientContacts.id),
+    sellerId: varchar("seller_id").references(() => sellers.id),
+    data: date("data").notNull(),
+    validade: date("validade"),
+    status: quoteStatusEnum("status").notNull().default("rascunho"),
+    desconto: decimal("desconto", { precision: 5, scale: 2 }).default("0"),
+    impostos: decimal("impostos", { precision: 5, scale: 2 }).default("0"),
+    prazoProd: text("prazo_prod"),
+    prazosPagamentoId: varchar("prazos_pagamento_id").references(() => paymentTerms.id),
+    formaPagamento: text("forma_pagamento"),
+    observacoes: text("observacoes"),
+    valorTotal: decimal("valor_total", { precision: 14, scale: 2 }).default("0"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at"),
+  },
+  (t) => [
+    index("idx_quotes_client").on(t.clientId),
+    index("idx_quotes_status").on(t.status),
+    index("idx_quotes_numero").on(t.numero),
+    index("idx_quotes_deleted_at").on(t.deletedAt),
+  ]
+);
+
+export const insertQuoteSchema = createInsertSchema(quotes).omit({
+  id: true, createdAt: true, updatedAt: true, deletedAt: true,
+});
+export type InsertQuote = z.infer<typeof insertQuoteSchema>;
+export type Quote = typeof quotes.$inferSelect;
+
+// ─── QUOTE ITEMS ──────────────────────────────────────────────────────────────
+
+export const quoteItems = pgTable(
+  "quote_items",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    quoteId: varchar("quote_id").notNull().references(() => quotes.id, { onDelete: "cascade" }),
+    productId: varchar("product_id").references(() => products.id),
+    descricao: text("descricao").notNull(),
+    largura: decimal("largura", { precision: 10, scale: 3 }),
+    altura: decimal("altura", { precision: 10, scale: 3 }),
+    area: decimal("area", { precision: 12, scale: 4 }),
+    quantidade: decimal("quantidade", { precision: 12, scale: 3 }).notNull().default("1"),
+    unidade: text("unidade"),
+    custoCalculado: decimal("custo_calculado", { precision: 14, scale: 4 }),
+    precoUnitario: decimal("preco_unitario", { precision: 14, scale: 4 }).notNull().default("0"),
+    precoTotal: decimal("preco_total", { precision: 14, scale: 4 }).notNull().default("0"),
+    observacoes: text("observacoes"),
+    ordem: integer("ordem").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_quote_items_quote").on(t.quoteId),
+  ]
+);
+
+export const insertQuoteItemSchema = createInsertSchema(quoteItems).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertQuoteItem = z.infer<typeof insertQuoteItemSchema>;
+export type QuoteItem = typeof quoteItems.$inferSelect;
+
+// ─── ORDERS ───────────────────────────────────────────────────────────────────
+
+export const orderStatusEnum = pgEnum("order_status", [
+  "aguardando_producao",
+  "em_producao",
+  "finalizado",
+  "entregue",
+  "cancelado",
+]);
+
+export const orders = pgTable(
+  "orders",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    numero: text("numero").unique().notNull(),
+    quoteId: varchar("quote_id").references(() => quotes.id),
+    clientId: varchar("client_id").notNull().references(() => clients.id),
+    data: date("data").notNull(),
+    status: orderStatusEnum("status").notNull().default("aguardando_producao"),
+    valorTotal: decimal("valor_total", { precision: 14, scale: 2 }).default("0"),
+    prazosPagamentoId: varchar("prazos_pagamento_id").references(() => paymentTerms.id),
+    formaPagamento: text("forma_pagamento"),
+    prazoEntrega: date("prazo_entrega"),
+    observacoes: text("observacoes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at"),
+  },
+  (t) => [
+    index("idx_orders_client").on(t.clientId),
+    index("idx_orders_status").on(t.status),
+    index("idx_orders_numero").on(t.numero),
+    index("idx_orders_deleted_at").on(t.deletedAt),
+  ]
+);
+
+export const insertOrderSchema = createInsertSchema(orders).omit({
+  id: true, createdAt: true, updatedAt: true, deletedAt: true,
+});
+export type InsertOrder = z.infer<typeof insertOrderSchema>;
+export type Order = typeof orders.$inferSelect;
+
+// ─── ORDER ITEMS ──────────────────────────────────────────────────────────────
+
+export const orderItems = pgTable(
+  "order_items",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    orderId: varchar("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
+    productId: varchar("product_id").references(() => products.id),
+    descricao: text("descricao").notNull(),
+    largura: decimal("largura", { precision: 10, scale: 3 }),
+    altura: decimal("altura", { precision: 10, scale: 3 }),
+    area: decimal("area", { precision: 12, scale: 4 }),
+    quantidade: decimal("quantidade", { precision: 12, scale: 3 }).notNull().default("1"),
+    unidade: text("unidade"),
+    precoUnitario: decimal("preco_unitario", { precision: 14, scale: 4 }).notNull().default("0"),
+    precoTotal: decimal("preco_total", { precision: 14, scale: 4 }).notNull().default("0"),
+    observacoes: text("observacoes"),
+    ordem: integer("ordem").notNull().default(0),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_order_items_order").on(t.orderId),
+  ]
+);
+
+export const insertOrderItemSchema = createInsertSchema(orderItems).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertOrderItem = z.infer<typeof insertOrderItemSchema>;
+export type OrderItem = typeof orderItems.$inferSelect;
+
 // ─── DASHBOARD STATS (view types) ────────────────────────────────────────────
 
 export interface DashboardStats {

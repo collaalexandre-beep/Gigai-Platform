@@ -13,7 +13,18 @@ import {
   insertTaskSchema,
   insertTagSchema,
   insertPaymentTermSchema,
+  insertRawMaterialSchema,
+  insertProductSchema,
+  insertProductComponentSchema,
+  insertQuoteSchema,
+  insertQuoteItemSchema,
+  insertOrderSchema,
+  insertOrderItemSchema,
+  insertAiProductGenerationSchema,
+  type InsertQuote,
+  type InsertOrder,
 } from "@shared/schema";
+import { generateProductSuggestion } from "./ai";
 
 function handleError(res: Response, err: unknown) {
   console.error("[API Error]", err);
@@ -47,6 +58,18 @@ function validateBody<T>(
   return { data: result.data };
 }
 
+function getParam(req: Request, name: string): string {
+  const val = req.params[name];
+  if (Array.isArray(val)) return val[0];
+  return val;
+}
+
+function getQuery(req: Request, name: string): string | undefined {
+  const val = req.query[name];
+  if (Array.isArray(val)) return val[0] as string;
+  return val as string | undefined;
+}
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -55,7 +78,7 @@ export async function registerRoutes(
 
   app.get("/api/cnpj/:cnpj", async (req: Request, res: Response) => {
     try {
-      const { cnpj } = req.params;
+      const cnpj = getParam(req, "cnpj");
       const clean = cnpj.replace(/\D/g, "");
 
       if (!validateCnpj(clean)) {
@@ -93,14 +116,13 @@ export async function registerRoutes(
 
   app.get("/api/clients", async (req: Request, res: Response) => {
     try {
-      const { search, status, page, limit, orderBy, orderDir } = req.query;
       const result = await storage.getClients({
-        search: search as string,
-        status: status as string,
-        page: page ? Number(page) : 1,
-        limit: limit ? Number(limit) : 25,
-        orderBy: orderBy as string,
-        orderDir: orderDir as string,
+        search: getQuery(req, "search"),
+        status: getQuery(req, "status"),
+        page: getQuery(req, "page") ? Number(getQuery(req, "page")) : 1,
+        limit: getQuery(req, "limit") ? Number(getQuery(req, "limit")) : 25,
+        orderBy: getQuery(req, "orderBy"),
+        orderDir: getQuery(req, "orderDir"),
       });
       res.json(result);
     } catch (err) {
@@ -110,7 +132,7 @@ export async function registerRoutes(
 
   app.get("/api/clients/:id", async (req: Request, res: Response) => {
     try {
-      const client = await storage.getClient(req.params.id);
+      const client = await storage.getClient(getParam(req, "id"));
       if (!client) return res.status(404).json({ error: "Cliente não encontrado" });
       res.json(client);
     } catch (err) {
@@ -124,7 +146,7 @@ export async function registerRoutes(
       if ("error" in validated)
         return res.status(400).json({ error: validated.error });
 
-      const client = await storage.createClient(validated.data);
+      const client = await storage.createClient(validated.data as any);
 
       await storage.addTimelineEvent({
         clientId: client.id,
@@ -156,7 +178,7 @@ export async function registerRoutes(
       if ("error" in validated)
         return res.status(400).json({ error: validated.error });
 
-      const client = await storage.updateClient(req.params.id, validated.data);
+      const client = await storage.updateClient(getParam(req, "id"), validated.data as any);
       if (!client) return res.status(404).json({ error: "Cliente não encontrado" });
 
       if (validated.data.status) {
@@ -177,7 +199,7 @@ export async function registerRoutes(
 
   app.delete("/api/clients/:id", async (req: Request, res: Response) => {
     try {
-      await storage.softDeleteClient(req.params.id);
+      await storage.softDeleteClient(getParam(req, "id"));
       res.json({ success: true });
     } catch (err) {
       handleError(res, err);
@@ -188,7 +210,7 @@ export async function registerRoutes(
 
   app.get("/api/clients/:clientId/contacts", async (req: Request, res: Response) => {
     try {
-      const contacts = await storage.getContacts(req.params.clientId);
+      const contacts = await storage.getContacts(getParam(req, "clientId"));
       res.json(contacts);
     } catch (err) {
       handleError(res, err);
@@ -197,24 +219,20 @@ export async function registerRoutes(
 
   app.post("/api/clients/:clientId/contacts", async (req: Request, res: Response) => {
     try {
-      const body = { ...req.body, clientId: req.params.clientId };
+      const body = { ...req.body, clientId: getParam(req, "clientId") };
       const validated = validateBody(insertContactSchema, body);
       if ("error" in validated)
         return res.status(400).json({ error: validated.error });
 
-      const contact = await storage.createContact(validated.data);
+      const contact = await storage.createContact(validated.data as any);
 
       await storage.addTimelineEvent({
-        clientId: req.params.clientId,
+        clientId: getParam(req, "clientId"),
         eventType: "contato_adicionado",
         titulo: "Contato adicionado",
         descricao: `${contact.nomeCompleto} foi adicionado como contato`,
         metadata: { cargo: contact.cargo },
       });
-
-      if (contact.instagramHandle && contact.followDesired) {
-        // Queue automation job
-      }
 
       res.status(201).json(contact);
     } catch (err) {
@@ -229,7 +247,7 @@ export async function registerRoutes(
       if ("error" in validated)
         return res.status(400).json({ error: validated.error });
 
-      const contact = await storage.updateContact(req.params.id, validated.data);
+      const contact = await storage.updateContact(getParam(req, "id"), validated.data as any);
       if (!contact) return res.status(404).json({ error: "Contato não encontrado" });
 
       if (contact.clientId) {
@@ -249,7 +267,7 @@ export async function registerRoutes(
 
   app.delete("/api/contacts/:id", async (req: Request, res: Response) => {
     try {
-      const contact = await storage.getContact(req.params.id);
+      const contact = await storage.getContact(getParam(req, "id"));
       if (contact?.clientId) {
         await storage.addTimelineEvent({
           clientId: contact.clientId,
@@ -258,7 +276,7 @@ export async function registerRoutes(
           descricao: `${contact.nomeCompleto} foi removido`,
         });
       }
-      await storage.softDeleteContact(req.params.id);
+      await storage.softDeleteContact(getParam(req, "id"));
       res.json({ success: true });
     } catch (err) {
       handleError(res, err);
@@ -269,12 +287,11 @@ export async function registerRoutes(
 
   app.get("/api/sellers", async (req: Request, res: Response) => {
     try {
-      const { search, status, page, limit } = req.query;
       const result = await storage.getSellers({
-        search: search as string,
-        status: status as string,
-        page: page ? Number(page) : 1,
-        limit: limit ? Number(limit) : 25,
+        search: getQuery(req, "search"),
+        status: getQuery(req, "status"),
+        page: getQuery(req, "page") ? Number(getQuery(req, "page")) : 1,
+        limit: getQuery(req, "limit") ? Number(getQuery(req, "limit")) : 25,
       });
       res.json(result);
     } catch (err) {
@@ -284,9 +301,9 @@ export async function registerRoutes(
 
   app.get("/api/sellers/:id", async (req: Request, res: Response) => {
     try {
-      const seller = await storage.getSeller(req.params.id);
+      const seller = await storage.getSeller(getParam(req, "id"));
       if (!seller) return res.status(404).json({ error: "Vendedor não encontrado" });
-      const bankAccounts = await storage.getSellerBankAccounts(req.params.id);
+      const bankAccounts = await storage.getSellerBankAccounts(getParam(req, "id"));
       res.json({ ...seller, bankAccounts });
     } catch (err) {
       handleError(res, err);
@@ -313,7 +330,7 @@ export async function registerRoutes(
       if ("error" in validated)
         return res.status(400).json({ error: validated.error });
 
-      const seller = await storage.updateSeller(req.params.id, validated.data);
+      const seller = await storage.updateSeller(getParam(req, "id"), validated.data);
       if (!seller) return res.status(404).json({ error: "Vendedor não encontrado" });
       res.json(seller);
     } catch (err) {
@@ -323,7 +340,7 @@ export async function registerRoutes(
 
   app.delete("/api/sellers/:id", async (req: Request, res: Response) => {
     try {
-      await storage.softDeleteSeller(req.params.id);
+      await storage.softDeleteSeller(getParam(req, "id"));
       res.json({ success: true });
     } catch (err) {
       handleError(res, err);
@@ -334,7 +351,7 @@ export async function registerRoutes(
 
   app.post("/api/sellers/:sellerId/bank-accounts", async (req: Request, res: Response) => {
     try {
-      const body = { ...req.body, sellerId: req.params.sellerId };
+      const body = { ...req.body, sellerId: getParam(req, "sellerId") };
       const validated = validateBody(insertSellerBankAccountSchema, body);
       if ("error" in validated)
         return res.status(400).json({ error: validated.error });
@@ -353,7 +370,7 @@ export async function registerRoutes(
       if ("error" in validated)
         return res.status(400).json({ error: validated.error });
 
-      const account = await storage.updateSellerBankAccount(req.params.id, validated.data);
+      const account = await storage.updateSellerBankAccount(getParam(req, "id"), validated.data);
       res.json(account);
     } catch (err) {
       handleError(res, err);
@@ -362,7 +379,7 @@ export async function registerRoutes(
 
   app.delete("/api/bank-accounts/:id", async (req: Request, res: Response) => {
     try {
-      await storage.deleteSellerBankAccount(req.params.id);
+      await storage.deleteSellerBankAccount(getParam(req, "id"));
       res.json({ success: true });
     } catch (err) {
       handleError(res, err);
@@ -373,7 +390,7 @@ export async function registerRoutes(
 
   app.get("/api/clients/:clientId/sellers", async (req: Request, res: Response) => {
     try {
-      const sellers = await storage.getClientSellers(req.params.clientId);
+      const sellers = await storage.getClientSellers(getParam(req, "clientId"));
       res.json(sellers);
     } catch (err) {
       handleError(res, err);
@@ -382,7 +399,7 @@ export async function registerRoutes(
 
   app.post("/api/clients/:clientId/sellers", async (req: Request, res: Response) => {
     try {
-      const body = { ...req.body, clientId: req.params.clientId };
+      const body = { ...req.body, clientId: getParam(req, "clientId") };
       const validated = validateBody(insertClientSellerLinkSchema, body);
       if ("error" in validated)
         return res.status(400).json({ error: validated.error });
@@ -390,7 +407,7 @@ export async function registerRoutes(
       const link = await storage.linkClientSeller(validated.data);
 
       await storage.addTimelineEvent({
-        clientId: req.params.clientId,
+        clientId: getParam(req, "clientId"),
         eventType: "vendedor_vinculado",
         titulo: "Vendedor vinculado",
         descricao: "Novo vendedor vinculado ao cliente",
@@ -405,9 +422,9 @@ export async function registerRoutes(
 
   app.delete("/api/clients/:clientId/sellers/:sellerId", async (req: Request, res: Response) => {
     try {
-      await storage.unlinkClientSeller(req.params.clientId, req.params.sellerId);
+      await storage.unlinkClientSeller(getParam(req, "clientId"), getParam(req, "sellerId"));
       await storage.addTimelineEvent({
-        clientId: req.params.clientId,
+        clientId: getParam(req, "clientId"),
         eventType: "vendedor_desvinculado",
         titulo: "Vendedor desvinculado",
         descricao: "Vendedor removido do cliente",
@@ -422,7 +439,7 @@ export async function registerRoutes(
 
   app.get("/api/clients/:clientId/interactions", async (req: Request, res: Response) => {
     try {
-      const interactions = await storage.getInteractions(req.params.clientId);
+      const interactions = await storage.getInteractions(getParam(req, "clientId"));
       res.json(interactions);
     } catch (err) {
       handleError(res, err);
@@ -431,19 +448,19 @@ export async function registerRoutes(
 
   app.post("/api/clients/:clientId/interactions", async (req: Request, res: Response) => {
     try {
-      const body = { ...req.body, clientId: req.params.clientId };
+      const body = { ...req.body, clientId: getParam(req, "clientId") };
       const validated = validateBody(insertInteractionSchema, body);
       if ("error" in validated)
         return res.status(400).json({ error: validated.error });
 
-      const interaction = await storage.createInteraction(validated.data);
+      const interaction = await storage.createInteraction(validated.data as any);
 
-      await storage.updateClient(req.params.clientId, {
+      await storage.updateClient(getParam(req, "clientId"), {
         dataUltimoContato: new Date(),
-      });
+      } as any);
 
       await storage.addTimelineEvent({
-        clientId: req.params.clientId,
+        clientId: getParam(req, "clientId"),
         eventType: "interacao_registrada",
         titulo: `Interação: ${interaction.tipo}`,
         descricao: interaction.descricao.slice(0, 120),
@@ -458,7 +475,7 @@ export async function registerRoutes(
 
   app.delete("/api/interactions/:id", async (req: Request, res: Response) => {
     try {
-      await storage.deleteInteraction(req.params.id);
+      await storage.deleteInteraction(getParam(req, "id"));
       res.json({ success: true });
     } catch (err) {
       handleError(res, err);
@@ -469,12 +486,11 @@ export async function registerRoutes(
 
   app.get("/api/tasks", async (req: Request, res: Response) => {
     try {
-      const { clientId, status, page, limit } = req.query;
       const result = await storage.getTasks({
-        clientId: clientId as string,
-        status: status as string,
-        page: page ? Number(page) : 1,
-        limit: limit ? Number(limit) : 25,
+        clientId: getQuery(req, "clientId"),
+        status: getQuery(req, "status"),
+        page: getQuery(req, "page") ? Number(getQuery(req, "page")) : 1,
+        limit: getQuery(req, "limit") ? Number(getQuery(req, "limit")) : 25,
       });
       res.json(result);
     } catch (err) {
@@ -488,7 +504,7 @@ export async function registerRoutes(
       if ("error" in validated)
         return res.status(400).json({ error: validated.error });
 
-      const task = await storage.createTask(validated.data);
+      const task = await storage.createTask(validated.data as any);
 
       if (task.clientId) {
         await storage.addTimelineEvent({
@@ -514,10 +530,10 @@ export async function registerRoutes(
         return res.status(400).json({ error: validated.error });
 
       if (validated.data.status === "concluida") {
-        validated.data = { ...validated.data, dataConclusao: new Date() };
+        (validated.data as any).dataConclusao = new Date();
       }
 
-      const task = await storage.updateTask(req.params.id, validated.data);
+      const task = await storage.updateTask(getParam(req, "id"), validated.data as any);
       if (!task) return res.status(404).json({ error: "Tarefa não encontrada" });
 
       if (task.status === "concluida" && task.clientId) {
@@ -563,7 +579,7 @@ export async function registerRoutes(
 
   app.get("/api/clients/:clientId/timeline", async (req: Request, res: Response) => {
     try {
-      const timeline = await storage.getTimeline(req.params.clientId);
+      const timeline = await storage.getTimeline(getParam(req, "clientId"));
       res.json(timeline);
     } catch (err) {
       handleError(res, err);
@@ -597,7 +613,7 @@ export async function registerRoutes(
       const partial = insertPaymentTermSchema.partial();
       const validated = validateBody(partial, req.body);
       if ("error" in validated) return res.status(400).json({ error: validated.error });
-      const term = await storage.updatePaymentTerm(req.params.id, validated.data);
+      const term = await storage.updatePaymentTerm(getParam(req, "id"), validated.data);
       if (!term) return res.status(404).json({ error: "Prazo não encontrado" });
       res.json(term);
     } catch (err) {
@@ -607,8 +623,334 @@ export async function registerRoutes(
 
   app.delete("/api/payment-terms/:id", async (req: Request, res: Response) => {
     try {
-      await storage.deletePaymentTerm(req.params.id);
+      await storage.deletePaymentTerm(getParam(req, "id"));
       res.json({ success: true });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  // ─── RAW MATERIALS ──────────────────────────────────────────────────────────
+
+  app.get("/api/raw-materials", async (req: Request, res: Response) => {
+    try {
+      const result = await storage.getRawMaterials({
+        search: getQuery(req, "search"),
+        categoria: getQuery(req, "categoria"),
+        page: getQuery(req, "page") ? Number(getQuery(req, "page")) : 1,
+        limit: getQuery(req, "limit") ? Number(getQuery(req, "limit")) : 25,
+      });
+      res.json(result);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.post("/api/raw-materials", async (req: Request, res: Response) => {
+    try {
+      const validated = validateBody(insertRawMaterialSchema, req.body);
+      if ("error" in validated) return res.status(400).json({ error: validated.error });
+      const material = await storage.createRawMaterial(validated.data);
+      res.status(201).json(material);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.patch("/api/raw-materials/:id", async (req: Request, res: Response) => {
+    try {
+      const partial = insertRawMaterialSchema.partial();
+      const validated = validateBody(partial, req.body);
+      if ("error" in validated) return res.status(400).json({ error: validated.error });
+      const material = await storage.updateRawMaterial(getParam(req, "id"), validated.data);
+      if (!material) return res.status(404).json({ error: "Matéria-prima não encontrada" });
+      res.json(material);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.delete("/api/raw-materials/:id", async (req: Request, res: Response) => {
+    try {
+      await storage.deleteRawMaterial(getParam(req, "id"));
+      res.json({ success: true });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  // ─── PRODUCTS ───────────────────────────────────────────────────────────────
+
+  app.get("/api/products", async (req: Request, res: Response) => {
+    try {
+      const result = await storage.getProducts({
+        search: getQuery(req, "search"),
+        categoria: getQuery(req, "categoria"),
+        tipoCalculo: getQuery(req, "tipoCalculo"),
+        page: getQuery(req, "page") ? Number(getQuery(req, "page")) : 1,
+        limit: getQuery(req, "limit") ? Number(getQuery(req, "limit")) : 25,
+      });
+      res.json(result);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.post("/api/products", async (req: Request, res: Response) => {
+    try {
+      const validated = validateBody(insertProductSchema, req.body);
+      if ("error" in validated) return res.status(400).json({ error: validated.error });
+      const product = await storage.createProduct(validated.data);
+      res.status(201).json(product);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.get("/api/products/:id", async (req: Request, res: Response) => {
+    try {
+      const product = await storage.getProduct(getParam(req, "id"));
+      if (!product) return res.status(404).json({ error: "Produto não encontrado" });
+      res.json(product);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.patch("/api/products/:id", async (req: Request, res: Response) => {
+    try {
+      const partial = insertProductSchema.partial();
+      const validated = validateBody(partial, req.body);
+      if ("error" in validated) return res.status(400).json({ error: validated.error });
+      const product = await storage.updateProduct(getParam(req, "id"), validated.data);
+      if (!product) return res.status(404).json({ error: "Produto não encontrado" });
+      res.json(product);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.delete("/api/products/:id", async (req: Request, res: Response) => {
+    try {
+      await storage.deleteProduct(getParam(req, "id"));
+      res.json({ success: true });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.get("/api/products/:id/components", async (req: Request, res: Response) => {
+    try {
+      const components = await storage.getProductComponents(getParam(req, "id"));
+      res.json(components);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.put("/api/products/:id/components", async (req: Request, res: Response) => {
+    try {
+      const componentsSchema = z.array(insertProductComponentSchema);
+      const bodyData = Array.isArray(req.body) ? req.body : (req.body?.components ?? []);
+      const validated = validateBody(componentsSchema, bodyData);
+      if ("error" in validated) return res.status(400).json({ error: validated.error });
+      await storage.setProductComponents(getParam(req, "id"), validated.data);
+      res.json({ success: true });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  // ─── AI GENERATIONS ──────────────────────────────────────────────────────────
+
+  app.get("/api/ai-generations", async (_req: Request, res: Response) => {
+    try {
+      const generations = await storage.getAiGenerations();
+      res.json(generations);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.post("/api/ai/generate-product", async (req: Request, res: Response) => {
+    try {
+      const { prompt } = req.body;
+      if (!prompt) return res.status(400).json({ error: "O prompt é obrigatório" });
+
+      const materials = await storage.getRawMaterials({ limit: 1000 });
+      const suggestion = await generateProductSuggestion(
+        prompt,
+        materials.data.map((m) => ({ id: m.id, nome: m.nome, categoria: m.categoria }))
+      );
+
+      const generation = await storage.createAiGeneration({
+        promptOriginal: prompt,
+        respostaRaw: JSON.stringify(suggestion),
+        composicaoSugerida: suggestion.componentes,
+        duvidas: suggestion.duvidas?.join(", "),
+        confianca: suggestion.confianca,
+      });
+
+      res.json({ ...suggestion, id: generation.id });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.post("/api/ai-generations", async (req: Request, res: Response) => {
+    try {
+      const validated = validateBody(insertAiProductGenerationSchema, req.body);
+      if ("error" in validated) return res.status(400).json({ error: validated.error });
+      const generation = await storage.createAiGeneration(validated.data);
+      res.status(201).json(generation);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  // ─── QUOTES ────────────────────────────────────────────────────────────────
+
+  app.get("/api/quotes", async (req: Request, res: Response) => {
+    try {
+      const result = await storage.getQuotes({
+        clientId: getQuery(req, "clientId"),
+        status: getQuery(req, "status"),
+        page: getQuery(req, "page") ? Number(getQuery(req, "page")) : 1,
+        limit: getQuery(req, "limit") ? Number(getQuery(req, "limit")) : 25,
+      });
+      res.json(result);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.get("/api/quotes/:id", async (req: Request, res: Response) => {
+    try {
+      const quote = await storage.getQuote(getParam(req, "id"));
+      if (!quote) return res.status(404).json({ error: "Orçamento não encontrado" });
+      res.json(quote);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.post("/api/quotes", async (req: Request, res: Response) => {
+    try {
+      const quoteCreateSchema = insertQuoteSchema.omit({ numero: true }).extend({
+        desconto: z.union([z.string(), z.number()]).optional().nullable().transform(v => v != null ? String(v) : undefined),
+        impostos: z.union([z.string(), z.number()]).optional().nullable().transform(v => v != null ? String(v) : undefined),
+        valorTotal: z.union([z.string(), z.number()]).optional().nullable().transform(v => v != null ? String(v) : undefined),
+      });
+      const validated = validateBody(quoteCreateSchema, req.body);
+      if ("error" in validated) return res.status(400).json({ error: validated.error });
+      const quote = await storage.createQuote(validated.data as InsertQuote);
+      res.status(201).json(quote);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.patch("/api/quotes/:id", async (req: Request, res: Response) => {
+    try {
+      const partial = insertQuoteSchema.partial();
+      const validated = validateBody(partial, req.body);
+      if ("error" in validated) return res.status(400).json({ error: validated.error });
+      const quote = await storage.updateQuote(getParam(req, "id"), validated.data);
+      if (!quote) return res.status(404).json({ error: "Orçamento não encontrado" });
+      res.json(quote);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.delete("/api/quotes/:id", async (req: Request, res: Response) => {
+    try {
+      await storage.deleteQuote(getParam(req, "id"));
+      res.json({ success: true });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.get("/api/quotes/:id/items", async (req: Request, res: Response) => {
+    try {
+      const items = await storage.getQuoteItems(getParam(req, "id"));
+      res.json(items);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.put("/api/quotes/:id/items", async (req: Request, res: Response) => {
+    try {
+      const coerceDecimal = z.union([z.string(), z.number()]).optional().nullable().transform(v => v != null ? String(v) : undefined);
+      const quoteItemSchemaCoerced = insertQuoteItemSchema.extend({
+        largura: coerceDecimal, altura: coerceDecimal, area: coerceDecimal,
+        quantidade: coerceDecimal, custoCalculado: coerceDecimal,
+        precoUnitario: coerceDecimal, precoTotal: coerceDecimal,
+      }).omit({ quoteId: true });
+      const itemsSchema = z.array(quoteItemSchemaCoerced);
+      const bodyData = Array.isArray(req.body) ? req.body : (req.body?.items ?? []);
+      const validated = validateBody(itemsSchema, bodyData);
+      if ("error" in validated) return res.status(400).json({ error: validated.error });
+      await storage.setQuoteItems(getParam(req, "id"), validated.data as any);
+      res.json({ success: true });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.post("/api/quotes/:id/convert-to-order", async (req: Request, res: Response) => {
+    try {
+      const order = await storage.convertQuoteToOrder(getParam(req, "id"));
+      res.status(201).json(order);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  // ─── ORDERS ────────────────────────────────────────────────────────────────
+
+  app.get("/api/orders", async (req: Request, res: Response) => {
+    try {
+      const result = await storage.getOrders({
+        clientId: getQuery(req, "clientId"),
+        status: getQuery(req, "status"),
+        page: getQuery(req, "page") ? Number(getQuery(req, "page")) : 1,
+        limit: getQuery(req, "limit") ? Number(getQuery(req, "limit")) : 25,
+      });
+      res.json(result);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.get("/api/orders/:id", async (req: Request, res: Response) => {
+    try {
+      const order = await storage.getOrder(getParam(req, "id"));
+      if (!order) return res.status(404).json({ error: "Pedido não encontrado" });
+      res.json(order);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.patch("/api/orders/:id/status", async (req: Request, res: Response) => {
+    try {
+      const { status } = req.body;
+      if (!status) return res.status(400).json({ error: "Status é obrigatório" });
+      const order = await storage.updateOrderStatus(getParam(req, "id"), status);
+      if (!order) return res.status(404).json({ error: "Pedido não encontrado" });
+      res.json(order);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.get("/api/orders/:id/items", async (req: Request, res: Response) => {
+    try {
+      const items = await storage.getOrderItems(getParam(req, "id"));
+      res.json(items);
     } catch (err) {
       handleError(res, err);
     }
