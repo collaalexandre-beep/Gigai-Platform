@@ -26,6 +26,7 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
@@ -546,7 +547,7 @@ export default function ProductFormPage() {
 
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <FormLabel>Matéria-prima <span className="text-destructive">*</span></FormLabel>
+              <Label>Matéria-prima <span className="text-destructive">*</span></Label>
               <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
