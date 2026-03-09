@@ -164,6 +164,22 @@ export const insertPaymentTermSchema = createInsertSchema(paymentTerms).omit({
 export type InsertPaymentTerm = z.infer<typeof insertPaymentTermSchema>;
 export type PaymentTerm = typeof paymentTerms.$inferSelect;
 
+// ─── PAYMENT METHODS ──────────────────────────────────────────────────────────
+
+export const paymentMethods = pgTable("payment_methods", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  nome: text("nome").notNull(),
+  ativo: boolean("ativo").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertPaymentMethodSchema = createInsertSchema(paymentMethods).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertPaymentMethod = z.infer<typeof insertPaymentMethodSchema>;
+export type PaymentMethod = typeof paymentMethods.$inferSelect;
+
 // ─── CLIENTS ─────────────────────────────────────────────────────────────────
 
 export const clients = pgTable(

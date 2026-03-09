@@ -21,6 +21,7 @@ import {
   insertOrderSchema,
   insertOrderItemSchema,
   insertAiProductGenerationSchema,
+  insertPaymentMethodSchema,
   type InsertQuote,
   type InsertOrder,
 } from "@shared/schema";
@@ -628,6 +629,41 @@ export async function registerRoutes(
     } catch (err) {
       handleError(res, err);
     }
+  });
+
+  // ─── PAYMENT METHODS ──────────────────────────────────────────────────────────
+
+  app.get("/api/payment-methods", async (_req: Request, res: Response) => {
+    try {
+      const methods = await storage.getPaymentMethods();
+      res.json(methods);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.post("/api/payment-methods", async (req: Request, res: Response) => {
+    try {
+      const validated = validateBody(insertPaymentMethodSchema, req.body);
+      if ("error" in validated) return res.status(400).json({ error: validated.error });
+      const method = await storage.createPaymentMethod(validated.data);
+      res.status(201).json(method);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.patch("/api/payment-methods/:id", async (req: Request, res: Response) => {
+    try {
+      const validated = validateBody(insertPaymentMethodSchema.partial(), req.body);
+      if ("error" in validated) return res.status(400).json({ error: validated.error });
+      const method = await storage.updatePaymentMethod(getParam(req, "id"), validated.data);
+      if (!method) return res.status(404).json({ error: "Forma de pagamento não encontrada" });
+      res.json(method);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.delete("/api/payment-methods/:id", async (req: Request, res: Response) => {
+    try {
+      await storage.deletePaymentMethod(getParam(req, "id"));
+      res.json({ success: true });
+    } catch (err) { handleError(res, err); }
   });
 
   // ─── RAW MATERIALS ──────────────────────────────────────────────────────────

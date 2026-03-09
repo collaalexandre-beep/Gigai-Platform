@@ -17,6 +17,7 @@ import SellerDetailPage from "@/pages/sellers/detail";
 import SellerFormPage from "@/pages/sellers/form";
 import CrmPage from "@/pages/crm";
 import PaymentTermsPage from "@/pages/payment-terms/index";
+import PaymentMethodsPage from "@/pages/payment-methods/index";
 import RawMaterialsPage from "@/pages/raw-materials/index";
 import RawMaterialFormPage from "@/pages/raw-materials/form";
 import ProductsPage from "@/pages/products/index";
@@ -25,10 +26,21 @@ import AiGeneratorPage from "@/pages/products/ai-generator";
 import QuotesPage from "@/pages/quotes/index";
 import QuoteFormPage from "@/pages/quotes/form";
 import QuoteDetailPage from "@/pages/quotes/detail";
+import QuotePrintPage from "@/pages/quotes/print";
 import OrdersPage from "@/pages/orders/index";
 import OrderDetailPage from "@/pages/orders/detail";
+import OrderPrintPage from "@/pages/orders/print";
 
-function Router() {
+function PrintRouter() {
+  return (
+    <Switch>
+      <Route path="/quotes/:id/print" component={QuotePrintPage} />
+      <Route path="/orders/:id/print" component={OrderPrintPage} />
+    </Switch>
+  );
+}
+
+function AppRouter() {
   return (
     <Switch>
       <Route path="/" component={() => <Redirect to="/dashboard" />} />
@@ -43,6 +55,7 @@ function Router() {
       <Route path="/sellers/:id" component={SellerDetailPage} />
       <Route path="/crm" component={CrmPage} />
       <Route path="/payment-terms" component={PaymentTermsPage} />
+      <Route path="/payment-methods" component={PaymentMethodsPage} />
       <Route path="/raw-materials" component={RawMaterialsPage} />
       <Route path="/raw-materials/new" component={RawMaterialFormPage} />
       <Route path="/raw-materials/:id/edit" component={RawMaterialFormPage} />
@@ -62,10 +75,25 @@ function Router() {
 }
 
 export default function App() {
+  const isPrintPage = window.location.pathname.endsWith("/print");
+
   const sidebarStyle = {
     "--sidebar-width": "15rem",
     "--sidebar-width-icon": "3.5rem",
   };
+
+  if (isPrintPage) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <TooltipProvider>
+            <PrintRouter />
+            <Toaster />
+          </TooltipProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    );
+  }
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -80,7 +108,7 @@ export default function App() {
                   <ThemeToggle />
                 </header>
                 <main className="flex-1 overflow-auto">
-                  <Router />
+                  <AppRouter />
                 </main>
               </div>
             </div>

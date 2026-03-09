@@ -14,6 +14,7 @@ import {
   companyLookupLogs,
   automationJobs,
   paymentTerms,
+  paymentMethods,
   rawMaterials,
   products,
   productComponents,
@@ -45,6 +46,8 @@ import {
   type DashboardStats,
   type PaymentTerm,
   type InsertPaymentTerm,
+  type PaymentMethod,
+  type InsertPaymentMethod,
   type RawMaterial,
   type InsertRawMaterial,
   type Product,
@@ -158,6 +161,12 @@ export interface IStorage {
   createPaymentTerm(term: InsertPaymentTerm): Promise<PaymentTerm>;
   updatePaymentTerm(id: string, data: Partial<InsertPaymentTerm>): Promise<PaymentTerm | undefined>;
   deletePaymentTerm(id: string): Promise<void>;
+
+  // Payment Methods
+  getPaymentMethods(): Promise<PaymentMethod[]>;
+  createPaymentMethod(method: InsertPaymentMethod): Promise<PaymentMethod>;
+  updatePaymentMethod(id: string, data: Partial<InsertPaymentMethod>): Promise<PaymentMethod | undefined>;
+  deletePaymentMethod(id: string): Promise<void>;
 
   // Raw Materials
   getRawMaterials(params?: {
@@ -705,6 +714,30 @@ export class DatabaseStorage implements IStorage {
 
   async deletePaymentTerm(id: string): Promise<void> {
     await db.delete(paymentTerms).where(eq(paymentTerms.id, id));
+  }
+
+  // ─── PAYMENT METHODS ─────────────────────────────────────────────────────────
+
+  async getPaymentMethods(): Promise<PaymentMethod[]> {
+    return db.select().from(paymentMethods).orderBy(asc(paymentMethods.nome));
+  }
+
+  async createPaymentMethod(method: InsertPaymentMethod): Promise<PaymentMethod> {
+    const [result] = await db.insert(paymentMethods).values(method).returning();
+    return result;
+  }
+
+  async updatePaymentMethod(id: string, data: Partial<InsertPaymentMethod>): Promise<PaymentMethod | undefined> {
+    const [result] = await db
+      .update(paymentMethods)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(paymentMethods.id, id))
+      .returning();
+    return result;
+  }
+
+  async deletePaymentMethod(id: string): Promise<void> {
+    await db.delete(paymentMethods).where(eq(paymentMethods.id, id));
   }
 
   // ─── RAW MATERIALS ──────────────────────────────────────────────────────────

@@ -24,6 +24,7 @@ import {
   Box,
   FileText,
   Package,
+  CreditCard,
 } from "lucide-react";
 
 const navItems = [
@@ -45,6 +46,7 @@ const cadastroItems = [
 
 const configItems = [
   { title: "Prazos de Pagamento", url: "/payment-terms", icon: Clock },
+  { title: "Formas de Pagamento", url: "/payment-methods", icon: CreditCard },
 ];
 
 export function AppSidebar() {

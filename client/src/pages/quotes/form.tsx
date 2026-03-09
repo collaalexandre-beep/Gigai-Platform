@@ -101,6 +101,10 @@ export default function QuoteFormPage() {
     queryKey: ["/api/payment-terms"],
   });
 
+  const { data: paymentMethods = [] } = useQuery<{ id: string; nome: string; ativo: boolean }[]>({
+    queryKey: ["/api/payment-methods"],
+  });
+
   const { data: products = [] } = useQuery<Product[]>({
     queryKey: ["/api/products"],
     queryFn: () => fetch("/api/products?limit=100").then(r => r.json()).then(d => d.data),
@@ -371,7 +375,19 @@ export default function QuoteFormPage() {
             </div>
             <div className="space-y-2">
               <Label>Forma de Pagamento</Label>
-              <Input placeholder="Ex: PIX, Cartão" value={form.formaPagamento} onChange={(e) => set("formaPagamento", e.target.value)} />
+              <Select value={form.formaPagamento} onValueChange={(v) => set("formaPagamento", v)}>
+                <SelectTrigger data-testid="select-forma-pagamento">
+                  <SelectValue placeholder="Selecione..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {paymentMethods.filter(m => m.ativo).map(m => (
+                    <SelectItem key={m.id} value={m.nome}>{m.nome}</SelectItem>
+                  ))}
+                  {paymentMethods.filter(m => m.ativo).length === 0 && (
+                    <SelectItem value="_none" disabled>Nenhuma forma cadastrada</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
             </div>
           </CardContent>
         </Card>

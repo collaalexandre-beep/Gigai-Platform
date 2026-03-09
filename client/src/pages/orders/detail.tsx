@@ -15,7 +15,8 @@ import {
   Truck,
   MoreVertical,
   ChevronDown,
-  ArrowRight
+  ArrowRight,
+  Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -157,6 +158,12 @@ export default function OrderDetailPage() {
         </div>
         
         <div className="flex items-center gap-2">
+          <Button variant="outline" asChild data-testid="button-print-order">
+            <Link href={`/orders/${id}/print`} target="_blank">
+              <Printer className="w-4 h-4 mr-2" />
+              Imprimir
+            </Link>
+          </Button>
           {order.quoteId && (
             <Button variant="outline" asChild data-testid="button-view-source-quote">
               <Link href={`/quotes/${order.quoteId}`}>

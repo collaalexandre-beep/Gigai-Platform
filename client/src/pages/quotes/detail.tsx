@@ -70,8 +70,10 @@ export default function QuoteDetailPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => window.print()}>
-            <Printer className="w-4 h-4 mr-2" /> Imprimir
+          <Button variant="outline" asChild>
+            <Link href={`/quotes/${id}/print`} target="_blank">
+              <Printer className="w-4 h-4 mr-2" /> Imprimir
+            </Link>
           </Button>
           <Button asChild>
             <Link href={`/quotes/${id}/edit`}>Editar Orçamento</Link>
