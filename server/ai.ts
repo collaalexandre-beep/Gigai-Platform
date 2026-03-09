@@ -1,6 +1,5 @@
 import OpenAI from "openai";
 
-// Standardize the AI client retrieval
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
@@ -81,4 +80,71 @@ Seja preciso tecnicamente. Se o produto for um Banner, ele precisa de lona, tint
   }
 
   return JSON.parse(content) as ProductSuggestion;
+}
+
+export interface QuoteItemSuggestion {
+  productId: string | null;
+  descricao: string;
+  largura: number | null;
+  altura: number | null;
+  area: number | null;
+  quantidade: number;
+  unidade: string;
+  custoCalculado: number;
+  precoUnitario: number;
+  precoTotal: number;
+  observacoes: string;
+}
+
+export async function suggestQuoteItem(
+  prompt: string,
+  availableProducts: { id: string; nome: string; categoria: string; tipoCalculo: string; unidadeVenda: string }[]
+): Promise<QuoteItemSuggestion> {
+  const productsList = availableProducts
+    .map((p) => `ID: ${p.id}, Nome: ${p.nome}, Categoria: ${p.categoria}, Cálculo: ${p.tipoCalculo}, Unidade: ${p.unidadeVenda}`)
+    .join("\n");
+
+  const systemPrompt = `Você é um assistente especializado em orçamentos de gráfica e comunicação visual brasileira.
+Analise o pedido do cliente e sugira um item de orçamento com medidas e preço estimado.
+
+Produtos disponíveis no catálogo (use o ID se encontrar correspondência):
+${productsList || "Nenhum produto cadastrado ainda."}
+
+Retorne APENAS um JSON com este formato exato:
+{
+  "productId": "id_do_produto_se_encontrado_ou_null",
+  "descricao": "Descrição clara do item",
+  "largura": 1.0,
+  "altura": 1.0,
+  "area": 1.0,
+  "quantidade": 1,
+  "unidade": "un",
+  "custoCalculado": 0,
+  "precoUnitario": 50.00,
+  "precoTotal": 50.00,
+  "observacoes": "Observações técnicas relevantes"
+}
+
+Regras:
+- Se o produto for m2 (banner, lona, adesivo), calcule largura × altura = area e baseie o preço nisso
+- Se for unidade (camiseta, brinde), deixe largura e altura como null e area como null
+- precoUnitario deve ser um valor de mercado realista em R$ para o Brasil
+- precoTotal = precoUnitario × quantidade (para m2, precoUnitario é o preço por m2)
+- unidade: "m²" para área, "un" para unidade, "ml" para metro linear`;
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: prompt },
+    ],
+    response_format: { type: "json_object" },
+  });
+
+  const content = response.choices[0].message.content;
+  if (!content) {
+    throw new Error("Falha ao obter resposta da IA");
+  }
+
+  return JSON.parse(content) as QuoteItemSuggestion;
 }

@@ -24,7 +24,7 @@ import {
   type InsertQuote,
   type InsertOrder,
 } from "@shared/schema";
-import { generateProductSuggestion } from "./ai";
+import { generateProductSuggestion, suggestQuoteItem } from "./ai";
 
 function handleError(res: Response, err: unknown) {
   console.error("[API Error]", err);
@@ -795,6 +795,29 @@ export async function registerRoutes(
       });
 
       res.json({ ...suggestion, id: generation.id });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.post("/api/ai/suggest-quote-item", async (req: Request, res: Response) => {
+    try {
+      const { prompt } = req.body;
+      if (!prompt) return res.status(400).json({ error: "O prompt é obrigatório" });
+
+      const products = await storage.getProducts({ limit: 1000 });
+      const suggestion = await suggestQuoteItem(
+        prompt,
+        products.data.map((p) => ({
+          id: p.id,
+          nome: p.nome,
+          categoria: p.categoria,
+          tipoCalculo: p.tipoCalculo,
+          unidadeVenda: p.unidadeVenda,
+        }))
+      );
+
+      res.json(suggestion);
     } catch (err) {
       handleError(res, err);
     }
