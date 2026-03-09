@@ -31,7 +31,7 @@ import { ContactsPanel } from "@/components/contacts-panel";
 import { TimelineFeed } from "@/components/timeline-feed";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Client, Interaction, Seller, ClientSellerLink } from "@shared/schema";
+import type { Client, Interaction, Seller, ClientSellerLink, PaymentTerm } from "@shared/schema";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -263,6 +263,10 @@ export default function ClientDetailPage() {
     queryKey: ["/api/clients", id, "interactions"],
     queryFn: () => fetch(`/api/clients/${id}/interactions`).then((r) => r.json()),
     enabled: !!id,
+  });
+
+  const { data: paymentTermsList = [] } = useQuery<PaymentTerm[]>({
+    queryKey: ["/api/payment-terms"],
   });
 
   const { data: clientSellers } = useQuery<(ClientSellerLink & { seller: Seller })[]>({
@@ -545,6 +549,14 @@ export default function ClientDetailPage() {
                   <InfoRow label="Origem do Lead" value={client.origemLead?.replace(/_/g, " ")} />
                   <InfoRow label="Segmento" value={client.segmento} />
                   <InfoRow label="Potencial de Compra" value={client.potencialCompra} />
+                  <InfoRow
+                    label="Prazo de Pagamento"
+                    value={
+                      client.prazosPagamentoId
+                        ? (paymentTermsList as PaymentTerm[]).find((t) => t.id === client.prazosPagamentoId)?.nome ?? "—"
+                        : null
+                    }
+                  />
                   <InfoRow label="Cadastro" value={
                     format(new Date(client.createdAt), "dd/MM/yyyy", { locale: ptBR })
                   } />

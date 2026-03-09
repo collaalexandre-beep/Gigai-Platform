@@ -17,8 +17,8 @@ client/src/
     dashboard.tsx          — Dashboard com stats, aniversários, atividades recentes
     clients/
       index.tsx            — Lista de clientes com busca/filtro/paginação
-      detail.tsx           — Detalhe do cliente (tabs: Geral, Contatos, CRM, Histórico)
-      form.tsx             — Cadastro/edição; toggle PF/PJ; PJ=CNPJ auto-fill, PF=CPF
+      detail.tsx           — Detalhe do cliente (tabs: Geral, Contatos, CRM, Histórico); exibe prazo de pagamento
+      form.tsx             — Cadastro/edição; toggle PF/PJ; PJ=CNPJ auto-fill, PF=CPF; selector de prazo de pagamento
     sellers/
       index.tsx            — Lista de vendedores (cards)
       detail.tsx           — Detalhe do vendedor

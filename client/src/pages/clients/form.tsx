@@ -18,7 +18,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Client } from "@shared/schema";
+import type { Client, PaymentTerm } from "@shared/schema";
 
 interface ClientFormData {
   tipoPessoa: "fisica" | "juridica";
@@ -49,6 +49,7 @@ interface ClientFormData {
   segmento: string;
   potencialCompra: string;
   observacoes: string;
+  prazosPagamentoId: string;
   cnpjFonteConsulta: string;
   cnpjConsultaBemSucedida: boolean | null;
   cnpjConsultadoEm: string;
@@ -83,6 +84,7 @@ const emptyForm: ClientFormData = {
   segmento: "",
   potencialCompra: "",
   observacoes: "",
+  prazosPagamentoId: "",
   cnpjFonteConsulta: "",
   cnpjConsultaBemSucedida: null,
   cnpjConsultadoEm: "",
@@ -118,6 +120,7 @@ function clientToForm(c: Client): ClientFormData {
     segmento: c.segmento || "",
     potencialCompra: c.potencialCompra || "",
     observacoes: c.observacoes || "",
+    prazosPagamentoId: c.prazosPagamentoId || "",
     cnpjFonteConsulta: c.cnpjFonteConsulta || "",
     cnpjConsultaBemSucedida: c.cnpjConsultaBemSucedida ?? null,
     cnpjConsultadoEm: c.cnpjConsultadoEm ? new Date(c.cnpjConsultadoEm).toISOString() : "",
@@ -167,6 +170,10 @@ export default function ClientFormPage() {
     queryKey: ["/api/clients", id],
     queryFn: () => fetch(`/api/clients/${id}`).then((r) => r.json()),
     enabled: isEdit,
+  });
+
+  const { data: paymentTermsList = [] } = useQuery<PaymentTerm[]>({
+    queryKey: ["/api/payment-terms"],
   });
 
   const [form, setForm] = useState<ClientFormData>(emptyForm);
@@ -274,6 +281,7 @@ export default function ClientFormPage() {
         cnpjConsultadoEm: data.cnpjConsultadoEm ? new Date(data.cnpjConsultadoEm) : undefined,
         regimeTributario: data.regimeTributario || undefined,
         origemLead: data.origemLead || undefined,
+        prazosPagamentoId: data.prazosPagamentoId || undefined,
       };
       if (isEdit) {
         return apiRequest("PATCH", `/api/clients/${id}`, payload).then((r) => r.json());
@@ -776,6 +784,21 @@ export default function ClientFormPage() {
                     <SelectItem value="baixo">Baixo</SelectItem>
                     <SelectItem value="medio">Médio</SelectItem>
                     <SelectItem value="alto">Alto</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormField>
+              <FormField label="Prazo de Pagamento" id="prazosPagamentoId" hint="Será utilizado nos orçamentos e pedidos futuros">
+                <Select value={form.prazosPagamentoId || "none"} onValueChange={(v) => set("prazosPagamentoId", v === "none" ? "" : v)}>
+                  <SelectTrigger id="prazosPagamentoId" data-testid="select-prazo-pagamento">
+                    <SelectValue placeholder="Selecione um prazo..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Não definido</SelectItem>
+                    {(paymentTermsList as PaymentTerm[]).filter((t) => t.ativo).map((term) => (
+                      <SelectItem key={term.id} value={term.id} data-testid={`option-prazo-${term.id}`}>
+                        {term.nome}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </FormField>
