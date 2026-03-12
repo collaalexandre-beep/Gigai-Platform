@@ -25,6 +25,7 @@ import {
   FileText,
   Package,
   CreditCard,
+  Building2,
 } from "lucide-react";
 
 const navItems = [
@@ -45,6 +46,7 @@ const cadastroItems = [
 ];
 
 const configItems = [
+  { title: "Empresas", url: "/companies", icon: Building2 },
   { title: "Prazos de Pagamento", url: "/payment-terms", icon: Clock },
   { title: "Formas de Pagamento", url: "/payment-methods", icon: CreditCard },
 ];

@@ -24,6 +24,9 @@ client/src/
       index.tsx            — Lista de vendedores (cards)
       detail.tsx           — Detalhe do vendedor
       form.tsx             — Cadastro/edição; toggle PF/PJ; PJ=CNPJ auto-fill + nomeFantasia
+    companies/
+      index.tsx            — Listagem de empresas (logo, CNPJ, status, empresa padrão)
+      form.tsx             — Cadastro/edição com 3 abas: Informações | Imagens | Nota Fiscal (em breve)
     payment-terms/
       index.tsx            — Gestão de prazos de pagamento (nome + dias em array)
     payment-methods/

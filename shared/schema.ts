@@ -726,6 +726,50 @@ export const insertAiProductGenerationSchema = createInsertSchema(aiProductGener
 export type InsertAiProductGeneration = z.infer<typeof insertAiProductGenerationSchema>;
 export type AiProductGeneration = typeof aiProductGenerations.$inferSelect;
 
+// ─── COMPANIES ────────────────────────────────────────────────────────────────
+
+export const companies = pgTable(
+  "companies",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    codigo: text("codigo"),
+    razaoSocial: text("razao_social").notNull(),
+    nomeFantasia: text("nome_fantasia").notNull(),
+    cnpj: text("cnpj").notNull(),
+    suframa: text("suframa"),
+    inscricaoEstadual: text("inscricao_estadual"),
+    inscricaoMunicipal: text("inscricao_municipal"),
+    endereco: text("endereco"),
+    numero: text("numero"),
+    complemento: text("complemento"),
+    cep: text("cep"),
+    estado: text("estado"),
+    cidade: text("cidade"),
+    bairro: text("bairro"),
+    telefone: text("telefone"),
+    fax: text("fax"),
+    site: text("site"),
+    email: text("email"),
+    status: text("status").notNull().default("ativa"),
+    isPadrao: boolean("is_padrao").notNull().default(false),
+    logo: text("logo"),
+    observacoes: text("observacoes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    deletedAt: timestamp("deleted_at"),
+  },
+  (t) => [
+    index("idx_companies_cnpj").on(t.cnpj),
+    index("idx_companies_status").on(t.status),
+  ]
+);
+
+export const insertCompanySchema = createInsertSchema(companies).omit({
+  id: true, createdAt: true, updatedAt: true, deletedAt: true,
+});
+export type InsertCompany = z.infer<typeof insertCompanySchema>;
+export type Company = typeof companies.$inferSelect;
+
 // ─── QUOTES ───────────────────────────────────────────────────────────────────
 
 export const quoteStatusEnum = pgEnum("quote_status", [
@@ -744,6 +788,7 @@ export const quotes = pgTable(
     clientId: varchar("client_id").notNull().references(() => clients.id),
     contactId: varchar("contact_id").references(() => clientContacts.id),
     sellerId: varchar("seller_id").references(() => sellers.id),
+    companyId: varchar("company_id").references(() => companies.id),
     data: date("data").notNull(),
     validade: date("validade"),
     status: quoteStatusEnum("status").notNull().default("rascunho"),
@@ -822,6 +867,7 @@ export const orders = pgTable(
     numero: text("numero").unique().notNull(),
     quoteId: varchar("quote_id").references(() => quotes.id),
     clientId: varchar("client_id").notNull().references(() => clients.id),
+    companyId: varchar("company_id").references(() => companies.id),
     data: date("data").notNull(),
     status: orderStatusEnum("status").notNull().default("aguardando_producao"),
     valorTotal: decimal("valor_total", { precision: 14, scale: 2 }).default("0"),

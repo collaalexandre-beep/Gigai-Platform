@@ -30,6 +30,8 @@ import QuotePrintPage from "@/pages/quotes/print";
 import OrdersPage from "@/pages/orders/index";
 import OrderDetailPage from "@/pages/orders/detail";
 import OrderPrintPage from "@/pages/orders/print";
+import CompaniesPage from "@/pages/companies/index";
+import CompanyFormPage from "@/pages/companies/form";
 
 function PrintRouter() {
   return (
@@ -69,6 +71,9 @@ function AppRouter() {
       <Route path="/quotes/:id" component={QuoteDetailPage} />
       <Route path="/orders" component={OrdersPage} />
       <Route path="/orders/:id" component={OrderDetailPage} />
+      <Route path="/companies" component={CompaniesPage} />
+      <Route path="/companies/new" component={CompanyFormPage} />
+      <Route path="/companies/:id/edit" component={CompanyFormPage} />
       <Route component={NotFound} />
     </Switch>
   );

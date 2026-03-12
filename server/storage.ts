@@ -19,10 +19,13 @@ import {
   products,
   productComponents,
   aiProductGenerations,
+  companies,
   quotes,
   quoteItems,
   orders,
   orderItems,
+  type Company,
+  type InsertCompany,
   type User,
   type InsertUser,
   type Client,
@@ -226,6 +229,20 @@ export interface IStorage {
   getOrder(id: string): Promise<Order | undefined>;
   updateOrderStatus(id: string, status: string): Promise<Order | undefined>;
   getOrderItems(orderId: string): Promise<OrderItem[]>;
+
+  // Companies
+  getCompanies(params?: {
+    search?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: Company[]; total: number }>;
+  getCompany(id: string): Promise<Company | undefined>;
+  createCompany(data: InsertCompany): Promise<Company>;
+  updateCompany(id: string, data: Partial<InsertCompany>): Promise<Company | undefined>;
+  softDeleteCompany(id: string): Promise<void>;
+  setDefaultCompany(id: string): Promise<Company | undefined>;
+  getDefaultCompany(): Promise<Company | undefined>;
 }
 
 // ─── DATABASE STORAGE ─────────────────────────────────────────────────────────
@@ -1143,6 +1160,105 @@ export class DatabaseStorage implements IStorage {
       .from(orderItems)
       .where(eq(orderItems.orderId, orderId))
       .orderBy(asc(orderItems.ordem));
+  }
+
+  // ─── COMPANIES ─────────────────────────────────────────────────────────────
+
+  async getCompanies(params: {
+    search?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<{ data: Company[]; total: number }> {
+    const { search, status, page = 1, limit = 50 } = params;
+    const offset = (page - 1) * limit;
+    const conditions = [isNull(companies.deletedAt)];
+
+    if (search) {
+      conditions.push(
+        or(
+          ilike(companies.razaoSocial, `%${search}%`),
+          ilike(companies.nomeFantasia, `%${search}%`),
+          ilike(companies.cnpj, `%${search}%`)
+        )!
+      );
+    }
+    if (status) conditions.push(eq(companies.status, status));
+
+    const where = and(...conditions);
+    const [countResult] = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(companies)
+      .where(where);
+
+    const data = await db
+      .select()
+      .from(companies)
+      .where(where)
+      .orderBy(desc(companies.isPadrao), asc(companies.razaoSocial))
+      .limit(limit)
+      .offset(offset);
+
+    return { data, total: Number(countResult.count) };
+  }
+
+  async getCompany(id: string): Promise<Company | undefined> {
+    const [company] = await db
+      .select()
+      .from(companies)
+      .where(and(eq(companies.id, id), isNull(companies.deletedAt)));
+    return company;
+  }
+
+  async createCompany(data: InsertCompany): Promise<Company> {
+    if (data.isPadrao) {
+      await db.update(companies).set({ isPadrao: false }).where(isNull(companies.deletedAt));
+    }
+    const [company] = await db.insert(companies).values(data).returning();
+    return company;
+  }
+
+  async updateCompany(id: string, data: Partial<InsertCompany>): Promise<Company | undefined> {
+    if (data.isPadrao) {
+      await db
+        .update(companies)
+        .set({ isPadrao: false })
+        .where(and(isNull(companies.deletedAt)));
+    }
+    const [company] = await db
+      .update(companies)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(companies.id, id), isNull(companies.deletedAt)))
+      .returning();
+    return company;
+  }
+
+  async softDeleteCompany(id: string): Promise<void> {
+    await db
+      .update(companies)
+      .set({ deletedAt: new Date(), isPadrao: false, updatedAt: new Date() })
+      .where(eq(companies.id, id));
+  }
+
+  async setDefaultCompany(id: string): Promise<Company | undefined> {
+    await db
+      .update(companies)
+      .set({ isPadrao: false })
+      .where(isNull(companies.deletedAt));
+    const [company] = await db
+      .update(companies)
+      .set({ isPadrao: true, updatedAt: new Date() })
+      .where(and(eq(companies.id, id), isNull(companies.deletedAt)))
+      .returning();
+    return company;
+  }
+
+  async getDefaultCompany(): Promise<Company | undefined> {
+    const [company] = await db
+      .select()
+      .from(companies)
+      .where(and(eq(companies.isPadrao, true), isNull(companies.deletedAt)));
+    return company;
   }
 }
 

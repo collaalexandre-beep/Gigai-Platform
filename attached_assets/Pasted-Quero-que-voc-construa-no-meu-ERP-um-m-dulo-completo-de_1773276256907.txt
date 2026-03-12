@@ -1,0 +1,291 @@
+Quero que você construa no meu ERP um módulo completo de CADASTRO DE EMPRESAS com arquitetura escalável, interface moderna e estrutura preparada para uso em ORÇAMENTOS e PEDIDOS.
+
+CONTEXTO DO NEGÓCIO
+Este ERP será usado em uma gráfica / empresa de comunicação visual. O sistema precisa ser MULTIEMPRESAS, porque eu terei mais de uma empresa cadastrada e preciso escolher qual empresa será usada em cada orçamento e pedido.
+
+OBJETIVO DESTA ETAPA
+Nesta fase, quero desenvolver somente:
+- o módulo de cadastro de empresas
+- a listagem de empresas
+- o formulário completo de cadastro
+- o upload de imagem/logo
+- a base multiempresas
+- a preparação para vínculo com orçamentos e pedidos
+
+NÃO IMPLEMENTAR AGORA
+- aba de nota fiscal
+- emissão de nota fiscal
+- emissão de boletos
+- integração fiscal
+- integração bancária
+- automações fiscais
+
+REGRA PRINCIPAL
+O sistema deve ser MULTIEMPRESAS.
+Isso significa:
+- posso cadastrar várias empresas
+- uma empresa pode ser definida como padrão
+- ao criar um orçamento, devo escolher qual empresa será usada
+- ao editar ou converter para pedido, devo poder trocar a empresa vinculada
+- orçamento e pedido devem sempre guardar referência da empresa selecionada
+- a empresa escolhida deve refletir futuramente em documentos, impressão, PDF, cabeçalho e logo
+
+REFERÊNCIA DE CAMPOS
+Baseie o formulário principal de cadastro na estrutura do sistema antigo mostrado na imagem anexada.
+
+CRIAR A ESTRUTURA COM AS ABAS:
+- Informações
+- Nota Fiscal
+- Imagens
+
+IMPORTANTE:
+- A aba “Nota Fiscal” deve aparecer desabilitada, oculta ou marcada como “em breve”, sem implementação funcional neste momento
+- A aba “Imagens” deve ser funcional
+- A aba “Informações” deve conter o cadastro completo
+
+==================================================
+1. CADASTRO DE EMPRESAS
+==================================================
+
+Criar um formulário completo com os seguintes campos:
+
+DADOS PRINCIPAIS
+- Código
+- Razão social
+- Suframa
+- Fantasia
+- CNPJ
+- Inscrição estadual
+- Inscrição municipal
+
+ENDEREÇO
+- Endereço
+- Número
+- Complemento
+- CEP
+- Estado (UF)
+- Cidade
+- Bairro
+
+CONTATO
+- Telefone
+- Site
+- Email
+- Fax
+
+OUTROS CAMPOS INTERNOS IMPORTANTES
+- Status da empresa: ativa / inativa
+- Empresa padrão: sim / não
+- Observações internas
+- Data de criação
+- Data de atualização
+
+REGRAS IMPORTANTES
+- Código pode ser automático, mas também deve poder ser exibido claramente no cadastro
+- Não permitir CNPJ duplicado
+- Razão social obrigatória
+- Fantasia obrigatória
+- CNPJ obrigatório
+- Permitir salvar empresa sem inscrição estadual em casos especiais
+- Todos os campos devem ter labels claras e boa organização visual
+
+==================================================
+2. ABA IMAGENS / LOGO
+==================================================
+
+Criar uma aba ou seção específica para imagem da empresa.
+
+Funcionalidades:
+- Upload de logo/imagem
+- Visualização da imagem cadastrada
+- Trocar imagem
+- Remover imagem
+- Exibir pré-visualização
+- Preparar essa imagem para uso futuro em:
+  - orçamento
+  - pedido
+  - impressão
+  - PDF
+  - cabeçalho da empresa
+
+Requisitos:
+- aceitar formatos comuns como JPG, PNG e WEBP
+- limitar tamanho de arquivo para evitar upload exagerado
+- mostrar mensagem amigável em caso de erro
+- salvar referência da imagem no cadastro da empresa
+
+==================================================
+3. LISTAGEM DE EMPRESAS
+==================================================
+
+Criar uma tela profissional de listagem com:
+- campo de busca
+- filtro por status
+- botão “Nova empresa”
+- ação de editar
+- ação de ativar/inativar
+- destaque visual para empresa padrão
+
+Na listagem, mostrar:
+- Código
+- Razão social
+- Fantasia
+- CNPJ
+- Telefone
+- Email
+- Status
+- Indicador de empresa padrão
+- Miniatura da logo, se existir
+
+A busca deve funcionar por:
+- razão social
+- fantasia
+- CNPJ
+
+==================================================
+4. COMPORTAMENTO MULTIEMPRESAS
+==================================================
+
+Já deixar a base pronta para:
+- selecionar empresa no orçamento
+- selecionar empresa no pedido
+- trocar empresa no pedido
+- trocar empresa em orçamento em edição
+- vincular cada registro a uma empresa
+
+Criar a modelagem de forma correta:
+- tabela/coleção de empresas
+- orçamento com campo companyId / empresaId
+- pedido com campo companyId / empresaId
+
+Mesmo que orçamento e pedido ainda não estejam totalmente implementados, deixar a estrutura preparada desde já.
+
+==================================================
+5. REGRAS DE NEGÓCIO
+==================================================
+
+Implementar as seguintes regras:
+- somente uma empresa pode ser padrão por vez
+- ao marcar uma como padrão, a anterior perde esse status
+- empresa inativa não deve aparecer por padrão em seletores, a menos que o usuário solicite
+- ao tentar excluir empresa vinculada a registros futuros, preferir inativar em vez de apagar
+- usar soft delete ou status, evitar exclusão destrutiva
+- salvar histórico de criação e atualização
+
+==================================================
+6. UX / UI
+==================================================
+
+Quero interface premium, bonita e limpa.
+Estilo desejado:
+- visual moderno
+- minimalista
+- elegante
+- profissional
+- estilo Apple
+- muito bem espaçado
+- ótimo para desktop
+- responsivo para telas menores
+
+Diretrizes visuais:
+- layout com cards
+- grid bem organizado
+- seções separadas por grupos lógicos
+- abas elegantes no topo
+- botões claros de salvar, cancelar e editar
+- feedback visual de carregamento e salvamento
+- mensagens de erro amigáveis
+- tipografia limpa
+- ícones discretos
+- aparência de sistema de gestão sério, não de CRUD simples
+
+IMPORTANTE:
+Todos os campos principais devem estar na tela de forma prática.
+Quero produtividade, não excesso de cliques.
+
+==================================================
+7. VALIDAÇÕES E MÁSCARAS
+==================================================
+
+Aplicar:
+- máscara para CNPJ
+- validação de CNPJ
+- máscara para CEP
+- máscara para telefone
+- validação de email
+- normalização de site/URL quando possível
+- mensagens de campo obrigatório
+- prevenção de duplicidade de CNPJ
+
+Exibir mensagens como:
+- “CNPJ já cadastrado”
+- “Informe uma razão social”
+- “Logo enviada com sucesso”
+- “Empresa salva com sucesso”
+
+==================================================
+8. ARQUITETURA E CÓDIGO
+==================================================
+
+Quero código limpo, organizado e escalável.
+
+Separar corretamente:
+- componentes de interface
+- formulário
+- listagem
+- modelos/tipos
+- serviços
+- validações
+- upload de imagem
+
+Usar boas práticas:
+- componentes reutilizáveis
+- tipagem forte
+- arquitetura simples e escalável
+- nomes claros
+- sem código confuso
+- sem acoplamento desnecessário
+
+==================================================
+9. PREPARAÇÃO PARA PRÓXIMAS ETAPAS
+==================================================
+
+Deixar preparado para futura implementação de:
+- layouts de orçamento por empresa
+- layouts de pedido por empresa
+- dados bancários por empresa
+- integração com serviço terceiro para nota fiscal
+- integração com serviço terceiro para boletos
+- temas/documentos personalizados por empresa
+- assinatura, rodapé e cabeçalho por empresa
+
+==================================================
+10. O QUE ESPERO DA ENTREGA
+==================================================
+
+Quero que você entregue:
+- tela de listagem de empresas
+- tela de cadastro/edição de empresa
+- abas organizadas
+- aba Informações funcional
+- aba Imagens funcional
+- aba Nota Fiscal desabilitada ou marcada como futura
+- upload e preview da logo
+- estrutura multiempresas pronta
+- modelagem de banco preparada para orçamento e pedido
+- interface bonita e profissional
+- código pronto para evolução
+
+==================================================
+11. DETALHES IMPORTANTES DE IMPLEMENTAÇÃO
+==================================================
+
+- O cadastro deve ser fácil e rápido de usar
+- Os campos devem seguir ordem lógica semelhante ao sistema antigo
+- O formulário deve parecer familiar para quem já usa ERP antigo, mas muito mais bonito
+- O foco é velocidade operacional e clareza visual
+- Não quero algo genérico; quero cara de ERP profissional para gráfica
+
+Se precisar tomar decisões de UX/UI para melhorar o fluxo, pode tomar, desde que preserve os campos principais e a lógica multiempresas.
+
+Ao final, entregue a estrutura pronta e funcional desta etapa.

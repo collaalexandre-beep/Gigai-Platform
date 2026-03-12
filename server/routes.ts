@@ -22,6 +22,7 @@ import {
   insertOrderItemSchema,
   insertAiProductGenerationSchema,
   insertPaymentMethodSchema,
+  insertCompanySchema,
   type InsertQuote,
   type InsertOrder,
 } from "@shared/schema";
@@ -1013,6 +1014,103 @@ export async function registerRoutes(
     try {
       const items = await storage.getOrderItems(getParam(req, "id"));
       res.json(items);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  // ─── COMPANIES ────────────────────────────────────────────────────────────────
+
+  app.get("/api/companies", async (req: Request, res: Response) => {
+    try {
+      const { search, status, page, limit } = req.query as Record<string, string>;
+      const result = await storage.getCompanies({
+        search, status,
+        page: page ? Number(page) : 1,
+        limit: limit ? Number(limit) : 50,
+      });
+      res.json(result);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.get("/api/companies/default", async (req: Request, res: Response) => {
+    try {
+      const company = await storage.getDefaultCompany();
+      if (!company) return res.status(404).json({ error: "Nenhuma empresa padrão definida" });
+      res.json(company);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.get("/api/companies/:id", async (req: Request, res: Response) => {
+    try {
+      const company = await storage.getCompany(getParam(req, "id"));
+      if (!company) return res.status(404).json({ error: "Empresa não encontrada" });
+      res.json(company);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.post("/api/companies", async (req: Request, res: Response) => {
+    try {
+      const body = nullifyEmpty(req.body) as any;
+      const parsed = insertCompanySchema.safeParse(body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Dados inválidos", details: parsed.error.flatten() });
+      }
+      const { data: allCompanies } = await storage.getCompanies({ limit: 1000 });
+      const existing = allCompanies.find(
+        (c) => c.cnpj.replace(/\D/g, "") === (parsed.data.cnpj || "").replace(/\D/g, "")
+      );
+      if (existing) {
+        return res.status(400).json({ error: "CNPJ já cadastrado" });
+      }
+      const company = await storage.createCompany(parsed.data);
+      res.status(201).json(company);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.patch("/api/companies/:id", async (req: Request, res: Response) => {
+    try {
+      const id = getParam(req, "id");
+      const body = nullifyEmpty(req.body) as any;
+      if (body.cnpj) {
+        const { data: allCompanies } = await storage.getCompanies({ limit: 1000 });
+        const existing = allCompanies.find(
+          (c) => c.id !== id && c.cnpj.replace(/\D/g, "") === body.cnpj.replace(/\D/g, "")
+        );
+        if (existing) {
+          return res.status(400).json({ error: "CNPJ já cadastrado" });
+        }
+      }
+      const company = await storage.updateCompany(id, body);
+      if (!company) return res.status(404).json({ error: "Empresa não encontrada" });
+      res.json(company);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.patch("/api/companies/:id/set-default", async (req: Request, res: Response) => {
+    try {
+      const company = await storage.setDefaultCompany(getParam(req, "id"));
+      if (!company) return res.status(404).json({ error: "Empresa não encontrada" });
+      res.json(company);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.delete("/api/companies/:id", async (req: Request, res: Response) => {
+    try {
+      await storage.softDeleteCompany(getParam(req, "id"));
+      res.status(204).end();
     } catch (err) {
       handleError(res, err);
     }
