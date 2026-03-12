@@ -7,14 +7,12 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -129,36 +127,18 @@ function clientToForm(c: Client): ClientFormData {
 
 type CnpjLookupStatus = "idle" | "loading" | "success" | "error";
 
-function SectionTitle({ icon: Icon, title }: { icon: React.ElementType; title: string }) {
+function SectionLabel({ icon: Icon, title }: { icon: React.ElementType; title: string }) {
   return (
-    <div className="flex items-center gap-2 mb-4">
-      <Icon className="w-4 h-4 text-muted-foreground" />
-      <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+    <div className="flex items-center gap-2 mb-2">
+      <Icon className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide whitespace-nowrap">{title}</span>
       <Separator className="flex-1" />
     </div>
   );
 }
 
-function FormField({
-  label, id, required, children, hint,
-}: {
-  label: string;
-  id: string;
-  required?: boolean;
-  children: React.ReactNode;
-  hint?: string;
-}) {
-  return (
-    <div>
-      <Label htmlFor={id} className="text-sm">
-        {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
-      <div className="mt-1">{children}</div>
-      {hint && <p className="text-xs text-muted-foreground mt-1">{hint}</p>}
-    </div>
-  );
-}
+const inputCls = "h-8 text-sm placeholder:text-muted-foreground/50 bg-background";
+const selectCls = "h-8 text-sm";
 
 export default function ClientFormPage() {
   const { id } = useParams<{ id: string }>();
@@ -218,38 +198,20 @@ export default function ClientFormPage() {
         const d = result.data;
         const newFields = new Set<string>();
         const updates: Partial<ClientFormData> = {};
-
         const fieldMap: Record<string, string | undefined> = {
-          razaoSocial: d.razaoSocial,
-          nomeFantasia: d.nomeFantasia,
-          inscricaoEstadual: d.inscricaoEstadual,
-          situacaoCadastral: d.situacaoCadastral,
-          dataAbertura: d.dataAbertura,
-          naturezaJuridica: d.naturezaJuridica,
-          logradouro: d.logradouro,
-          numero: d.numero,
-          complemento: d.complemento,
-          bairro: d.bairro,
-          cidade: d.cidade,
-          estado: d.estado,
-          cep: d.cep,
-          telefone: d.telefone,
-          email: d.email,
+          razaoSocial: d.razaoSocial, nomeFantasia: d.nomeFantasia,
+          inscricaoEstadual: d.inscricaoEstadual, situacaoCadastral: d.situacaoCadastral,
+          dataAbertura: d.dataAbertura, naturezaJuridica: d.naturezaJuridica,
+          logradouro: d.logradouro, numero: d.numero, complemento: d.complemento,
+          bairro: d.bairro, cidade: d.cidade, estado: d.estado, cep: d.cep,
+          telefone: d.telefone, email: d.email,
         };
-
         for (const [key, value] of Object.entries(fieldMap)) {
-          if (value) {
-            (updates as any)[key] = value;
-            newFields.add(key);
-          }
+          if (value) { (updates as any)[key] = value; newFields.add(key); }
         }
-
         setForm((prev) => ({
-          ...prev,
-          ...updates,
-          cnpj: formatCnpjInput(clean),
-          cnpjFonteConsulta: result.provider,
-          cnpjConsultaBemSucedida: true,
+          ...prev, ...updates, cnpj: formatCnpjInput(clean),
+          cnpjFonteConsulta: result.provider, cnpjConsultaBemSucedida: true,
           cnpjConsultadoEm: new Date().toISOString(),
         }));
         setAutoFilledFields(newFields);
@@ -259,10 +221,8 @@ export default function ClientFormPage() {
         setLookupStatus("error");
         setLookupError(result.error || "CNPJ não encontrado.");
         setForm((prev) => ({
-          ...prev,
-          cnpj: formatCnpjInput(clean),
-          cnpjFonteConsulta: result.provider,
-          cnpjConsultaBemSucedida: false,
+          ...prev, cnpj: formatCnpjInput(clean),
+          cnpjFonteConsulta: result.provider, cnpjConsultaBemSucedida: false,
           cnpjConsultadoEm: new Date().toISOString(),
         }));
       }
@@ -283,26 +243,17 @@ export default function ClientFormPage() {
         origemLead: data.origemLead || undefined,
         prazosPagamentoId: data.prazosPagamentoId || undefined,
       };
-      if (isEdit) {
-        return apiRequest("PATCH", `/api/clients/${id}`, payload).then((r) => r.json());
-      } else {
-        return apiRequest("POST", "/api/clients", payload).then((r) => r.json());
-      }
+      if (isEdit) return apiRequest("PATCH", `/api/clients/${id}`, payload).then((r) => r.json());
+      return apiRequest("POST", "/api/clients", payload).then((r) => r.json());
     },
     onSuccess: (data: Client) => {
       queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
-      if (isEdit) {
-        queryClient.invalidateQueries({ queryKey: ["/api/clients", id] });
-      }
-      toast({
-        title: isEdit ? "Cliente atualizado com sucesso." : "Cliente cadastrado com sucesso.",
-      });
+      if (isEdit) queryClient.invalidateQueries({ queryKey: ["/api/clients", id] });
+      toast({ title: isEdit ? "Cliente atualizado." : "Cliente cadastrado." });
       setLocation(`/clients/${isEdit ? id : data.id}`);
     },
-    onError: (err: Error) => {
-      toast({ title: `Erro: ${err.message}`, variant: "destructive" });
-    },
+    onError: (err: Error) => toast({ title: `Erro: ${err.message}`, variant: "destructive" }),
   });
 
   function handleSubmit(e: React.FormEvent) {
@@ -316,529 +267,448 @@ export default function ClientFormPage() {
 
   if (isEdit && loadingClient) {
     return (
-      <div className="p-6 space-y-4 max-w-4xl mx-auto">
-        <Skeleton className="h-6 w-48" />
-        <Skeleton className="h-96 w-full rounded-lg" />
+      <div className="p-6 space-y-3 max-w-5xl mx-auto">
+        <Skeleton className="h-5 w-40" />
+        <Skeleton className="h-[480px] w-full rounded-lg" />
       </div>
     );
   }
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl mx-auto">
+    <div className="p-5 max-w-5xl mx-auto">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Link href="/clients" className="flex items-center gap-1">
-          <ArrowLeft className="w-3.5 h-3.5" />
-          Clientes
+      <div className="flex items-center gap-1.5 text-sm text-muted-foreground mb-3">
+        <Link href="/clients" className="flex items-center gap-1 hover:text-foreground">
+          <ArrowLeft className="w-3.5 h-3.5" /> Clientes
         </Link>
         {isEdit && (
           <>
             <ChevronRight className="w-3.5 h-3.5" />
-            <Link href={`/clients/${id}`} className="text-muted-foreground">
+            <Link href={`/clients/${id}`} className="hover:text-foreground">
               {existingClient?.nomeFantasia || existingClient?.razaoSocial}
             </Link>
           </>
         )}
         <ChevronRight className="w-3.5 h-3.5" />
-        <span className="text-foreground">{isEdit ? "Editar" : "Novo Cliente"}</span>
+        <span className="text-foreground font-medium">{isEdit ? "Editar" : "Novo Cliente"}</span>
       </div>
 
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">
-          {isEdit ? "Editar Cliente" : "Novo Cliente"}
-        </h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          {isEdit ? "Atualize os dados do cliente" : "Preencha os dados para cadastrar um novo cliente"}
-        </p>
-      </div>
+      <form onSubmit={handleSubmit}>
+        <div className="border rounded-xl bg-card p-5 space-y-4">
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-
-        {/* Tipo de Pessoa Toggle */}
-        <Card>
-          <CardContent className="pt-4 pb-4">
-            <div className="flex items-center gap-3">
-              <span className="text-sm font-medium text-foreground">Tipo de cadastro:</span>
-              <div className="flex rounded-lg border border-border overflow-hidden" data-testid="toggle-tipo-pessoa">
-                <button
-                  type="button"
-                  onClick={() => { set("tipoPessoa", "juridica"); setLookupStatus("idle"); }}
-                  className={`px-4 py-1.5 text-sm font-medium transition-colors ${
-                    !isPF
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-background text-muted-foreground hover:bg-muted"
-                  }`}
-                  data-testid="button-tipo-juridica"
-                >
-                  Pessoa Jurídica
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { set("tipoPessoa", "fisica"); setLookupStatus("idle"); }}
-                  className={`px-4 py-1.5 text-sm font-medium transition-colors ${
-                    isPF
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-background text-muted-foreground hover:bg-muted"
-                  }`}
-                  data-testid="button-tipo-fisica"
-                >
-                  Pessoa Física
-                </button>
-              </div>
+          {/* Row 0: Tipo de Pessoa + CNPJ Lookup side by side */}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Toggle */}
+            <div className="flex rounded-lg border border-border overflow-hidden flex-shrink-0" data-testid="toggle-tipo-pessoa">
+              <button
+                type="button"
+                onClick={() => { set("tipoPessoa", "juridica"); setLookupStatus("idle"); }}
+                className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  !isPF ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"
+                }`}
+                data-testid="button-tipo-juridica"
+              >
+                Pessoa Jurídica
+              </button>
+              <button
+                type="button"
+                onClick={() => { set("tipoPessoa", "fisica"); setLookupStatus("idle"); }}
+                className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  isPF ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:bg-muted"
+                }`}
+                data-testid="button-tipo-fisica"
+              >
+                Pessoa Física
+              </button>
             </div>
-          </CardContent>
-        </Card>
 
-        {/* CNPJ Lookup Card — only for PJ */}
-        {!isPF && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <Search className="w-4 h-4 text-muted-foreground" />
-                Busca por CNPJ
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex gap-2">
-                <div className="relative flex-1 max-w-xs">
-                  <Input
-                    value={cnpjInput}
-                    onChange={(e) => {
-                      const fmt = formatCnpjInput(e.target.value);
-                      setCnpjInput(fmt);
-                      set("cnpj", fmt);
-                      setLookupStatus("idle");
-                    }}
-                    placeholder="00.000.000/0000-00"
-                    className="font-mono"
-                    data-testid="input-cnpj"
-                  />
-                </div>
+            {/* CNPJ / CPF inline */}
+            {!isPF ? (
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <Input
+                  value={cnpjInput}
+                  onChange={(e) => {
+                    const fmt = formatCnpjInput(e.target.value);
+                    setCnpjInput(fmt);
+                    set("cnpj", fmt);
+                    setLookupStatus("idle");
+                  }}
+                  placeholder="CNPJ: 00.000.000/0000-00"
+                  className={`${inputCls} font-mono w-52 flex-shrink-0`}
+                  data-testid="input-cnpj"
+                />
                 <Button
                   type="button"
                   variant="secondary"
+                  size="sm"
                   onClick={handleCnpjLookup}
                   disabled={lookupStatus === "loading" || cnpjInput.replace(/\D/g, "").length !== 14}
+                  className="h-8 px-3 text-xs flex-shrink-0"
                   data-testid="button-lookup-cnpj"
                 >
-                  {lookupStatus === "loading" ? (
-                    <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-                  ) : (
-                    <Search className="w-4 h-4 mr-1.5" />
-                  )}
-                  {lookupStatus === "loading" ? "Consultando..." : "Consultar"}
+                  {lookupStatus === "loading"
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <Search className="w-3.5 h-3.5" />}
+                  <span className="ml-1.5">{lookupStatus === "loading" ? "Buscando..." : "Consultar CNPJ"}</span>
                 </Button>
-              </div>
-
-              {lookupStatus === "success" && (
-                <div className="mt-3 flex items-center gap-2 text-sm text-green-700 dark:text-green-400">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Dados obtidos automaticamente via <strong>{form.cnpjFonteConsulta}</strong></span>
-                  <Badge variant="secondary" className="text-xs no-default-active-elevate bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                {lookupStatus === "success" && (
+                  <span className="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
                     {autoFilledFields.size} campos preenchidos
-                  </Badge>
-                </div>
-              )}
-              {lookupStatus === "error" && (
-                <div className="mt-3 flex items-center gap-2 text-sm text-destructive">
-                  <AlertCircle className="w-4 h-4" />
-                  <span>{lookupError} Você pode preencher os dados manualmente.</span>
-                </div>
-              )}
-              <p className="text-xs text-muted-foreground mt-2">
-                Digite o CNPJ para buscar automaticamente os dados da empresa
-              </p>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Dados Principais */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              {isPF ? <User className="w-4 h-4 text-muted-foreground" /> : <Building2 className="w-4 h-4 text-muted-foreground" />}
-              {isPF ? "Dados Pessoais" : "Dados Fiscais"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {isPF ? (
-                <>
-                  <div className="md:col-span-2">
-                    <FormField label="Nome Completo" id="razaoSocial" required>
-                      <Input
-                        id="razaoSocial"
-                        value={form.razaoSocial}
-                        onChange={(e) => set("razaoSocial", e.target.value)}
-                        placeholder="Nome completo do cliente"
-                        data-testid="input-razao-social"
-                      />
-                    </FormField>
-                  </div>
-                  <FormField label="Apelido / Nome Social" id="nomeFantasia">
-                    <Input
-                      id="nomeFantasia"
-                      value={form.nomeFantasia}
-                      onChange={(e) => set("nomeFantasia", e.target.value)}
-                      placeholder="Como é conhecido"
-                      data-testid="input-nome-fantasia"
-                    />
-                  </FormField>
-                  <FormField label="CPF" id="cpf">
-                    <Input
-                      id="cpf"
-                      value={form.cpf}
-                      onChange={(e) => set("cpf", e.target.value)}
-                      placeholder="000.000.000-00"
-                      className="font-mono"
-                      data-testid="input-client-cpf"
-                    />
-                  </FormField>
-                </>
-              ) : (
-                <>
-                  <div className="md:col-span-2">
-                    <FormField label="Razão Social" id="razaoSocial" required>
-                      <div className="relative">
-                        <Input
-                          id="razaoSocial"
-                          value={form.razaoSocial}
-                          onChange={(e) => set("razaoSocial", e.target.value)}
-                          placeholder="Razão Social da empresa"
-                          data-testid="input-razao-social"
-                        />
-                        {autoFilledFields.has("razaoSocial") && (
-                          <Badge className="absolute right-2 top-1/2 -translate-y-1/2 text-xs no-default-active-elevate bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                            Auto
-                          </Badge>
-                        )}
-                      </div>
-                    </FormField>
-                  </div>
-                  <FormField label="Nome Fantasia" id="nomeFantasia">
-                    <Input
-                      id="nomeFantasia"
-                      value={form.nomeFantasia}
-                      onChange={(e) => set("nomeFantasia", e.target.value)}
-                      placeholder="Como a empresa é conhecida"
-                      data-testid="input-nome-fantasia"
-                    />
-                  </FormField>
-                  <FormField label="Inscrição Estadual" id="inscricaoEstadual">
-                    <Input
-                      id="inscricaoEstadual"
-                      value={form.inscricaoEstadual}
-                      onChange={(e) => set("inscricaoEstadual", e.target.value)}
-                      placeholder="IE da empresa"
-                      data-testid="input-ie"
-                    />
-                  </FormField>
-                  <FormField label="Situação Cadastral" id="situacaoCadastral">
-                    <Input
-                      id="situacaoCadastral"
-                      value={form.situacaoCadastral}
-                      onChange={(e) => set("situacaoCadastral", e.target.value)}
-                      placeholder="ATIVA, BAIXADA..."
-                      data-testid="input-situacao"
-                    />
-                  </FormField>
-                  <FormField label="Data de Abertura" id="dataAbertura">
-                    <Input
-                      id="dataAbertura"
-                      type="date"
-                      value={form.dataAbertura}
-                      onChange={(e) => set("dataAbertura", e.target.value)}
-                      data-testid="input-data-abertura"
-                    />
-                  </FormField>
-                  <div className="md:col-span-2">
-                    <FormField label="Natureza Jurídica" id="naturezaJuridica">
-                      <Input
-                        id="naturezaJuridica"
-                        value={form.naturezaJuridica}
-                        onChange={(e) => set("naturezaJuridica", e.target.value)}
-                        placeholder="Ex: Sociedade Limitada"
-                        data-testid="input-natureza"
-                      />
-                    </FormField>
-                  </div>
-                  <FormField label="Regime Tributário" id="regimeTributario">
-                    <Select value={form.regimeTributario || "none"} onValueChange={(v) => set("regimeTributario", v === "none" ? "" : v)}>
-                      <SelectTrigger id="regimeTributario" data-testid="select-regime">
-                        <SelectValue placeholder="Selecione..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Não informado</SelectItem>
-                        <SelectItem value="simples_nacional">Simples Nacional</SelectItem>
-                        <SelectItem value="lucro_presumido">Lucro Presumido</SelectItem>
-                        <SelectItem value="lucro_real">Lucro Real</SelectItem>
-                        <SelectItem value="mei">MEI</SelectItem>
-                        <SelectItem value="isento">Isento</SelectItem>
-                        <SelectItem value="outro">Outro</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FormField>
-                </>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Endereço */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-muted-foreground" />
-              Endereço
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="md:col-span-2">
-                <FormField label="Logradouro" id="logradouro">
-                  <Input
-                    id="logradouro"
-                    value={form.logradouro}
-                    onChange={(e) => set("logradouro", e.target.value)}
-                    placeholder="Rua / Avenida..."
-                    data-testid="input-logradouro"
-                  />
-                </FormField>
+                  </span>
+                )}
+                {lookupStatus === "error" && (
+                  <span className="flex items-center gap-1.5 text-xs text-destructive">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    {lookupError}
+                  </span>
+                )}
               </div>
-              <FormField label="Número" id="numero">
-                <Input
-                  id="numero"
-                  value={form.numero}
-                  onChange={(e) => set("numero", e.target.value)}
-                  placeholder="123"
-                  data-testid="input-numero"
-                />
-              </FormField>
-              <FormField label="Complemento" id="complemento">
-                <Input
-                  id="complemento"
-                  value={form.complemento}
-                  onChange={(e) => set("complemento", e.target.value)}
-                  placeholder="Sala, Andar..."
-                  data-testid="input-complemento"
-                />
-              </FormField>
-              <FormField label="Bairro" id="bairro">
-                <Input
-                  id="bairro"
-                  value={form.bairro}
-                  onChange={(e) => set("bairro", e.target.value)}
-                  placeholder="Bairro"
-                  data-testid="input-bairro"
-                />
-              </FormField>
-              <FormField label="CEP" id="cep">
-                <Input
-                  id="cep"
-                  value={form.cep}
-                  onChange={(e) => set("cep", e.target.value)}
-                  placeholder="00000-000"
-                  className="font-mono"
-                  data-testid="input-cep"
-                />
-              </FormField>
-              <div className="md:col-span-2">
-                <FormField label="Cidade" id="cidade">
-                  <Input
-                    id="cidade"
-                    value={form.cidade}
-                    onChange={(e) => set("cidade", e.target.value)}
-                    placeholder="São Paulo"
-                    data-testid="input-cidade"
-                  />
-                </FormField>
-              </div>
-              <FormField label="Estado (UF)" id="estado">
-                <Input
-                  id="estado"
-                  value={form.estado}
-                  onChange={(e) => set("estado", e.target.value.toUpperCase().slice(0, 2))}
-                  placeholder="SP"
-                  maxLength={2}
-                  className="uppercase"
-                  data-testid="input-estado"
-                />
-              </FormField>
-            </div>
-          </CardContent>
-        </Card>
+            ) : (
+              <Input
+                value={form.cpf}
+                onChange={(e) => set("cpf", e.target.value)}
+                placeholder="CPF: 000.000.000-00"
+                className={`${inputCls} font-mono w-48`}
+                data-testid="input-client-cpf"
+              />
+            )}
+          </div>
 
-        {/* Contato */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Phone className="w-4 h-4 text-muted-foreground" />
-              Informações de Contato
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField label="Telefone Principal" id="telefone">
+          <Separator />
+
+          {/* Section: Dados Principais */}
+          <SectionLabel icon={isPF ? User : Building2} title={isPF ? "Dados Pessoais" : "Dados Fiscais"} />
+          {isPF ? (
+            <div className="grid grid-cols-2 gap-2">
+              <div className="col-span-2">
                 <Input
-                  id="telefone"
-                  value={form.telefone}
-                  onChange={(e) => set("telefone", e.target.value)}
-                  placeholder="(11) 99999-9999"
-                  data-testid="input-telefone"
+                  value={form.razaoSocial}
+                  onChange={(e) => set("razaoSocial", e.target.value)}
+                  placeholder="Nome Completo *"
+                  className={inputCls}
+                  data-testid="input-razao-social"
                 />
-              </FormField>
-              <FormField label="WhatsApp" id="whatsapp">
-                <Input
-                  id="whatsapp"
-                  value={form.whatsapp}
-                  onChange={(e) => set("whatsapp", e.target.value)}
-                  placeholder="(11) 99999-9999"
-                  data-testid="input-whatsapp"
-                />
-              </FormField>
-              <FormField label="E-mail Principal" id="email">
-                <Input
-                  id="email"
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => set("email", e.target.value)}
-                  placeholder="contato@empresa.com.br"
-                  data-testid="input-email"
-                />
-              </FormField>
-              <FormField label="Site" id="site">
+              </div>
+              <Input
+                value={form.nomeFantasia}
+                onChange={(e) => set("nomeFantasia", e.target.value)}
+                placeholder="Apelido / Nome Social"
+                className={inputCls}
+                data-testid="input-nome-fantasia"
+              />
+            </div>
+          ) : (
+            <div className="grid grid-cols-12 gap-2">
+              <div className="col-span-12">
                 <div className="relative">
-                  <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
                   <Input
-                    id="site"
-                    value={form.site}
-                    onChange={(e) => set("site", e.target.value)}
-                    placeholder="https://www.empresa.com.br"
-                    className="pl-8"
-                    data-testid="input-site"
+                    value={form.razaoSocial}
+                    onChange={(e) => set("razaoSocial", e.target.value)}
+                    placeholder="Razão Social *"
+                    className={inputCls}
+                    data-testid="input-razao-social"
                   />
+                  {autoFilledFields.has("razaoSocial") && (
+                    <Badge className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] py-0 h-4 no-default-active-elevate bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                      Auto
+                    </Badge>
+                  )}
                 </div>
-              </FormField>
-              <FormField label="Instagram" id="instagram">
+              </div>
+              <div className="col-span-5">
                 <Input
-                  id="instagram"
-                  value={form.instagram}
-                  onChange={(e) => set("instagram", e.target.value)}
-                  placeholder="@empresa"
-                  data-testid="input-instagram"
+                  value={form.nomeFantasia}
+                  onChange={(e) => set("nomeFantasia", e.target.value)}
+                  placeholder="Nome Fantasia"
+                  className={inputCls}
+                  data-testid="input-nome-fantasia"
                 />
-              </FormField>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Classificação e CRM */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2">
-              <Tag className="w-4 h-4 text-muted-foreground" />
-              Classificação e CRM
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <FormField label="Status do Cliente" id="status">
-                <Select value={form.status} onValueChange={(v) => set("status", v)}>
-                  <SelectTrigger id="status" data-testid="select-status">
-                    <SelectValue />
+              </div>
+              <div className="col-span-3">
+                <Input
+                  value={form.inscricaoEstadual}
+                  onChange={(e) => set("inscricaoEstadual", e.target.value)}
+                  placeholder="Inscrição Estadual"
+                  className={inputCls}
+                  data-testid="input-ie"
+                />
+              </div>
+              <div className="col-span-2">
+                <Input
+                  value={form.inscricaoMunicipal}
+                  onChange={(e) => set("inscricaoMunicipal", e.target.value)}
+                  placeholder="Insc. Municipal"
+                  className={inputCls}
+                />
+              </div>
+              <div className="col-span-2">
+                <Input
+                  value={form.situacaoCadastral}
+                  onChange={(e) => set("situacaoCadastral", e.target.value)}
+                  placeholder="Situação"
+                  className={inputCls}
+                  data-testid="input-situacao"
+                />
+              </div>
+              <div className="col-span-5">
+                <Input
+                  value={form.naturezaJuridica}
+                  onChange={(e) => set("naturezaJuridica", e.target.value)}
+                  placeholder="Natureza Jurídica"
+                  className={inputCls}
+                  data-testid="input-natureza"
+                />
+              </div>
+              <div className="col-span-4">
+                <Select value={form.regimeTributario || "none"} onValueChange={(v) => set("regimeTributario", v === "none" ? "" : v)}>
+                  <SelectTrigger className={selectCls} data-testid="select-regime">
+                    <SelectValue placeholder="Regime Tributário" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ativo">Ativo</SelectItem>
-                    <SelectItem value="prospect">Prospect</SelectItem>
-                    <SelectItem value="inativo">Inativo</SelectItem>
-                    <SelectItem value="bloqueado">Bloqueado</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormField>
-              <FormField label="Origem do Lead" id="origemLead">
-                <Select value={form.origemLead || "none"} onValueChange={(v) => set("origemLead", v === "none" ? "" : v)}>
-                  <SelectTrigger id="origemLead" data-testid="select-origem">
-                    <SelectValue placeholder="Selecione..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Não informado</SelectItem>
-                    <SelectItem value="indicacao">Indicação</SelectItem>
-                    <SelectItem value="site">Site</SelectItem>
-                    <SelectItem value="instagram">Instagram</SelectItem>
-                    <SelectItem value="google">Google</SelectItem>
-                    <SelectItem value="whatsapp">WhatsApp</SelectItem>
-                    <SelectItem value="email">E-mail</SelectItem>
-                    <SelectItem value="prospeccao_ativa">Prospecção Ativa</SelectItem>
-                    <SelectItem value="evento">Evento</SelectItem>
+                    <SelectItem value="none">Regime Tributário</SelectItem>
+                    <SelectItem value="simples_nacional">Simples Nacional</SelectItem>
+                    <SelectItem value="lucro_presumido">Lucro Presumido</SelectItem>
+                    <SelectItem value="lucro_real">Lucro Real</SelectItem>
+                    <SelectItem value="mei">MEI</SelectItem>
+                    <SelectItem value="isento">Isento</SelectItem>
                     <SelectItem value="outro">Outro</SelectItem>
                   </SelectContent>
                 </Select>
-              </FormField>
-              <FormField label="Potencial de Compra" id="potencialCompra">
-                <Select value={form.potencialCompra || "none"} onValueChange={(v) => set("potencialCompra", v === "none" ? "" : v)}>
-                  <SelectTrigger id="potencialCompra" data-testid="select-potencial">
-                    <SelectValue placeholder="Não avaliado" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Não avaliado</SelectItem>
-                    <SelectItem value="baixo">Baixo</SelectItem>
-                    <SelectItem value="medio">Médio</SelectItem>
-                    <SelectItem value="alto">Alto</SelectItem>
-                  </SelectContent>
-                </Select>
-              </FormField>
-              <FormField label="Prazo de Pagamento" id="prazosPagamentoId" hint="Será utilizado nos orçamentos e pedidos futuros">
-                <Select value={form.prazosPagamentoId || "none"} onValueChange={(v) => set("prazosPagamentoId", v === "none" ? "" : v)}>
-                  <SelectTrigger id="prazosPagamentoId" data-testid="select-prazo-pagamento">
-                    <SelectValue placeholder="Selecione um prazo..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Não definido</SelectItem>
-                    {(paymentTermsList as PaymentTerm[]).filter((t) => t.ativo).map((term) => (
-                      <SelectItem key={term.id} value={term.id} data-testid={`option-prazo-${term.id}`}>
-                        {term.nome}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FormField>
-              <div className="md:col-span-3">
-                <FormField label="Segmento" id="segmento">
-                  <Input
-                    id="segmento"
-                    value={form.segmento}
-                    onChange={(e) => set("segmento", e.target.value)}
-                    placeholder="Ex: Varejo, Indústria, Saúde, Educação..."
-                    data-testid="input-segmento"
-                  />
-                </FormField>
               </div>
-              <div className="md:col-span-3">
-                <FormField label="Observações Internas" id="observacoes">
-                  <Textarea
-                    id="observacoes"
-                    value={form.observacoes}
-                    onChange={(e) => set("observacoes", e.target.value)}
-                    rows={3}
-                    placeholder="Informações relevantes sobre o cliente para a equipe..."
-                    data-testid="input-observacoes"
-                  />
-                </FormField>
+              <div className="col-span-3">
+                <Input
+                  type="date"
+                  value={form.dataAbertura}
+                  onChange={(e) => set("dataAbertura", e.target.value)}
+                  placeholder="Data Abertura"
+                  className={`${inputCls} text-muted-foreground`}
+                  title="Data de Abertura"
+                  data-testid="input-data-abertura"
+                />
               </div>
             </div>
-          </CardContent>
-        </Card>
+          )}
 
-        {/* Actions */}
-        <div className="flex items-center justify-between pt-2">
-          <Button type="button" variant="outline" asChild>
-            <Link href={isEdit ? `/clients/${id}` : "/clients"}>Cancelar</Link>
-          </Button>
-          <Button type="submit" disabled={saveMutation.isPending} data-testid="button-save-client">
-            {saveMutation.isPending ? (
-              <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" />Salvando...</>
-            ) : isEdit ? "Salvar alterações" : "Cadastrar cliente"}
-          </Button>
+          <Separator />
+
+          {/* Section: Endereço */}
+          <SectionLabel icon={MapPin} title="Endereço" />
+          <div className="grid grid-cols-12 gap-2">
+            <div className="col-span-2">
+              <Input
+                value={form.cep}
+                onChange={(e) => set("cep", e.target.value)}
+                placeholder="CEP"
+                className={inputCls}
+                data-testid="input-cep"
+              />
+            </div>
+            <div className="col-span-6">
+              <Input
+                value={form.logradouro}
+                onChange={(e) => set("logradouro", e.target.value)}
+                placeholder="Logradouro (Rua, Av...)"
+                className={inputCls}
+                data-testid="input-logradouro"
+              />
+            </div>
+            <div className="col-span-2">
+              <Input
+                value={form.numero}
+                onChange={(e) => set("numero", e.target.value)}
+                placeholder="Número"
+                className={inputCls}
+                data-testid="input-numero"
+              />
+            </div>
+            <div className="col-span-2">
+              <Input
+                value={form.complemento}
+                onChange={(e) => set("complemento", e.target.value)}
+                placeholder="Complemento"
+                className={inputCls}
+                data-testid="input-complemento"
+              />
+            </div>
+            <div className="col-span-4">
+              <Input
+                value={form.bairro}
+                onChange={(e) => set("bairro", e.target.value)}
+                placeholder="Bairro"
+                className={inputCls}
+                data-testid="input-bairro"
+              />
+            </div>
+            <div className="col-span-5">
+              <Input
+                value={form.cidade}
+                onChange={(e) => set("cidade", e.target.value)}
+                placeholder="Cidade"
+                className={inputCls}
+                data-testid="input-cidade"
+              />
+            </div>
+            <div className="col-span-3">
+              <Input
+                value={form.estado}
+                onChange={(e) => set("estado", e.target.value)}
+                placeholder="Estado (UF)"
+                className={inputCls}
+                data-testid="input-estado"
+              />
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Section: Contato */}
+          <SectionLabel icon={Phone} title="Contato" />
+          <div className="grid grid-cols-12 gap-2">
+            <div className="col-span-3">
+              <Input
+                value={form.telefone}
+                onChange={(e) => set("telefone", e.target.value)}
+                placeholder="Telefone"
+                className={inputCls}
+                data-testid="input-telefone"
+              />
+            </div>
+            <div className="col-span-3">
+              <Input
+                value={form.whatsapp}
+                onChange={(e) => set("whatsapp", e.target.value)}
+                placeholder="WhatsApp"
+                className={inputCls}
+                data-testid="input-whatsapp"
+              />
+            </div>
+            <div className="col-span-3">
+              <Input
+                value={form.email}
+                onChange={(e) => set("email", e.target.value)}
+                placeholder="E-mail"
+                className={inputCls}
+                data-testid="input-email"
+              />
+            </div>
+            <div className="col-span-3">
+              <Input
+                value={form.site}
+                onChange={(e) => set("site", e.target.value)}
+                placeholder="Site"
+                className={inputCls}
+                data-testid="input-site"
+              />
+            </div>
+            <div className="col-span-3">
+              <Input
+                value={form.instagram}
+                onChange={(e) => set("instagram", e.target.value)}
+                placeholder="Instagram (@)"
+                className={inputCls}
+                data-testid="input-instagram"
+              />
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Section: Comercial */}
+          <SectionLabel icon={Tag} title="Comercial" />
+          <div className="grid grid-cols-12 gap-2">
+            <div className="col-span-2">
+              <Select value={form.status} onValueChange={(v) => set("status", v)}>
+                <SelectTrigger className={selectCls} data-testid="select-status">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="prospect">Prospect</SelectItem>
+                  <SelectItem value="ativo">Ativo</SelectItem>
+                  <SelectItem value="inativo">Inativo</SelectItem>
+                  <SelectItem value="bloqueado">Bloqueado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="col-span-3">
+              <Select value={form.origemLead || "none"} onValueChange={(v) => set("origemLead", v === "none" ? "" : v)}>
+                <SelectTrigger className={selectCls} data-testid="select-origem">
+                  <SelectValue placeholder="Origem do Lead" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Origem do Lead</SelectItem>
+                  <SelectItem value="site">Site</SelectItem>
+                  <SelectItem value="indicacao">Indicação</SelectItem>
+                  <SelectItem value="instagram">Instagram</SelectItem>
+                  <SelectItem value="google">Google</SelectItem>
+                  <SelectItem value="prospeccao_ativa">Prospecção Ativa</SelectItem>
+                  <SelectItem value="outro">Outro</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="col-span-3">
+              <Input
+                value={form.segmento}
+                onChange={(e) => set("segmento", e.target.value)}
+                placeholder="Segmento de atuação"
+                className={inputCls}
+                data-testid="input-segmento"
+              />
+            </div>
+            <div className="col-span-2">
+              <Select value={form.potencialCompra || "none"} onValueChange={(v) => set("potencialCompra", v === "none" ? "" : v)}>
+                <SelectTrigger className={selectCls} data-testid="select-potencial">
+                  <SelectValue placeholder="Potencial" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Potencial</SelectItem>
+                  <SelectItem value="baixo">Baixo</SelectItem>
+                  <SelectItem value="medio">Médio</SelectItem>
+                  <SelectItem value="alto">Alto</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="col-span-2">
+              <Select value={form.prazosPagamentoId || "none"} onValueChange={(v) => set("prazosPagamentoId", v === "none" ? "" : v)}>
+                <SelectTrigger className={selectCls} data-testid="select-prazo">
+                  <SelectValue placeholder="Prazo de Pagamento" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Prazo de Pagamento</SelectItem>
+                  {paymentTermsList.filter(p => p.ativo).map(p => (
+                    <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Section: Observações */}
+          <SectionLabel icon={FileText} title="Observações" />
+          <Textarea
+            value={form.observacoes}
+            onChange={(e) => set("observacoes", e.target.value)}
+            placeholder="Observações gerais sobre o cliente..."
+            className="text-sm placeholder:text-muted-foreground/50 min-h-[60px] resize-none"
+            rows={2}
+            data-testid="textarea-observacoes"
+          />
+
+          {/* Footer */}
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <Button type="button" variant="ghost" size="sm" asChild>
+              <Link href={isEdit ? `/clients/${id}` : "/clients"}>Cancelar</Link>
+            </Button>
+            <Button type="submit" size="sm" disabled={saveMutation.isPending} data-testid="button-submit">
+              {saveMutation.isPending ? (
+                <><Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Salvando...</>
+              ) : (
+                isEdit ? "Salvar Alterações" : "Cadastrar Cliente"
+              )}
+            </Button>
+          </div>
         </div>
       </form>
     </div>
