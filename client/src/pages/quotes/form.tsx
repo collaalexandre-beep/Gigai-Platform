@@ -226,13 +226,14 @@ export default function QuoteFormPage() {
         valorTotal: calculateTotal(),
         items: data.items.map(i => ({
           ...i,
+          descricao: i.descricao || "",
           largura: i.largura ? parseFloat(i.largura) : null,
           altura: i.altura ? parseFloat(i.altura) : null,
           area: i.area ? parseFloat(i.area) : null,
-          quantidade: parseFloat(i.quantidade),
-          custoCalculado: parseFloat(i.custoCalculado),
-          precoUnitario: parseFloat(i.precoUnitario),
-          precoTotal: parseFloat(i.precoTotal),
+          quantidade: parseFloat(i.quantidade) || 1,
+          custoCalculado: parseFloat(i.custoCalculado) || 0,
+          precoUnitario: parseFloat(i.precoUnitario) || 0,
+          precoTotal: parseFloat(i.precoTotal) || 0,
         })),
       };
 
@@ -462,7 +463,23 @@ export default function QuoteFormPage() {
                   {form.items.map((item, idx) => (
                     <tr key={idx}>
                       <td className="p-2 space-y-1">
-                        <Select value={item.productId || "none"} onValueChange={(v) => updateItem(idx, "productId", v === "none" ? "" : v)}>
+                        <Select
+                          value={item.productId || "none"}
+                          onValueChange={(v) => {
+                            const newItems = [...form.items];
+                            const current = { ...newItems[idx] };
+                            const selectedId = v === "none" ? "" : v;
+                            current.productId = selectedId;
+                            if (selectedId) {
+                              const prod = products.find(p => p.id === selectedId);
+                              if (prod && !current.descricao) {
+                                current.descricao = prod.nome;
+                              }
+                            }
+                            newItems[idx] = current;
+                            set("items", newItems);
+                          }}
+                        >
                           <SelectTrigger className="h-8"><SelectValue placeholder="Produto" /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="none">Item Personalizado</SelectItem>

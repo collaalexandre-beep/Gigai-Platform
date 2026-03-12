@@ -951,6 +951,7 @@ export async function registerRoutes(
         largura: coerceDecimal, altura: coerceDecimal, area: coerceDecimal,
         quantidade: coerceDecimal, custoCalculado: coerceDecimal,
         precoUnitario: coerceDecimal, precoTotal: coerceDecimal,
+        descricao: z.string().nullable().optional().transform(v => v ?? ""),
       }).omit({ quoteId: true });
       const itemsSchema = z.array(quoteItemSchemaCoerced);
       const bodyData = Array.isArray(req.body) ? req.body : (req.body?.items ?? []);
