@@ -4,7 +4,7 @@ import { Link, useParams, useLocation } from "wouter";
 import {
   ArrowLeft, Search, Loader2, CheckCircle2, ChevronRight,
   User, FileText, Calendar, Clock, DollarSign, Plus, Trash2,
-  Sparkles, Layers
+  Sparkles, Layers, Building2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,7 +19,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { Quote, QuoteItem, Client, Contact, Seller, PaymentTerm, Product } from "@shared/schema";
+import type { Quote, QuoteItem, Client, Contact, Seller, PaymentTerm, Product, Company } from "@shared/schema";
 import { format, addDays } from "date-fns";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -43,6 +43,7 @@ interface QuoteFormData {
   clientId: string;
   contactId: string;
   sellerId: string;
+  companyId: string;
   data: string;
   validade: string;
   status: string;
@@ -59,6 +60,7 @@ const emptyForm: QuoteFormData = {
   clientId: "",
   contactId: "",
   sellerId: "",
+  companyId: "",
   data: new Date().toISOString().split("T")[0],
   validade: addDays(new Date(), 7).toISOString().split("T")[0],
   status: "rascunho",
@@ -110,6 +112,12 @@ export default function QuoteFormPage() {
     queryFn: () => fetch("/api/products?limit=100").then(r => r.json()).then(d => d.data),
   });
 
+  const { data: companiesData } = useQuery<{ data: Company[] }>({
+    queryKey: ["/api/companies"],
+    queryFn: () => fetch("/api/companies?status=ativa&limit=100").then(r => r.json()),
+  });
+  const companies = companiesData?.data ?? [];
+
   const [form, setForm] = useState<QuoteFormData>(emptyForm);
   const [isAiDialogOpen, setIsAiDialogOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -121,6 +129,7 @@ export default function QuoteFormPage() {
         clientId: existingQuote.clientId || "",
         contactId: existingQuote.contactId || "",
         sellerId: existingQuote.sellerId || "",
+        companyId: (existingQuote as any).companyId || "",
         data: existingQuote.data ? new Date(existingQuote.data).toISOString().split("T")[0] : "",
         validade: existingQuote.validade ? new Date(existingQuote.validade).toISOString().split("T")[0] : "",
         status: existingQuote.status || "rascunho",
@@ -310,6 +319,30 @@ export default function QuoteFormPage() {
         <Card className="md:col-span-2">
           <CardHeader><CardTitle className="text-sm font-semibold">Informações Gerais</CardTitle></CardHeader>
           <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5">
+                <Building2 className="w-3.5 h-3.5 text-muted-foreground" /> Empresa Emissora
+              </Label>
+              <Select value={form.companyId || "none"} onValueChange={(v) => set("companyId", v === "none" ? "" : v)} data-testid="select-company">
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione a empresa..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sem empresa vinculada</SelectItem>
+                  {companies.map(c => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.nomeFantasia || c.razaoSocial}
+                      {c.isPadrao && " ★"}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {companies.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Nenhuma empresa ativa cadastrada. <Link href="/companies/new" className="text-primary underline">Cadastrar empresa</Link>
+                </p>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Cliente</Label>

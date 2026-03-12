@@ -1,8 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useParams, useLocation } from "wouter";
 import {
   ArrowLeft, Calendar, User, FileText, Clock, DollarSign,
-  Layers, Building2, Phone, Mail, MapPin, Printer, ArrowRightLeft
+  Layers, Building2, Phone, Mail, MapPin, Printer, ArrowRightLeft, Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,10 +11,13 @@ import { StatusBadge } from "@/components/status-badge";
 import type { Quote, QuoteItem, Client, Contact, Seller, PaymentTerm } from "@shared/schema";
 import { format } from "date-fns";
 import { Separator } from "@/components/ui/separator";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function QuoteDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
 
   const { data: quote, isLoading } = useQuery<Quote & { 
     client?: Client, 
@@ -28,7 +31,6 @@ export default function QuoteDetailPage() {
       const q = await fetch(`/api/quotes/${id}`).then(r => r.json());
       const items = await fetch(`/api/quotes/${id}/items`).then(r => r.json());
       
-      // Fetch related data if IDs exist
       let client, contact, seller, paymentTerm;
       if (q.clientId) client = await fetch(`/api/clients/${q.clientId}`).then(r => r.json());
       if (q.contactId) contact = await fetch(`/api/contacts/${q.contactId}`).then(r => r.json());
@@ -36,6 +38,22 @@ export default function QuoteDetailPage() {
       if (q.prazosPagamentoId) paymentTerm = await fetch(`/api/payment-terms`).then(r => r.json()).then((pts: PaymentTerm[]) => pts.find(pt => pt.id === q.prazosPagamentoId));
 
       return { ...q, items, client, contact, seller, paymentTerm };
+    },
+  });
+
+  const convertMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/quotes/${id}/convert-to-order`);
+      return res.json();
+    },
+    onSuccess: (order) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/quotes"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      toast({ title: "Pedido criado com sucesso!", description: `Pedido ${order.numero} gerado.` });
+      setLocation(`/orders/${order.id}`);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Erro ao converter", description: err.message, variant: "destructive" });
     },
   });
 
@@ -50,6 +68,8 @@ export default function QuoteDetailPage() {
   const subtotal = quote.items.reduce((acc, item) => acc + Number(item.precoTotal || 0), 0);
   const descontoVal = subtotal * (Number(quote.desconto || 0) / 100);
   const impostosVal = subtotal * (Number(quote.impostos || 0) / 100);
+
+  const canConvert = !["cancelado", "reprovado"].includes(quote.status ?? "");
 
   return (
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
@@ -70,17 +90,25 @@ export default function QuoteDetailPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" asChild>
+          <Button variant="outline" asChild data-testid="button-print">
             <Link href={`/quotes/${id}/print`} target="_blank">
               <Printer className="w-4 h-4 mr-2" /> Imprimir
             </Link>
           </Button>
-          <Button asChild>
+          <Button variant="outline" asChild data-testid="button-edit">
             <Link href={`/quotes/${id}/edit`}>Editar Orçamento</Link>
           </Button>
-          {quote.status === "aprovado" && (
-            <Button className="bg-primary">
-              <ArrowRightLeft className="w-4 h-4 mr-2" /> Converter em Pedido
+          {canConvert && (
+            <Button
+              className="bg-primary"
+              onClick={() => convertMutation.mutate()}
+              disabled={convertMutation.isPending}
+              data-testid="button-convert-order"
+            >
+              {convertMutation.isPending
+                ? <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                : <ArrowRightLeft className="w-4 h-4 mr-2" />}
+              Converter em Pedido
             </Button>
           )}
         </div>
