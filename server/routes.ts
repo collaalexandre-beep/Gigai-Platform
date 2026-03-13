@@ -1155,12 +1155,33 @@ _(A qualquer momento, envie CANCELAR para recomeçar)_`;
 
 Se precisar de mais alguma coisa, envie *MENU* para ver as opções.`;
 
+  app.get("/api/whatsapp", (req: Request, res: Response) => {
+    const baseUrl = process.env.REPLIT_DEPLOYMENT_URL
+      ? `https://${process.env.REPLIT_DEPLOYMENT_URL}`
+      : `${req.protocol}://${req.get("host")}`;
+    res.json({
+      status: "active",
+      webhook: {
+        url: `${baseUrl}/api/whatsapp`,
+        method: "POST",
+        contentType: "application/x-www-form-urlencoded",
+      },
+      message: "Webhook do WhatsApp está ativo. Configure esta URL no painel do Twilio como webhook de mensagens (POST).",
+    });
+  });
+
   app.post("/api/whatsapp", async (req: Request, res: Response) => {
-    console.log("WHATSAPP MESSAGE RECEIVED");
-    console.log(req.body);const from: string = req.body.From ?? "";
+    const from: string = req.body.From ?? "";
     const to: string = req.body.To ?? "";
     const rawBody: string = (req.body.Body ?? "").trim();
     const msgNorm = rawBody.toLowerCase().replace(/[^a-z0-9çãáéíóúâêîôûàèìòùü ]/g, "").trim();
+
+    console.log("[WhatsApp Webhook] POST recebido", {
+      timestamp: new Date().toISOString(),
+      from,
+      to,
+      body: rawBody,
+    });
 
     res.setHeader("Content-Type", "text/xml");
 
