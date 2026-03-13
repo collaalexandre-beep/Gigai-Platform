@@ -1156,7 +1156,8 @@ _(A qualquer momento, envie CANCELAR para recomeçar)_`;
 Se precisar de mais alguma coisa, envie *MENU* para ver as opções.`;
 
   app.post("/api/whatsapp", async (req: Request, res: Response) => {
-    const from: string = req.body.From ?? "";
+    console.log("WHATSAPP MESSAGE RECEIVED");
+    console.log(req.body);const from: string = req.body.From ?? "";
     const to: string = req.body.To ?? "";
     const rawBody: string = (req.body.Body ?? "").trim();
     const msgNorm = rawBody.toLowerCase().replace(/[^a-z0-9çãáéíóúâêîôûàèìòùü ]/g, "").trim();
