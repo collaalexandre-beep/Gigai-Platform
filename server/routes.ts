@@ -1117,5 +1117,328 @@ export async function registerRoutes(
     }
   });
 
+  // ─── WHATSAPP BOT ─────────────────────────────────────────────────────────────
+
+  function twiml(message: string): string {
+    const escaped = message
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+    return `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${escaped}</Message></Response>`;
+  }
+
+  function formatPhone(from: string): string {
+    return from.replace("whatsapp:", "").replace(/\D/g, "");
+  }
+
+  function parseMedidas(text: string): { largura: number; altura: number } | null {
+    const normalized = text.trim().replace(",", ".").toLowerCase().replace(/\s+/g, "");
+    const match = normalized.match(/^(\d+(?:\.\d+)?)[x×](\d+(?:\.\d+)?)$/);
+    if (!match) return null;
+    const largura = parseFloat(match[1]);
+    const altura = parseFloat(match[2]);
+    if (isNaN(largura) || isNaN(altura) || largura <= 0 || altura <= 0) return null;
+    return { largura, altura };
+  }
+
+  const MENU_MSG = `Olá! Sou o assistente da *Gráfica+* 🖨️
+
+Digite a opção desejada:
+*1* - Solicitar orçamento
+*2* - Verificar status de pedido
+*3* - Falar com atendente
+
+_(A qualquer momento, envie CANCELAR para recomeçar)_`;
+
+  const ATENDENTE_MSG = `Entendido! Em breve um de nossos atendentes entrará em contato com você. ✅
+
+Se precisar de mais alguma coisa, envie *MENU* para ver as opções.`;
+
+  app.post("/api/whatsapp", async (req: Request, res: Response) => {
+    const from: string = req.body.From ?? "";
+    const to: string = req.body.To ?? "";
+    const rawBody: string = (req.body.Body ?? "").trim();
+    const msgNorm = rawBody.toLowerCase().replace(/[^a-z0-9çãáéíóúâêîôûàèìòùü ]/g, "").trim();
+
+    res.setHeader("Content-Type", "text/xml");
+
+    try {
+      let session = await storage.getWhatsappSession(from);
+      if (!session) {
+        session = await storage.createWhatsappSession(from);
+      }
+
+      await storage.addWhatsappMessage(session.id, "inbound", rawBody, from, to);
+
+      const reply = async (msg: string, nextStep?: string, extraData?: Record<string, unknown>) => {
+        if (nextStep !== undefined || extraData) {
+          const newData = { ...(session!.data as Record<string, unknown>), ...extraData };
+          await storage.updateWhatsappSession(session!.id, {
+            step: nextStep ?? session!.step,
+            data: newData,
+          });
+        }
+        await storage.addWhatsappMessage(session!.id, "outbound", msg, to, from);
+        res.send(twiml(msg));
+      };
+
+      if (msgNorm === "cancelar" || msgNorm === "sair") {
+        await storage.updateWhatsappSession(session.id, { step: "menu", data: {} });
+        return res.send(twiml(`Operação cancelada. ❌\n\n${MENU_MSG}`));
+      }
+      if (msgNorm === "menu" || msgNorm === "inicio" || msgNorm === "início") {
+        await storage.updateWhatsappSession(session.id, { step: "menu", data: {} });
+        await storage.addWhatsappMessage(session.id, "outbound", MENU_MSG, to, from);
+        return res.send(twiml(MENU_MSG));
+      }
+
+      const step = session.step;
+      const data = (session.data ?? {}) as Record<string, unknown>;
+
+      switch (step) {
+        case "menu":
+        default: {
+          if (msgNorm === "1" || msgNorm.includes("orcamento") || msgNorm.includes("orçamento")) {
+            return reply(
+              `Vamos fazer seu orçamento! 📋\n\nQual *produto* você precisa?\n_(ex: Banner, Faixa, Adesivo Vinil, Placa, Lona...)_`,
+              "produto"
+            );
+          }
+          if (msgNorm === "2" || msgNorm.includes("status") || msgNorm.includes("pedido")) {
+            return reply(
+              `Me informe o *número do orçamento* ou pedido:\n_(ex: ORC-2026-0001 ou PED-2026-0001)_`,
+              "status_query"
+            );
+          }
+          if (msgNorm === "3" || msgNorm.includes("atendente") || msgNorm.includes("humano")) {
+            return reply(ATENDENTE_MSG, "menu");
+          }
+          return reply(MENU_MSG, "menu");
+        }
+
+        case "status_query": {
+          const numUpper = rawBody.trim().toUpperCase();
+          if (numUpper.startsWith("ORC-") || numUpper.startsWith("PED-")) {
+            try {
+              const { data: allQuotes } = await storage.getQuotes({ limit: 500 });
+              const quote = allQuotes.find((q) => q.numero === numUpper);
+              if (quote) {
+                const statusMap: Record<string, string> = {
+                  rascunho: "📝 Rascunho",
+                  enviado: "📤 Enviado",
+                  aprovado: "✅ Aprovado",
+                  reprovado: "❌ Reprovado",
+                  cancelado: "🚫 Cancelado",
+                };
+                const s = statusMap[quote.status] ?? quote.status;
+                return reply(
+                  `*${quote.numero}*\nStatus: ${s}\nValor: R$ ${Number(quote.valorTotal || 0).toFixed(2).replace(".", ",")}\n\nEnvie *MENU* para ver outras opções.`,
+                  "menu",
+                  {}
+                );
+              }
+              const { data: allOrders } = await storage.getOrders({ limit: 500 });
+              const order = allOrders.find((o) => o.numero === numUpper);
+              if (order) {
+                const statusMap: Record<string, string> = {
+                  aguardando_producao: "⏳ Aguardando Produção",
+                  em_producao: "🏭 Em Produção",
+                  finalizado: "✅ Finalizado",
+                  entregue: "📦 Entregue",
+                  cancelado: "🚫 Cancelado",
+                };
+                const s = statusMap[order.status] ?? order.status;
+                return reply(
+                  `*${order.numero}*\nStatus: ${s}\nValor: R$ ${Number(order.valorTotal || 0).toFixed(2).replace(".", ",")}\n\nEnvie *MENU* para ver outras opções.`,
+                  "menu",
+                  {}
+                );
+              }
+              return reply(`Não encontrei o número *${numUpper}*. Verifique e tente novamente.\n\nEnvie *MENU* para voltar ao início.`);
+            } catch {
+              return reply(`Não consegui verificar. Envie *MENU* para recomeçar.`, "menu");
+            }
+          }
+          return reply(`Por favor, informe o número no formato correto:\n*ORC-2026-0001* ou *PED-2026-0001*`);
+        }
+
+        case "produto": {
+          if (rawBody.trim().length < 2) {
+            return reply(`Por favor, informe o nome do produto (mínimo 2 caracteres):`);
+          }
+          return reply(
+            `Ótimo! *${rawBody.trim()}* ✅\n\nAgora informe as *medidas* (Largura x Altura em metros):\n_(ex: 3x1 ou 2.5x1.2)_`,
+            "medidas",
+            { produto: rawBody.trim() }
+          );
+        }
+
+        case "medidas": {
+          const medidas = parseMedidas(rawBody);
+          if (!medidas) {
+            return reply(
+              `Não entendi as medidas. Por favor, use o formato *LarguraxAltura*:\n_(ex: 3x1 ou 2.5x1.2)_`
+            );
+          }
+          return reply(
+            `📐 ${medidas.largura}m × ${medidas.altura}m ✅\n\nQual a *quantidade* de peças?`,
+            "quantidade",
+            { largura: medidas.largura, altura: medidas.altura }
+          );
+        }
+
+        case "quantidade": {
+          const qtd = parseFloat(rawBody.replace(",", "."));
+          if (isNaN(qtd) || qtd <= 0) {
+            return reply(`Por favor, informe uma quantidade válida (número inteiro maior que zero):`);
+          }
+          return reply(
+            `🔢 ${qtd} un ✅\n\nSeu *nome completo* ou razão social da empresa?`,
+            "nome",
+            { quantidade: qtd }
+          );
+        }
+
+        case "nome": {
+          if (rawBody.trim().length < 2) {
+            return reply(`Por favor, informe seu nome ou razão social:`);
+          }
+          return reply(
+            `👤 ${rawBody.trim()} ✅\n\nQual a *cidade* de entrega?`,
+            "cidade",
+            { nomeCliente: rawBody.trim() }
+          );
+        }
+
+        case "cidade": {
+          if (rawBody.trim().length < 2) {
+            return reply(`Por favor, informe a cidade:`);
+          }
+          const d = { ...data, cidade: rawBody.trim() };
+          const summaryMsg =
+            `📋 *Resumo do seu orçamento:*\n\n` +
+            `📦 *Produto:* ${d.produto}\n` +
+            `📐 *Medidas:* ${d.largura}m × ${d.altura}m\n` +
+            `🔢 *Quantidade:* ${d.quantidade} un\n` +
+            `👤 *Nome/Empresa:* ${d.nomeCliente}\n` +
+            `📍 *Cidade:* ${d.cidade}\n\n` +
+            `Está correto? Digite *SIM* para confirmar ou *NÃO* para cancelar.`;
+          return reply(summaryMsg, "confirmar", { cidade: rawBody.trim() });
+        }
+
+        case "confirmar": {
+          if (msgNorm === "sim" || msgNorm === "s" || msgNorm === "yes") {
+            const d = data as { produto?: string; largura?: number; altura?: number; quantidade?: number; nomeCliente?: string; cidade?: string };
+            const phone = formatPhone(from);
+            let clientId: string;
+            try {
+              const { data: foundClients } = await storage.getClients({ search: phone, limit: 5 });
+              const existing = foundClients.find((c) => (c.telefone ?? "").replace(/\D/g, "").includes(phone));
+              if (existing) {
+                clientId = existing.id;
+              } else {
+                const newClient = await storage.createClient({
+                  tipoPessoa: "fisica",
+                  razaoSocial: d.nomeCliente ?? "Cliente WhatsApp",
+                  telefone: `+${phone}`,
+                  status: "prospect",
+                  origemLead: "whatsapp",
+                } as any);
+                clientId = newClient.id;
+              }
+
+              const today = new Date().toISOString().split("T")[0];
+              const validUntil = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
+              const quote = await storage.createQuote({
+                clientId,
+                data: today,
+                validade: validUntil,
+                status: "rascunho",
+                desconto: "0",
+                impostos: "0",
+                observacoes: `Orçamento via WhatsApp - Cidade: ${d.cidade ?? ""}`,
+              } as any);
+
+              const largura = d.largura ?? 0;
+              const altura = d.altura ?? 0;
+              const area = (largura * altura).toFixed(4);
+              await storage.setQuoteItems(quote.id, [
+                {
+                  quoteId: quote.id,
+                  descricao: d.produto ?? "Produto",
+                  largura: String(largura),
+                  altura: String(altura),
+                  area,
+                  quantidade: String(d.quantidade ?? 1),
+                  unidade: "un",
+                  custoCalculado: "0",
+                  precoUnitario: "0",
+                  precoTotal: "0",
+                  ordem: 0,
+                },
+              ]);
+
+              await storage.updateWhatsappSession(session!.id, {
+                step: "done",
+                status: "completed",
+                clientId,
+                quoteId: quote.id,
+              });
+
+              return reply(
+                `✅ *Orçamento criado com sucesso!*\n\n` +
+                `Número: *${quote.numero}*\n\n` +
+                `Em breve nossa equipe analisará seu pedido e entrará em contato com os valores. 😊\n\n` +
+                `Obrigado por escolher a Gráfica+!`
+              );
+            } catch (e) {
+              console.error("[WhatsApp] Erro ao criar orçamento:", e);
+              return reply(`Ocorreu um erro ao criar o orçamento. Por favor, tente novamente ou envie *MENU*.`, "menu");
+            }
+          }
+          if (msgNorm === "nao" || msgNorm === "não" || msgNorm === "n" || msgNorm === "no") {
+            await storage.updateWhatsappSession(session.id, { step: "menu", data: {}, status: "abandoned" });
+            session = await storage.createWhatsappSession(from);
+            return reply(`Orçamento cancelado. ❌\n\n${MENU_MSG}`, "menu");
+          }
+          return reply(`Por favor, responda *SIM* para confirmar ou *NÃO* para cancelar.`);
+        }
+
+        case "done": {
+          await storage.updateWhatsappSession(session.id, { step: "menu", data: {}, status: "abandoned" });
+          session = await storage.createWhatsappSession(from);
+          return reply(MENU_MSG, "menu");
+        }
+      }
+    } catch (err) {
+      console.error("[WhatsApp Webhook]", err);
+      res.send(twiml("Ops! Ocorreu um erro interno. Tente novamente em alguns instantes."));
+    }
+  });
+
+  app.get("/api/whatsapp/sessions", async (req: Request, res: Response) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 30;
+      const status = req.query.status as string | undefined;
+      const result = await storage.getWhatsappSessions({ status, page, limit });
+      res.json(result);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.get("/api/whatsapp/sessions/:id", async (req: Request, res: Response) => {
+    try {
+      const session = await storage.getWhatsappSessionById(getParam(req, "id"));
+      if (!session) return res.status(404).json({ error: "Sessão não encontrada" });
+      const messages = await storage.getWhatsappMessages(session.id);
+      res.json({ ...session, messages });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
   return httpServer;
 }

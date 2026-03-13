@@ -67,6 +67,10 @@ import {
   type InsertOrder,
   type OrderItem,
   type InsertOrderItem,
+  whatsappSessions,
+  whatsappMessages,
+  type WhatsappSession,
+  type WhatsappMessage,
 } from "@shared/schema";
 import { addDays } from "date-fns";
 
@@ -243,6 +247,15 @@ export interface IStorage {
   softDeleteCompany(id: string): Promise<void>;
   setDefaultCompany(id: string): Promise<Company | undefined>;
   getDefaultCompany(): Promise<Company | undefined>;
+
+  // WhatsApp
+  getWhatsappSession(from: string): Promise<WhatsappSession | undefined>;
+  getWhatsappSessionById(id: string): Promise<WhatsappSession | undefined>;
+  getWhatsappSessions(params?: { status?: string; page?: number; limit?: number }): Promise<{ data: WhatsappSession[]; total: number }>;
+  createWhatsappSession(from: string): Promise<WhatsappSession>;
+  updateWhatsappSession(id: string, data: Partial<WhatsappSession>): Promise<WhatsappSession | undefined>;
+  getWhatsappMessages(sessionId: string): Promise<WhatsappMessage[]>;
+  addWhatsappMessage(sessionId: string, direction: string, body: string, from?: string, to?: string): Promise<WhatsappMessage>;
 }
 
 // ─── DATABASE STORAGE ─────────────────────────────────────────────────────────
@@ -1259,6 +1272,58 @@ export class DatabaseStorage implements IStorage {
       .from(companies)
       .where(and(eq(companies.isPadrao, true), isNull(companies.deletedAt)));
     return company;
+  }
+
+  // ─── WHATSAPP ────────────────────────────────────────────────────────────────
+
+  async getWhatsappSession(from: string): Promise<WhatsappSession | undefined> {
+    const [session] = await db
+      .select()
+      .from(whatsappSessions)
+      .where(and(eq(whatsappSessions.from, from), eq(whatsappSessions.status, "active")))
+      .orderBy(desc(whatsappSessions.updatedAt))
+      .limit(1);
+    return session;
+  }
+
+  async getWhatsappSessionById(id: string): Promise<WhatsappSession | undefined> {
+    const [session] = await db.select().from(whatsappSessions).where(eq(whatsappSessions.id, id));
+    return session;
+  }
+
+  async getWhatsappSessions(params?: { status?: string; page?: number; limit?: number }): Promise<{ data: WhatsappSession[]; total: number }> {
+    const page = params?.page ?? 1;
+    const limit = params?.limit ?? 30;
+    const offset = (page - 1) * limit;
+    const conditions: ReturnType<typeof eq>[] = [];
+    if (params?.status) conditions.push(eq(whatsappSessions.status, params.status));
+    const where = conditions.length ? and(...conditions) : undefined;
+    const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(whatsappSessions).where(where);
+    const data = await db.select().from(whatsappSessions).where(where).orderBy(desc(whatsappSessions.updatedAt)).limit(limit).offset(offset);
+    return { data, total: Number(countResult.count) };
+  }
+
+  async createWhatsappSession(from: string): Promise<WhatsappSession> {
+    const [session] = await db.insert(whatsappSessions).values({ from, step: "menu", data: {}, status: "active" }).returning();
+    return session;
+  }
+
+  async updateWhatsappSession(id: string, data: Partial<WhatsappSession>): Promise<WhatsappSession | undefined> {
+    const [session] = await db
+      .update(whatsappSessions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(whatsappSessions.id, id))
+      .returning();
+    return session;
+  }
+
+  async getWhatsappMessages(sessionId: string): Promise<WhatsappMessage[]> {
+    return db.select().from(whatsappMessages).where(eq(whatsappMessages.sessionId, sessionId)).orderBy(asc(whatsappMessages.createdAt));
+  }
+
+  async addWhatsappMessage(sessionId: string, direction: string, body: string, from?: string, to?: string): Promise<WhatsappMessage> {
+    const [msg] = await db.insert(whatsappMessages).values({ sessionId, direction, body, from: from ?? null, to: to ?? null }).returning();
+    return msg;
   }
 }
 

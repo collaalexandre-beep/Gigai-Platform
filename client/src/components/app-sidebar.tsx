@@ -26,6 +26,7 @@ import {
   Package,
   CreditCard,
   Building2,
+  MessageCircle,
 } from "lucide-react";
 
 const navItems = [
@@ -38,6 +39,7 @@ const navItems = [
 const comercialItems = [
   { title: "Orçamentos", url: "/quotes", icon: FileText },
   { title: "Pedidos", url: "/orders", icon: Package },
+  { title: "WhatsApp Bot", url: "/whatsapp", icon: MessageCircle },
 ];
 
 const cadastroItems = [

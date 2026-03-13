@@ -925,6 +925,51 @@ export const insertOrderItemSchema = createInsertSchema(orderItems).omit({
 export type InsertOrderItem = z.infer<typeof insertOrderItemSchema>;
 export type OrderItem = typeof orderItems.$inferSelect;
 
+// ─── WHATSAPP SESSIONS ────────────────────────────────────────────────────────
+
+export const whatsappSessions = pgTable(
+  "whatsapp_sessions",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    from: varchar("from").notNull(),
+    step: varchar("step").notNull().default("menu"),
+    data: jsonb("data").default({}),
+    clientId: varchar("client_id").references(() => clients.id),
+    quoteId: varchar("quote_id").references(() => quotes.id),
+    status: varchar("status").notNull().default("active"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_wa_sessions_from").on(t.from),
+    index("idx_wa_sessions_status").on(t.status),
+  ]
+);
+
+export const insertWhatsappSessionSchema = createInsertSchema(whatsappSessions).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertWhatsappSession = z.infer<typeof insertWhatsappSessionSchema>;
+export type WhatsappSession = typeof whatsappSessions.$inferSelect;
+
+export const whatsappMessages = pgTable(
+  "whatsapp_messages",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    sessionId: varchar("session_id").references(() => whatsappSessions.id, { onDelete: "cascade" }),
+    direction: varchar("direction").notNull(),
+    body: text("body").notNull(),
+    from: varchar("from"),
+    to: varchar("to"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_wa_messages_session").on(t.sessionId),
+  ]
+);
+
+export type WhatsappMessage = typeof whatsappMessages.$inferSelect;
+
 // ─── DASHBOARD STATS (view types) ────────────────────────────────────────────
 
 export interface DashboardStats {
