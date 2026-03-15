@@ -44,3 +44,9 @@ integrations = ["javascript_openai_ai_integrations:2.0.0"]
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[userenv]
+
+[userenv.shared]
+META_WHATSAPP_TOKEN = "EAAbF5Djb5jcBQwJd9yNK5uZCJEJBmbGdz1UYgRltXZCkv99gn7a3i6MZCU9oyhPv0LaY2W7ocAZCEJ8NKLRdeIbpjukLiiTjElT5nB7mxcuXLZAsxMvOIITOvrOrXOsw9kjlHcLhIMcZAJb3z3ZBtpWRfEscfROcVqRRnQ0ZCxtsItUMJa7Lel3SCkwZB2T4gNg3VmPFCia61ZATr37Xz0JnFcoE0tQYHqA2sivmfLIyIoWwZAlsWo9bhYEEvIp8bJuoeFqSmyuCAIm5vuzUkkWzCAAxUEq"
+META_PHONE_NUMBER_ID = "967020876503841"
