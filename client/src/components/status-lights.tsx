@@ -1,0 +1,131 @@
+import { DollarSign, Factory, Package, Truck } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Button } from "@/components/ui/button";
+
+export type LightStatus = "verde" | "amarelo" | "vermelho" | "critico";
+
+export interface StatusLight {
+  id: string;
+  label: string;
+  status: LightStatus;
+  icon: React.ElementType;
+}
+
+export const STATUS_CONFIG: Record<LightStatus, { color: string; glow: string; dotClass: string; label: string; textClass: string }> = {
+  verde:    { color: "#22c55e", glow: "0 0 8px 2px rgba(34,197,94,0.8)",   dotClass: "bg-green-500",  label: "Tudo OK",  textClass: "text-green-400" },
+  amarelo:  { color: "#eab308", glow: "0 0 8px 2px rgba(234,179,8,0.8)",   dotClass: "bg-yellow-400", label: "Atenção",  textClass: "text-yellow-400" },
+  vermelho: { color: "#ef4444", glow: "0 0 8px 2px rgba(239,68,68,0.85)",  dotClass: "bg-red-500",    label: "Urgente",  textClass: "text-red-400" },
+  critico:  { color: "#a855f7", glow: "0 0 10px 3px rgba(168,85,247,0.9)", dotClass: "bg-purple-500", label: "Crítico",  textClass: "text-purple-400" },
+};
+
+export const STATUS_LIGHTS: StatusLight[] = [
+  { id: "financeiro", label: "Financeiro", status: "verde", icon: DollarSign },
+  { id: "producao",   label: "Produção",   status: "verde", icon: Factory    },
+  { id: "estoque",    label: "Estoque",    status: "verde", icon: Package    },
+  { id: "veiculos",   label: "Veículos",   status: "verde", icon: Truck      },
+];
+
+const STATUS_ORDER: LightStatus[] = ["verde", "amarelo", "vermelho", "critico"];
+
+function worstStatus(lights: StatusLight[]): LightStatus {
+  return lights.reduce<LightStatus>(
+    (worst, l) => STATUS_ORDER.indexOf(l.status) > STATUS_ORDER.indexOf(worst) ? l.status : worst,
+    "verde"
+  );
+}
+
+export function StatusLightsBar() {
+  const lights = STATUS_LIGHTS;
+  const worst = worstStatus(lights);
+  const hasAlert = worst !== "verde";
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="relative h-9 w-9"
+          title="Painel de controle"
+          data-testid="button-status-lights"
+        >
+          <span className="flex items-center justify-center gap-[3px]">
+            {lights.map((l) => {
+              const cfg = STATUS_CONFIG[l.status];
+              return (
+                <span
+                  key={l.id}
+                  className={`w-2 h-2 rounded-full ${cfg.dotClass} ${l.status === "critico" ? "animate-pulse" : ""}`}
+                  style={{ boxShadow: cfg.glow }}
+                />
+              );
+            })}
+          </span>
+          {hasAlert && (
+            <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
+          )}
+        </Button>
+      </PopoverTrigger>
+
+      <PopoverContent align="end" className="w-72 p-0 overflow-hidden">
+        <div
+          className="px-4 pt-3 pb-2 flex items-center justify-between"
+          style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)" }}
+        >
+          <div className="flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${hasAlert ? "bg-red-400 animate-pulse" : "bg-green-400"}`} />
+            <span className="text-[11px] font-semibold text-gray-300 uppercase tracking-widest">
+              Painel de Controle
+            </span>
+          </div>
+          {!hasAlert && (
+            <span className="text-[10px] text-green-400 font-medium">Tudo normal</span>
+          )}
+        </div>
+
+        <div
+          className="px-4 py-4 grid grid-cols-4 gap-3"
+          style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)" }}
+        >
+          {lights.map((light) => {
+            const cfg = STATUS_CONFIG[light.status];
+            const Icon = light.icon;
+            return (
+              <div
+                key={light.id}
+                className="flex flex-col items-center gap-2"
+                data-testid={`status-light-${light.id}`}
+              >
+                <div
+                  className={`w-12 h-12 rounded-full flex items-center justify-center ring-1 ring-white/10 ${light.status === "critico" ? "animate-pulse" : ""}`}
+                  style={{ backgroundColor: cfg.color, boxShadow: cfg.glow }}
+                >
+                  <Icon className="w-5 h-5 text-white" />
+                </div>
+                <div className="text-center">
+                  <p className="text-[11px] font-semibold text-white leading-tight">{light.label}</p>
+                  <p className={`text-[10px] font-medium ${cfg.textClass}`}>{cfg.label}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div
+          className="px-4 py-2 border-t border-white/10 flex items-center gap-3 flex-wrap"
+          style={{ background: "#0f172a" }}
+        >
+          {(["verde", "amarelo", "vermelho", "critico"] as LightStatus[]).map((s) => {
+            const c = STATUS_CONFIG[s];
+            return (
+              <div key={s} className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: c.color }} />
+                <span className="text-[10px] text-gray-500">{c.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
