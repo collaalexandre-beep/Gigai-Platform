@@ -222,23 +222,25 @@ export default function WhatsappPage() {
                 <li>Cria o orçamento automaticamente ✅</li>
               </ol>
             </div>
-            <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-left max-w-sm" data-testid="twilio-config-info">
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1">⚙️ Configuração do Twilio:</p>
-              <p className="text-xs text-amber-600 dark:text-amber-400/80 mb-2">
-                No painel do Twilio, configure o webhook de mensagens com:
-              </p>
-              <div className="text-xs text-amber-600 dark:text-amber-400/80 space-y-1">
-                <p><span className="font-semibold">URL:</span>{" "}
-                  <code className="font-mono bg-amber-100 dark:bg-amber-900/40 px-1 rounded break-all">
-                    {window.location.origin}/api/whatsapp
+            <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-left max-w-sm" data-testid="meta-config-info">
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-2">⚙️ Configuração Meta (WhatsApp Business API):</p>
+              <div className="text-xs text-amber-600 dark:text-amber-400/80 space-y-1.5">
+                <div>
+                  <p className="font-semibold mb-0.5">1. URL do Callback (Webhook):</p>
+                  <code className="font-mono bg-amber-100 dark:bg-amber-900/40 px-1 rounded break-all block">
+                    https://grafica-core-system.replit.app/api/whatsapp
                   </code>
-                </p>
-                <p><span className="font-semibold">Método:</span>{" "}
-                  <code className="font-mono bg-amber-100 dark:bg-amber-900/40 px-1 rounded">POST</code>
-                </p>
-                <p className="text-amber-500 dark:text-amber-500/80 mt-1 italic">
-                  Em produção use: <code className="font-mono bg-amber-100 dark:bg-amber-900/40 px-1 rounded break-all">https://grafica-core-system.replit.app/api/whatsapp</code>
-                </p>
+                </div>
+                <div>
+                  <p className="font-semibold mb-0.5">2. Token de Verificação:</p>
+                  <code className="font-mono bg-amber-100 dark:bg-amber-900/40 px-1 rounded">gigai_whatsapp_2026</code>
+                </div>
+                <div>
+                  <p className="font-semibold mb-0.5">3. Secrets necessários:</p>
+                  <p><code className="font-mono bg-amber-100 dark:bg-amber-900/40 px-1 rounded">META_WHATSAPP_TOKEN</code></p>
+                  <p><code className="font-mono bg-amber-100 dark:bg-amber-900/40 px-1 rounded">META_PHONE_NUMBER_ID</code></p>
+                  <p className="text-[10px] italic mt-0.5">Configure em: Meta for Developers → WhatsApp → API Setup</p>
+                </div>
               </div>
             </div>
           </div>
