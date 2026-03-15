@@ -3,6 +3,8 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { lookupCnpj, validateCnpj } from "./cnpj";
 import { z } from "zod";
+import OpenAI from "openai";
+import PDFDocument from "pdfkit";
 import {
   insertClientSchema,
   insertContactSchema,
@@ -1120,21 +1122,25 @@ export async function registerRoutes(
   // ─── WHATSAPP BOT (Meta WhatsApp Business API) ────────────────────────────────
 
   const META_VERIFY_TOKEN = process.env.META_VERIFY_TOKEN ?? "gigai_whatsapp_2026";
-  const META_TOKEN = process.env.META_WHATSAPP_TOKEN ?? "";
-  const META_PHONE_ID = process.env.META_PHONE_NUMBER_ID ?? "";
   const META_API_URL = "https://graph.facebook.com/v18.0";
 
+  const getMetaToken = () => process.env.META_WHATSAPP_TOKEN ?? "";
+  const getMetaPhoneId = () => process.env.META_PHONE_NUMBER_ID ?? "";
+
+  const openaiBot = new OpenAI({
+    apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  });
+
   async function sendMetaMessage(phoneNumberId: string, to: string, body: string): Promise<void> {
-    if (!META_TOKEN || !phoneNumberId) {
+    const token = getMetaToken();
+    if (!token || !phoneNumberId) {
       console.warn("[WhatsApp] META_WHATSAPP_TOKEN ou phone_number_id não configurado — mensagem não enviada.");
       return;
     }
     const resp = await fetch(`${META_API_URL}/${phoneNumberId}/messages`, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${META_TOKEN}`,
-        "Content-Type": "application/json",
-      },
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         messaging_product: "whatsapp",
         recipient_type: "individual",
@@ -1149,29 +1155,227 @@ export async function registerRoutes(
     }
   }
 
-  function parseMedidas(text: string): { largura: number; altura: number } | null {
-    const normalized = text.trim().replace(",", ".").toLowerCase().replace(/\s+/g, "");
-    const match = normalized.match(/^(\d+(?:\.\d+)?)[x×](\d+(?:\.\d+)?)$/);
-    if (!match) return null;
-    const largura = parseFloat(match[1]);
-    const altura = parseFloat(match[2]);
-    if (isNaN(largura) || isNaN(altura) || largura <= 0 || altura <= 0) return null;
-    return { largura, altura };
+  async function sendMetaDocument(phoneNumberId: string, to: string, documentUrl: string, filename: string, caption?: string): Promise<void> {
+    const token = getMetaToken();
+    if (!token || !phoneNumberId) return;
+    const resp = await fetch(`${META_API_URL}/${phoneNumberId}/messages`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: "document",
+        document: { link: documentUrl, filename, ...(caption ? { caption } : {}) },
+      }),
+    });
+    if (!resp.ok) {
+      const err = await resp.text();
+      console.error("[WhatsApp] Erro ao enviar documento via Meta API:", err);
+    }
   }
 
-  const MENU_MSG = `Olá! Sou o assistente da *Gráfica+* 🖨️
+  interface QuoteData {
+    produto?: string | null;
+    largura?: number | null;
+    altura?: number | null;
+    quantidade?: number | null;
+    nomeCliente?: string | null;
+    cidade?: string | null;
+  }
 
-Digite a opção desejada:
-*1* - Solicitar orçamento
-*2* - Verificar status de pedido
-*3* - Falar com atendente
+  interface AiExtractResult extends QuoteData {
+    reply: string;
+    complete: boolean;
+    intent?: "orcamento" | "status" | "atendente" | "outro";
+  }
 
-_(A qualquer momento, envie CANCELAR para recomeçar)_`;
+  async function extractQuoteInfoWithAI(userMessage: string, collected: QuoteData): Promise<AiExtractResult> {
+    const collected_summary = Object.entries(collected)
+      .filter(([, v]) => v != null && v !== undefined)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(", ") || "nenhuma";
 
-  const ATENDENTE_MSG = `Entendido! Em breve um de nossos atendentes entrará em contato com você. ✅
+    const systemPrompt = `Você é o assistente virtual da *Gráfica+*, uma gráfica profissional brasileira. Converse de forma natural, amigável e direta em português brasileiro.
 
-Se precisar de mais alguma coisa, envie *MENU* para ver as opções.`;
+Informações JÁ coletadas para o orçamento: ${collected_summary}
 
+Sua tarefa: entender o que o cliente quer e extrair dados para um orçamento de impressão.
+
+Campos a coletar:
+- produto: nome do produto (banner, faixa, adesivo vinil, placa PVC, lona, cartão de visita, folder, etc.)
+- largura: largura em metros (número decimal, ex: 3.0)
+- altura: altura em metros (número decimal, ex: 1.0)
+- quantidade: número inteiro de peças
+- nomeCliente: nome completo ou razão social
+- cidade: cidade de entrega
+
+REGRAS:
+1. Se o cliente informar TUDO em uma mensagem (ex: "quero 100 adesivos 5x5cm para Porto Alegre, empresa ABC"), extraia tudo de uma vez e marque complete=true com resumo para confirmação.
+2. Se faltar alguma informação, pergunte de forma natural apenas pelo que está faltando.
+3. Converta cm para metros automaticamente (ex: 5cm = 0.05m, 50cm = 0.5m).
+4. Se o cliente perguntar sobre status de pedido, retorne intent="status".
+5. Se pedir atendente humano, retorne intent="atendente".
+6. Não altere campos já coletados (mantenha os valores existentes).
+7. Quando complete=true, o reply deve ser um resumo amigável pedindo confirmação (SIM/NÃO).
+
+Responda SOMENTE com JSON válido:
+{
+  "produto": string | null,
+  "largura": number | null,
+  "altura": number | null,
+  "quantidade": number | null,
+  "nomeCliente": string | null,
+  "cidade": string | null,
+  "reply": string,
+  "complete": boolean,
+  "intent": "orcamento" | "status" | "atendente" | "outro"
+}`;
+
+    try {
+      const resp = await openaiBot.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userMessage },
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.3,
+        max_tokens: 500,
+      });
+
+      const result = JSON.parse(resp.choices[0].message.content ?? "{}") as AiExtractResult;
+
+      return {
+        produto: result.produto ?? collected.produto ?? null,
+        largura: result.largura ?? collected.largura ?? null,
+        altura: result.altura ?? collected.altura ?? null,
+        quantidade: result.quantidade ?? collected.quantidade ?? null,
+        nomeCliente: result.nomeCliente ?? collected.nomeCliente ?? null,
+        cidade: result.cidade ?? collected.cidade ?? null,
+        reply: result.reply ?? "Desculpe, não entendi. Pode repetir?",
+        complete: result.complete === true,
+        intent: result.intent ?? "orcamento",
+      };
+    } catch (e) {
+      console.error("[WhatsApp] Erro na extração via IA:", e);
+      return {
+        ...collected,
+        reply: "Não entendi bem. Pode me dizer o que você precisa? 😊",
+        complete: false,
+        intent: "outro",
+      };
+    }
+  }
+
+  // ─── PDF GENERATION ENDPOINT ─────────────────────────────────────────────────
+  app.get("/api/quotes/:id/pdf", async (req: Request, res: Response) => {
+    try {
+      const quoteId = getParam(req, "id");
+      const quote = await storage.getQuote(quoteId);
+      if (!quote) return res.status(404).json({ error: "Orçamento não encontrado" });
+
+      const items = await storage.getQuoteItems(quoteId);
+      let clientName = "Cliente";
+      if (quote.clientId) {
+        try {
+          const client = await storage.getClient(quote.clientId);
+          clientName = client?.nomeFantasia || client?.razaoSocial || clientName;
+        } catch {}
+      }
+
+      const doc = new PDFDocument({ margin: 50, size: "A4" });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `inline; filename="${quote.numero}.pdf"`);
+      doc.pipe(res);
+
+      const blue = "#1a4fa0";
+      const gray = "#666666";
+      const lightGray = "#f5f5f5";
+
+      doc.rect(0, 0, doc.page.width, 80).fill(blue);
+      doc.fillColor("white").fontSize(22).font("Helvetica-Bold").text("GRÁFICA+", 50, 25);
+      doc.fontSize(10).font("Helvetica").text("Orçamento Profissional", 50, 50);
+      doc.fillColor("white").fontSize(14).font("Helvetica-Bold").text(quote.numero, doc.page.width - 200, 30, { width: 150, align: "right" });
+      doc.fillColor("white").fontSize(9).font("Helvetica").text(`Data: ${new Date(quote.data + "T12:00:00").toLocaleDateString("pt-BR")}`, doc.page.width - 200, 50, { width: 150, align: "right" });
+      doc.fillColor("white").fontSize(9).text(`Válido até: ${new Date(quote.validade + "T12:00:00").toLocaleDateString("pt-BR")}`, doc.page.width - 200, 62, { width: 150, align: "right" });
+
+      doc.moveDown(3.5);
+
+      doc.fillColor(blue).fontSize(11).font("Helvetica-Bold").text("CLIENTE");
+      doc.moveTo(50, doc.y).lineTo(doc.page.width - 50, doc.y).strokeColor(blue).lineWidth(1).stroke();
+      doc.moveDown(0.3);
+      doc.fillColor("#333333").fontSize(10).font("Helvetica").text(clientName);
+      if (quote.observacoes) {
+        doc.fontSize(9).fillColor(gray).text(quote.observacoes);
+      }
+      doc.moveDown(1);
+
+      doc.fillColor(blue).fontSize(11).font("Helvetica-Bold").text("ITENS DO ORÇAMENTO");
+      doc.moveTo(50, doc.y).lineTo(doc.page.width - 50, doc.y).strokeColor(blue).lineWidth(1).stroke();
+      doc.moveDown(0.3);
+
+      const tableTop = doc.y;
+      const colDesc = 50;
+      const colDim = 270;
+      const colQtd = 370;
+      const colUnit = 420;
+      const colTotal = 480;
+      const tableWidth = doc.page.width - 100;
+
+      doc.rect(colDesc, tableTop, tableWidth, 20).fill(blue);
+      doc.fillColor("white").fontSize(9).font("Helvetica-Bold");
+      doc.text("Descrição", colDesc + 5, tableTop + 5, { width: 210 });
+      doc.text("Medidas", colDim + 5, tableTop + 5, { width: 90 });
+      doc.text("Qtd", colQtd + 5, tableTop + 5, { width: 45 });
+      doc.text("Unit.", colUnit + 5, tableTop + 5, { width: 55 });
+      doc.text("Total", colTotal + 5, tableTop + 5, { width: 65 });
+
+      let rowY = tableTop + 22;
+      doc.font("Helvetica").fontSize(9);
+
+      if (items.length === 0) {
+        doc.rect(colDesc, rowY, tableWidth, 20).fill(lightGray);
+        doc.fillColor(gray).text("Nenhum item cadastrado", colDesc + 5, rowY + 5, { width: tableWidth - 10 });
+        rowY += 22;
+      }
+
+      items.forEach((item, i) => {
+        const bg = i % 2 === 0 ? "white" : lightGray;
+        doc.rect(colDesc, rowY, tableWidth, 22).fill(bg);
+        doc.fillColor("#333333");
+        const desc = item.descricao || "Item";
+        doc.text(desc, colDesc + 5, rowY + 5, { width: 210, ellipsis: true });
+        const dim = item.largura && item.altura ? `${item.largura}m × ${item.altura}m` : item.largura ? `${item.largura}m` : "-";
+        doc.text(dim, colDim + 5, rowY + 5, { width: 90 });
+        doc.text(String(item.quantidade ?? 1), colQtd + 5, rowY + 5, { width: 45 });
+        const unit = Number(item.precoUnitario ?? 0).toFixed(2).replace(".", ",");
+        doc.text(`R$ ${unit}`, colUnit + 5, rowY + 5, { width: 55 });
+        const total = Number(item.precoTotal ?? 0).toFixed(2).replace(".", ",");
+        doc.text(`R$ ${total}`, colTotal + 5, rowY + 5, { width: 65 });
+        rowY += 24;
+      });
+
+      doc.moveDown(0.5);
+      const totalVal = Number(quote.valorTotal ?? 0).toFixed(2).replace(".", ",");
+      doc.rect(colTotal - 60, rowY + 5, 120 + tableWidth - (colTotal - colDesc) + 10, 24).fill(blue);
+      doc.fillColor("white").fontSize(11).font("Helvetica-Bold").text(`TOTAL: R$ ${totalVal}`, colDesc, rowY + 10, { width: tableWidth, align: "right" });
+
+      doc.moveDown(4);
+      doc.moveTo(50, doc.y).lineTo(doc.page.width - 50, doc.y).strokeColor("#cccccc").lineWidth(0.5).stroke();
+      doc.moveDown(0.5);
+      doc.fillColor(gray).fontSize(8).font("Helvetica").text(
+        "Este orçamento é válido por 7 dias a partir da data de emissão. Valores sujeitos a alteração após o vencimento.",
+        50, doc.y, { align: "center", width: doc.page.width - 100 }
+      );
+
+      doc.end();
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  // ─── WEBHOOK VERIFICATION ────────────────────────────────────────────────────
   app.get("/api/whatsapp", (req: Request, res: Response) => {
     const mode = req.query["hub.mode"] as string;
     const token = req.query["hub.verify_token"] as string;
@@ -1187,42 +1391,46 @@ Se precisar de mais alguma coisa, envie *MENU* para ver as opções.`;
       return res.sendStatus(403);
     }
 
-    const baseUrl = process.env.REPLIT_DEPLOYMENT_URL
-      ? `https://${process.env.REPLIT_DEPLOYMENT_URL}`
+    const baseUrl = process.env.REPLIT_DOMAINS
+      ? `https://${process.env.REPLIT_DOMAINS.split(",")[0].trim()}`
       : `${req.protocol}://${req.get("host")}`;
     res.json({
       status: "active",
       webhook: {
         url: `${baseUrl}/api/whatsapp`,
-        method: "POST",
         verifyToken: META_VERIFY_TOKEN,
-        configured: { token: !!META_TOKEN, phoneNumberId: !!META_PHONE_ID },
+        configured: { token: !!getMetaToken(), phoneNumberId: !!getMetaPhoneId() },
       },
       message: "Webhook do WhatsApp (Meta) está ativo.",
     });
   });
 
+  // ─── WEBHOOK MESSAGE HANDLER ─────────────────────────────────────────────────
   app.post("/api/whatsapp", async (req: Request, res: Response) => {
     res.sendStatus(200);
     try {
       const body = req.body;
       if (body.object !== "whatsapp_business_account") return;
+
       for (const entry of body.entry ?? []) {
         for (const change of entry.changes ?? []) {
           const value = change.value;
           if (!value?.messages?.length) continue;
-          const phoneNumberId: string = value.metadata?.phone_number_id ?? META_PHONE_ID;
+          const phoneNumberId: string = value.metadata?.phone_number_id ?? getMetaPhoneId();
           const botNumber: string = value.metadata?.display_phone_number ?? "";
+
           for (const msg of value.messages) {
             if (msg.type !== "text") continue;
             const from: string = msg.from;
             const rawBody: string = (msg.text?.body ?? "").trim();
             const msgNorm = rawBody.toLowerCase().replace(/[^a-z0-9çãáéíóúâêîôûàèìòùü ]/g, "").trim();
             console.log("[WhatsApp] Mensagem recebida", { from, body: rawBody });
+
             const fromKey = `meta:${from}`;
             let session = await storage.getWhatsappSession(fromKey);
             if (!session) session = await storage.createWhatsappSession(fromKey);
             await storage.addWhatsappMessage(session.id, "inbound", rawBody, fromKey, botNumber);
+
             const reply = async (replyMsg: string, nextStep?: string, extraData?: Record<string, unknown>) => {
               if (nextStep !== undefined || extraData) {
                 const newData = { ...(session!.data as Record<string, unknown>), ...extraData };
@@ -1231,146 +1439,154 @@ Se precisar de mais alguma coisa, envie *MENU* para ver as opções.`;
               await storage.addWhatsappMessage(session!.id, "outbound", replyMsg, botNumber, fromKey);
               await sendMetaMessage(phoneNumberId, from, replyMsg);
             };
+
             if (msgNorm === "cancelar" || msgNorm === "sair") {
-              await storage.updateWhatsappSession(session.id, { step: "menu", data: {} });
-              await storage.addWhatsappMessage(session.id, "outbound", `Operação cancelada. ❌\n\n${MENU_MSG}`, botNumber, fromKey);
-              await sendMetaMessage(phoneNumberId, from, `Operação cancelada. ❌\n\n${MENU_MSG}`);
+              await storage.updateWhatsappSession(session.id, { step: "collecting", data: {} });
+              await reply(`Tudo bem! Recomeçamos do zero. 😊\n\nComo posso ajudar? Me diga o que você precisa!`, "collecting");
               continue;
             }
-            if (msgNorm === "menu" || msgNorm === "inicio" || msgNorm === "início") {
-              await storage.updateWhatsappSession(session.id, { step: "menu", data: {} });
-              await storage.addWhatsappMessage(session.id, "outbound", MENU_MSG, botNumber, fromKey);
-              await sendMetaMessage(phoneNumberId, from, MENU_MSG);
+
+            if (msgNorm === "menu" || msgNorm === "inicio" || msgNorm === "início" || msgNorm === "oi" || msgNorm === "ola" || msgNorm === "olá") {
+              if (session.step === "done" || session.step === "menu") {
+                await storage.updateWhatsappSession(session.id, { step: "collecting", data: {} });
+              }
+              await reply(`Olá! 👋 Sou a assistente virtual da *Gráfica+*.\n\nComo posso te ajudar? Me diga o que você precisa — pode escrever normalmente, como:\n\n_"Quero um banner de 3x1m, 50 unidades"_\n_"Preciso de 100 adesivos 10x10cm para minha empresa"_\n_"Qual o status do meu pedido ORC-2026-0001?"_`, "collecting");
               continue;
             }
+
             const step = session.step;
-            const data = (session.data ?? {}) as Record<string, unknown>;
-            switch (step) {
-              case "menu":
-              default: {
-                if (msgNorm === "1" || msgNorm.includes("orcamento") || msgNorm.includes("orçamento")) {
-                  await reply(`Vamos fazer seu orçamento! 📋\n\nQual *produto* você precisa?\n_(ex: Banner, Faixa, Adesivo Vinil, Placa, Lona...)_`, "produto");
-                } else if (msgNorm === "2" || msgNorm.includes("status") || msgNorm.includes("pedido")) {
-                  await reply(`Me informe o *número do orçamento* ou pedido:\n_(ex: ORC-2026-0001 ou PED-2026-0001)_`, "status_query");
-                } else if (msgNorm === "3" || msgNorm.includes("atendente") || msgNorm.includes("humano")) {
-                  await reply(ATENDENTE_MSG, "menu");
-                } else {
-                  await reply(MENU_MSG, "menu");
+            const data = (session.data ?? {}) as QuoteData;
+
+            // ── STATUS QUERY ──────────────────────────────────────────────────
+            if (step === "status_query" || (step === "collecting" && (msgNorm.includes("status") || rawBody.toUpperCase().match(/^(ORC|PED)-\d{4}-\d{4}$/)))) {
+              const numUpper = rawBody.trim().toUpperCase();
+              if (numUpper.startsWith("ORC-") || numUpper.startsWith("PED-")) {
+                const { data: qs } = await storage.getQuotes({ limit: 500 });
+                const fq = qs.find((q) => q.numero === numUpper);
+                if (fq) {
+                  const sm: Record<string, string> = { rascunho: "📝 Em análise", enviado: "📤 Enviado", aprovado: "✅ Aprovado", reprovado: "❌ Reprovado", cancelado: "🚫 Cancelado" };
+                  await reply(`*${fq.numero}*\nStatus: ${sm[fq.status] ?? fq.status}\nValor: R$ ${Number(fq.valorTotal || 0).toFixed(2).replace(".", ",")}\n\nPrecisa de mais alguma coisa?`, "collecting", {});
+                  continue;
                 }
-                break;
-              }
-              case "status_query": {
-                const numUpper = rawBody.trim().toUpperCase();
-                if (numUpper.startsWith("ORC-") || numUpper.startsWith("PED-")) {
-                  try {
-                    const { data: qs } = await storage.getQuotes({ limit: 500 });
-                    const fq = qs.find((q) => q.numero === numUpper);
-                    if (fq) {
-                      const sm: Record<string, string> = { rascunho: "📝 Rascunho", enviado: "📤 Enviado", aprovado: "✅ Aprovado", reprovado: "❌ Reprovado", cancelado: "🚫 Cancelado" };
-                      await reply(`*${fq.numero}*\nStatus: ${sm[fq.status] ?? fq.status}\nValor: R$ ${Number(fq.valorTotal || 0).toFixed(2).replace(".", ",")}\n\nEnvie *MENU* para ver outras opções.`, "menu", {});
-                      break;
-                    }
-                    const { data: os } = await storage.getOrders({ limit: 500 });
-                    const fo = os.find((o) => o.numero === numUpper);
-                    if (fo) {
-                      const sm: Record<string, string> = { aguardando_producao: "⏳ Aguardando Produção", em_producao: "🏭 Em Produção", finalizado: "✅ Finalizado", entregue: "📦 Entregue", cancelado: "🚫 Cancelado" };
-                      await reply(`*${fo.numero}*\nStatus: ${sm[fo.status] ?? fo.status}\nValor: R$ ${Number(fo.valorTotal || 0).toFixed(2).replace(".", ",")}\n\nEnvie *MENU* para ver outras opções.`, "menu", {});
-                      break;
-                    }
-                    await reply(`Não encontrei o número *${numUpper}*. Verifique e tente novamente.\n\nEnvie *MENU* para voltar ao início.`);
-                  } catch {
-                    await reply(`Não consegui verificar. Envie *MENU* para recomeçar.`, "menu");
-                  }
-                } else {
-                  await reply(`Por favor, informe o número no formato correto:\n*ORC-2026-0001* ou *PED-2026-0001*`);
+                const { data: os } = await storage.getOrders({ limit: 500 });
+                const fo = os.find((o) => o.numero === numUpper);
+                if (fo) {
+                  const sm: Record<string, string> = { aguardando_producao: "⏳ Aguardando Produção", em_producao: "🏭 Em Produção", finalizado: "✅ Finalizado", entregue: "📦 Entregue", cancelado: "🚫 Cancelado" };
+                  await reply(`*${fo.numero}*\nStatus: ${sm[fo.status] ?? fo.status}\nValor: R$ ${Number(fo.valorTotal || 0).toFixed(2).replace(".", ",")}\n\nPrecisa de mais alguma coisa?`, "collecting", {});
+                  continue;
                 }
-                break;
+                await reply(`Não encontrei o número *${numUpper}*. Verifique e tente novamente.`, "status_query");
+                continue;
               }
-              case "produto": {
-                if (rawBody.trim().length < 2) {
-                  await reply(`Por favor, informe o nome do produto (mínimo 2 caracteres):`);
-                } else {
-                  await reply(`Ótimo! *${rawBody.trim()}* ✅\n\nAgora informe as *medidas* (Largura x Altura em metros):\n_(ex: 3x1 ou 2.5x1.2)_`, "medidas", { produto: rawBody.trim() });
-                }
-                break;
-              }
-              case "medidas": {
-                const medidas = parseMedidas(rawBody);
-                if (!medidas) {
-                  await reply(`Não entendi as medidas. Por favor, use o formato *LarguraxAltura*:\n_(ex: 3x1 ou 2.5x1.2)_`);
-                } else {
-                  await reply(`📐 ${medidas.largura}m × ${medidas.altura}m ✅\n\nQual a *quantidade* de peças?`, "quantidade", { largura: medidas.largura, altura: medidas.altura });
-                }
-                break;
-              }
-              case "quantidade": {
-                const qtd = parseFloat(rawBody.replace(",", "."));
-                if (isNaN(qtd) || qtd <= 0) {
-                  await reply(`Por favor, informe uma quantidade válida (número inteiro maior que zero):`);
-                } else {
-                  await reply(`🔢 ${qtd} un ✅\n\nSeu *nome completo* ou razão social da empresa?`, "nome", { quantidade: qtd });
-                }
-                break;
-              }
-              case "nome": {
-                if (rawBody.trim().length < 2) {
-                  await reply(`Por favor, informe seu nome ou razão social:`);
-                } else {
-                  await reply(`👤 ${rawBody.trim()} ✅\n\nQual a *cidade* de entrega?`, "cidade", { nomeCliente: rawBody.trim() });
-                }
-                break;
-              }
-              case "cidade": {
-                if (rawBody.trim().length < 2) {
-                  await reply(`Por favor, informe a cidade:`);
-                } else {
-                  const d2 = { ...data, cidade: rawBody.trim() };
-                  const summaryMsg = `📋 *Resumo do seu orçamento:*\n\n📦 *Produto:* ${d2.produto}\n📐 *Medidas:* ${d2.largura}m × ${d2.altura}m\n🔢 *Quantidade:* ${d2.quantidade} un\n👤 *Nome/Empresa:* ${d2.nomeCliente}\n📍 *Cidade:* ${d2.cidade}\n\nEstá correto? Digite *SIM* para confirmar ou *NÃO* para cancelar.`;
-                  await reply(summaryMsg, "confirmar", { cidade: rawBody.trim() });
-                }
-                break;
-              }
-              case "confirmar": {
-                if (msgNorm === "sim" || msgNorm === "s" || msgNorm === "yes") {
-                  const d3 = data as { produto?: string; largura?: number; altura?: number; quantidade?: number; nomeCliente?: string; cidade?: string };
-                  const phone = from.replace(/\D/g, "");
+            }
+
+            // ── CONFIRMAR ORÇAMENTO ───────────────────────────────────────────
+            if (step === "confirmar") {
+              if (msgNorm === "sim" || msgNorm === "s" || msgNorm === "yes" || msgNorm === "confirmo" || msgNorm === "ok" || msgNorm === "pode") {
+                const d = data as QuoteData;
+                const phone = from.replace(/\D/g, "");
+                try {
                   let clientId: string;
-                  try {
-                    const { data: fc } = await storage.getClients({ search: phone, limit: 5 });
-                    const existing = fc.find((c) => (c.telefone ?? "").replace(/\D/g, "").includes(phone));
-                    if (existing) {
-                      clientId = existing.id;
-                    } else {
-                      const nc = await storage.createClient({ tipoPessoa: "fisica", razaoSocial: d3.nomeCliente ?? "Cliente WhatsApp", telefone: `+${phone}`, status: "prospect", origemLead: "whatsapp" } as any);
-                      clientId = nc.id;
-                    }
-                    const today = new Date().toISOString().split("T")[0];
-                    const validUntil = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
-                    const quote = await storage.createQuote({ clientId, data: today, validade: validUntil, status: "rascunho", desconto: "0", impostos: "0", observacoes: `Orçamento via WhatsApp - Cidade: ${d3.cidade ?? ""}` } as any);
-                    const larg = d3.largura ?? 0;
-                    const alt = d3.altura ?? 0;
-                    await storage.setQuoteItems(quote.id, [{ quoteId: quote.id, descricao: d3.produto ?? "Produto", largura: String(larg), altura: String(alt), area: (larg * alt).toFixed(4), quantidade: String(d3.quantidade ?? 1), unidade: "un", custoCalculado: "0", precoUnitario: "0", precoTotal: "0", ordem: 0 }]);
-                    await storage.updateWhatsappSession(session!.id, { step: "done", status: "completed", clientId, quoteId: quote.id });
-                    await reply(`✅ *Orçamento criado com sucesso!*\n\nNúmero: *${quote.numero}*\n\nEm breve nossa equipe analisará seu pedido e entrará em contato com os valores. 😊\n\nObrigado por escolher a Gráfica+!`);
-                  } catch (e) {
-                    console.error("[WhatsApp] Erro ao criar orçamento:", e);
-                    await reply(`Ocorreu um erro ao criar o orçamento. Por favor, tente novamente ou envie *MENU*.`, "menu");
+                  const { data: fc } = await storage.getClients({ search: phone, limit: 5 });
+                  const existing = fc.find((c) => (c.telefone ?? "").replace(/\D/g, "").includes(phone));
+                  if (existing) {
+                    clientId = existing.id;
+                  } else {
+                    const nc = await storage.createClient({
+                      tipoPessoa: "fisica",
+                      razaoSocial: d.nomeCliente ?? "Cliente WhatsApp",
+                      telefone: `+${phone}`,
+                      status: "prospect",
+                      origemLead: "whatsapp",
+                    } as any);
+                    clientId = nc.id;
                   }
-                } else if (msgNorm === "nao" || msgNorm === "não" || msgNorm === "n" || msgNorm === "no") {
-                  await storage.updateWhatsappSession(session.id, { step: "menu", data: {}, status: "abandoned" });
-                  session = await storage.createWhatsappSession(fromKey);
-                  await reply(`Orçamento cancelado. ❌\n\n${MENU_MSG}`, "menu");
-                } else {
-                  await reply(`Por favor, responda *SIM* para confirmar ou *NÃO* para cancelar.`);
+                  const today = new Date().toISOString().split("T")[0];
+                  const validUntil = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
+                  const quote = await storage.createQuote({
+                    clientId,
+                    data: today,
+                    validade: validUntil,
+                    status: "rascunho",
+                    desconto: "0",
+                    impostos: "0",
+                    observacoes: `Orçamento via WhatsApp - Cidade: ${d.cidade ?? ""}`,
+                  } as any);
+                  const larg = d.largura ?? 0;
+                  const alt = d.altura ?? 0;
+                  await storage.setQuoteItems(quote.id, [{
+                    quoteId: quote.id,
+                    descricao: d.produto ?? "Produto",
+                    largura: String(larg),
+                    altura: String(alt),
+                    area: (larg * alt).toFixed(4),
+                    quantidade: String(d.quantidade ?? 1),
+                    unidade: "un",
+                    custoCalculado: "0",
+                    precoUnitario: "0",
+                    precoTotal: "0",
+                    ordem: 0,
+                  }]);
+                  await storage.updateWhatsappSession(session!.id, { step: "done", status: "completed", clientId, quoteId: quote.id });
+
+                  await reply(`✅ *Orçamento ${quote.numero} criado!*\n\nEm breve nossa equipe entrará em contato com os valores. 😊\n\nEstamos enviando uma cópia do seu orçamento agora...`);
+
+                  const prodUrl = process.env.REPLIT_DOMAINS
+                    ? `https://${process.env.REPLIT_DOMAINS.split(",")[0].trim()}`
+                    : "https://grafica-core-system.replit.app";
+                  const pdfUrl = `${prodUrl}/api/quotes/${quote.id}/pdf`;
+                  await sendMetaDocument(phoneNumberId, from, pdfUrl, `${quote.numero}.pdf`, `Orçamento ${quote.numero} - Gráfica+`);
+
+                  await reply(`Obrigado por escolher a *Gráfica+*! 🖨️\n\nPrecisa de mais alguma coisa? É só me dizer!`, "collecting", {});
+                } catch (e) {
+                  console.error("[WhatsApp] Erro ao criar orçamento:", e);
+                  await reply(`Ocorreu um erro. Por favor, tente novamente.`, "collecting");
                 }
-                break;
+                continue;
               }
-              case "done": {
-                await storage.updateWhatsappSession(session.id, { step: "menu", data: {}, status: "abandoned" });
+
+              if (msgNorm === "nao" || msgNorm === "não" || msgNorm === "n" || msgNorm === "no" || msgNorm === "errado" || msgNorm === "incorreto") {
+                await storage.updateWhatsappSession(session.id, { step: "collecting", data: {}, status: "abandoned" });
                 session = await storage.createWhatsappSession(fromKey);
-                await reply(MENU_MSG, "menu");
-                break;
+                await reply(`Tudo bem! Vamos recomeçar. 😊\n\nMe diga o que você precisa:`, "collecting");
+                continue;
               }
+
+              await reply(`Por favor, responda *SIM* para confirmar ou *NÃO* para recomeçar.`);
+              continue;
+            }
+
+            // ── COLLECTING (IA-DRIVEN) ────────────────────────────────────────
+            if (step === "done") {
+              await storage.updateWhatsappSession(session.id, { step: "collecting", data: {} });
+              session = await storage.createWhatsappSession(fromKey);
+            }
+
+            const aiResult = await extractQuoteInfoWithAI(rawBody, data);
+
+            if (aiResult.intent === "atendente") {
+              await reply(`Entendido! 🙋 Em breve um atendente entrará em contato com você.\n\nSe precisar de algo mais, é só dizer!`, "collecting", {});
+              continue;
+            }
+
+            if (aiResult.intent === "status") {
+              await reply(`Me informe o número do orçamento ou pedido:\n_(ex: ORC-2026-0001 ou PED-2026-0001)_`, "status_query");
+              continue;
+            }
+
+            const newData: QuoteData = {
+              produto: aiResult.produto,
+              largura: aiResult.largura,
+              altura: aiResult.altura,
+              quantidade: aiResult.quantidade,
+              nomeCliente: aiResult.nomeCliente,
+              cidade: aiResult.cidade,
+            };
+
+            if (aiResult.complete) {
+              await reply(aiResult.reply, "confirmar", newData as Record<string, unknown>);
+            } else {
+              await reply(aiResult.reply, "collecting", newData as Record<string, unknown>);
             }
           }
         }
