@@ -1514,22 +1514,60 @@ Responda SOMENTE com JSON válido:
                   } as any);
                   const larg = d.largura ?? 0;
                   const alt = d.altura ?? 0;
-                  await storage.setQuoteItems(quote.id, [{
+                  const qtd = d.quantidade ?? 1;
+
+                  let quoteItemData: Record<string, unknown> = {
                     quoteId: quote.id,
                     descricao: d.produto ?? "Produto",
                     largura: String(larg),
                     altura: String(alt),
                     area: (larg * alt).toFixed(4),
-                    quantidade: String(d.quantidade ?? 1),
-                    unidade: "un",
+                    quantidade: String(qtd),
+                    unidade: larg > 0 && alt > 0 ? "m²" : "un",
                     custoCalculado: "0",
                     precoUnitario: "0",
                     precoTotal: "0",
                     ordem: 0,
-                  }]);
+                  };
+
+                  try {
+                    const { data: prods } = await storage.getProducts({ limit: 100 });
+                    const prompt = `${d.produto} ${larg}x${alt}m quantidade ${qtd} cidade ${d.cidade}`;
+                    const suggestion = await suggestQuoteItem(prompt, prods.map((p) => ({
+                      id: p.id,
+                      nome: p.nome,
+                      categoria: p.categoria ?? "",
+                      tipoCalculo: p.tipoCalculo,
+                      unidadeVenda: p.unidadeVenda,
+                    })));
+                    quoteItemData = {
+                      quoteId: quote.id,
+                      productId: suggestion.productId ?? null,
+                      descricao: suggestion.descricao || d.produto || "Produto",
+                      largura: suggestion.largura != null ? String(suggestion.largura) : String(larg),
+                      altura: suggestion.altura != null ? String(suggestion.altura) : String(alt),
+                      area: suggestion.area != null ? String(suggestion.area) : (larg * alt).toFixed(4),
+                      quantidade: String(suggestion.quantidade || qtd),
+                      unidade: suggestion.unidade || "un",
+                      custoCalculado: "0",
+                      precoUnitario: String(suggestion.precoUnitario ?? 0),
+                      precoTotal: String(suggestion.precoTotal ?? 0),
+                      observacoes: suggestion.observacoes ?? null,
+                      ordem: 0,
+                    };
+                    await storage.updateQuote(quote.id, { valorTotal: String(suggestion.precoTotal ?? 0) });
+                  } catch (aiErr) {
+                    console.warn("[WhatsApp] Erro ao calcular preço com IA, usando zero:", aiErr);
+                  }
+
+                  await storage.setQuoteItems(quote.id, [quoteItemData as any]);
                   await storage.updateWhatsappSession(session!.id, { step: "done", status: "completed", clientId, quoteId: quote.id });
 
-                  await reply(`✅ *Orçamento ${quote.numero} criado!*\n\nEm breve nossa equipe entrará em contato com os valores. 😊\n\nEstamos enviando uma cópia do seu orçamento agora...`);
+                  const precoTotal = Number(quoteItemData.precoTotal ?? 0);
+                  const precoStr = precoTotal > 0
+                    ? `\n💰 *Valor estimado: R$ ${precoTotal.toFixed(2).replace(".", ",")}*\n`
+                    : "\n_(O valor será calculado pela nossa equipe)_\n";
+                  await reply(`✅ *Orçamento ${quote.numero} criado!*\n${precoStr}\nEstamos enviando uma cópia do seu orçamento agora... 👇`);
 
                   const prodUrl = process.env.REPLIT_DOMAINS
                     ? `https://${process.env.REPLIT_DOMAINS.split(",")[0].trim()}`
