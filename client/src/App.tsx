@@ -28,6 +28,7 @@ import QuotesPage from "@/pages/quotes/index";
 import QuoteFormPage from "@/pages/quotes/form";
 import QuoteDetailPage from "@/pages/quotes/detail";
 import QuotePrintPage from "@/pages/quotes/print";
+import SpecialQuotePage from "@/pages/quotes/special";
 import OrdersPage from "@/pages/orders/index";
 import OrderDetailPage from "@/pages/orders/detail";
 import OrderPrintPage from "@/pages/orders/print";
@@ -69,6 +70,7 @@ function AppRouter() {
       <Route path="/products/:id/edit" component={ProductFormPage} />
       <Route path="/quotes" component={QuotesPage} />
       <Route path="/quotes/new" component={QuoteFormPage} />
+      <Route path="/quotes/special" component={SpecialQuotePage} />
       <Route path="/quotes/:id/edit" component={QuoteFormPage} />
       <Route path="/quotes/:id/print" component={QuotePrintPage} />
       <Route path="/quotes/:id" component={QuoteDetailPage} />

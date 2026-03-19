@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
   Plus, Search, Filter, MoreHorizontal, FileText, Calendar, User,
-  ChevronLeft, ChevronRight, Eye, Pencil, Trash2, ArrowRightLeft
+  ChevronLeft, ChevronRight, Eye, Pencil, Trash2, ArrowRightLeft, Sparkles
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -116,12 +116,20 @@ export default function QuotesPage() {
             {data ? `${data.total.toLocaleString("pt-BR")} orçamentos encontrados` : "Carregando..."}
           </p>
         </div>
-        <Button asChild data-testid="button-new-quote">
-          <Link href="/quotes/new">
-            <Plus className="w-4 h-4 mr-1.5" />
-            Novo Orçamento
-          </Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild variant="outline" data-testid="button-special-quote">
+            <Link href="/quotes/special">
+              <Sparkles className="w-4 h-4 mr-1.5 text-primary" />
+              Orçamento Especial IA
+            </Link>
+          </Button>
+          <Button asChild data-testid="button-new-quote">
+            <Link href="/quotes/new">
+              <Plus className="w-4 h-4 mr-1.5" />
+              Novo Orçamento
+            </Link>
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}

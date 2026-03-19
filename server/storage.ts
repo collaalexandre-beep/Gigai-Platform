@@ -71,6 +71,9 @@ import {
   whatsappMessages,
   type WhatsappSession,
   type WhatsappMessage,
+  quoteRules,
+  type QuoteRule,
+  type InsertQuoteRule,
 } from "@shared/schema";
 import { addDays } from "date-fns";
 
@@ -256,6 +259,12 @@ export interface IStorage {
   updateWhatsappSession(id: string, data: Partial<WhatsappSession>): Promise<WhatsappSession | undefined>;
   getWhatsappMessages(sessionId: string): Promise<WhatsappMessage[]>;
   addWhatsappMessage(sessionId: string, direction: string, body: string, from?: string, to?: string): Promise<WhatsappMessage>;
+
+  // Quote Rules
+  listQuoteRules(): Promise<QuoteRule[]>;
+  createQuoteRule(data: InsertQuoteRule): Promise<QuoteRule>;
+  updateQuoteRule(id: string, data: Partial<InsertQuoteRule>): Promise<QuoteRule | undefined>;
+  deleteQuoteRule(id: string): Promise<void>;
 }
 
 // ─── DATABASE STORAGE ─────────────────────────────────────────────────────────
@@ -1324,6 +1333,30 @@ export class DatabaseStorage implements IStorage {
   async addWhatsappMessage(sessionId: string, direction: string, body: string, from?: string, to?: string): Promise<WhatsappMessage> {
     const [msg] = await db.insert(whatsappMessages).values({ sessionId, direction, body, from: from ?? null, to: to ?? null }).returning();
     return msg;
+  }
+
+  // ─── QUOTE RULES ─────────────────────────────────────────────────────────────
+
+  async listQuoteRules(): Promise<QuoteRule[]> {
+    return db.select().from(quoteRules).orderBy(asc(quoteRules.createdAt));
+  }
+
+  async createQuoteRule(data: InsertQuoteRule): Promise<QuoteRule> {
+    const [rule] = await db.insert(quoteRules).values(data).returning();
+    return rule;
+  }
+
+  async updateQuoteRule(id: string, data: Partial<InsertQuoteRule>): Promise<QuoteRule | undefined> {
+    const [rule] = await db
+      .update(quoteRules)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(quoteRules.id, id))
+      .returning();
+    return rule;
+  }
+
+  async deleteQuoteRule(id: string): Promise<void> {
+    await db.delete(quoteRules).where(eq(quoteRules.id, id));
   }
 }
 

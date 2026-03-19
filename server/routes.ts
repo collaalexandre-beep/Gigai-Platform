@@ -27,8 +27,9 @@ import {
   insertCompanySchema,
   type InsertQuote,
   type InsertOrder,
+  insertQuoteRuleSchema,
 } from "@shared/schema";
-import { generateProductSuggestion, suggestQuoteItem } from "./ai";
+import { generateProductSuggestion, suggestQuoteItem, generateSpecialQuote, adjustSpecialQuote } from "./ai";
 
 function handleError(res: Response, err: unknown) {
   console.error("[API Error]", err);
@@ -1655,6 +1656,192 @@ Responda SOMENTE com JSON válido:
     } catch (err) {
       handleError(res, err);
     }
+  });
+
+  // ─── QUOTE RULES ──────────────────────────────────────────────────────────
+
+  app.get("/api/quote-rules", async (_req: Request, res: Response) => {
+    try {
+      const rules = await storage.listQuoteRules();
+      res.json(rules);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.post("/api/quote-rules", async (req: Request, res: Response) => {
+    try {
+      const body = insertQuoteRuleSchema.parse(req.body);
+      const rule = await storage.createQuoteRule(body);
+      res.status(201).json(rule);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.put("/api/quote-rules/:id", async (req: Request, res: Response) => {
+    try {
+      const rule = await storage.updateQuoteRule(getParam(req, "id"), req.body);
+      if (!rule) return res.status(404).json({ error: "Regra não encontrada" });
+      res.json(rule);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.delete("/api/quote-rules/:id", async (req: Request, res: Response) => {
+    try {
+      await storage.deleteQuoteRule(getParam(req, "id"));
+      res.status(204).end();
+    } catch (err) { handleError(res, err); }
+  });
+
+  // ─── SPECIAL QUOTES (AI-powered) ──────────────────────────────────────────
+
+  app.post("/api/special-quotes/generate", async (req: Request, res: Response) => {
+    try {
+      const { prompt } = req.body;
+      if (!prompt) return res.status(400).json({ error: "Prompt é obrigatório" });
+
+      const [mats, prods, rules] = await Promise.all([
+        storage.getRawMaterials({ limit: 200 }),
+        storage.getProducts({ limit: 200 }),
+        storage.listQuoteRules(),
+      ]);
+
+      const result = await generateSpecialQuote(
+        prompt,
+        mats.data.map((m) => ({ id: m.id, nome: m.nome, categoria: m.categoria, custoUnitario: m.custoUnitario, unidadeCompra: m.unidadeCompra })),
+        prods.data.map((p) => ({ id: p.id, nome: p.nome, categoria: p.categoria, tipoCalculo: p.tipoCalculo, unidadeVenda: p.unidadeVenda })),
+        rules.filter((r) => r.ativa).map((r) => ({ nome: r.nome, regra: r.regra }))
+      );
+
+      res.json(result);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.post("/api/special-quotes/adjust", async (req: Request, res: Response) => {
+    try {
+      const { originalPrompt, previousResult, adjustment } = req.body;
+      if (!adjustment) return res.status(400).json({ error: "Ajuste é obrigatório" });
+
+      const [mats, prods, rules] = await Promise.all([
+        storage.getRawMaterials({ limit: 200 }),
+        storage.getProducts({ limit: 200 }),
+        storage.listQuoteRules(),
+      ]);
+
+      const result = await adjustSpecialQuote(
+        originalPrompt || "",
+        previousResult,
+        adjustment,
+        mats.data.map((m) => ({ id: m.id, nome: m.nome, categoria: m.categoria, custoUnitario: m.custoUnitario, unidadeCompra: m.unidadeCompra })),
+        prods.data.map((p) => ({ id: p.id, nome: p.nome, categoria: p.categoria, tipoCalculo: p.tipoCalculo, unidadeVenda: p.unidadeVenda })),
+        rules.filter((r) => r.ativa).map((r) => ({ nome: r.nome, regra: r.regra }))
+      );
+
+      // If AI suggests a new material, create it automatically
+      if (result.novoMaterial) {
+        try {
+          const nm = result.novoMaterial;
+          await storage.createRawMaterial({
+            nome: nm.nome,
+            categoria: (nm.categoria as "chapas" | "impressao" | "estruturas" | "iluminacao" | "fixacao" | "adesivos" | "tintas" | "acabamento" | "instalacao" | "servicos_terceirizados" | "outros") || "outros",
+            unidadeCompra: nm.unidade,
+            custoUnitario: String(nm.custoUnitario),
+            descricao: nm.descricao || null,
+            ativo: true,
+          });
+        } catch (e) {
+          console.error("[Special Quote] Failed to create raw material:", e);
+        }
+      }
+
+      res.json(result);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.post("/api/special-quotes/pdf", async (req: Request, res: Response) => {
+    try {
+      const { titulo, nomeCliente, pedido, itens, total, observacoes, materiaisNaoEncontrados } = req.body;
+
+      const doc = new PDFDocument({ margin: 50, size: "A4" });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="orcamento-especial.pdf"`);
+      doc.pipe(res);
+
+      // Header
+      doc.fontSize(18).font("Helvetica-Bold").text("ORÇAMENTO ESPECIAL", { align: "center" });
+      doc.moveDown(0.5);
+      doc.fontSize(13).font("Helvetica-Bold").text(titulo || "Orçamento", { align: "center" });
+      doc.moveDown(1);
+
+      // Client info
+      if (nomeCliente) {
+        doc.fontSize(11).font("Helvetica").text(`Cliente: ${nomeCliente}`);
+      }
+      doc.fontSize(10).font("Helvetica").text(`Data: ${new Date().toLocaleDateString("pt-BR")}`);
+      doc.moveDown(1);
+
+      // Client request
+      if (pedido) {
+        doc.fontSize(10).font("Helvetica-Bold").text("Pedido do cliente:");
+        doc.fontSize(10).font("Helvetica").text(pedido, { color: "#555" });
+        doc.moveDown(1);
+      }
+
+      // Items table header
+      doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
+      doc.moveDown(0.3);
+      const tableY = doc.y;
+      doc.fontSize(9).font("Helvetica-Bold");
+      doc.text("Descrição", 50, tableY, { width: 230 });
+      doc.text("Qtd", 285, tableY, { width: 50, align: "right" });
+      doc.text("Un", 340, tableY, { width: 40 });
+      doc.text("Unit. (R$)", 385, tableY, { width: 70, align: "right" });
+      doc.text("Total (R$)", 460, tableY, { width: 85, align: "right" });
+      doc.moveDown(0.3);
+      doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
+      doc.moveDown(0.3);
+
+      // Items
+      doc.font("Helvetica").fontSize(9);
+      for (const item of (itens || [])) {
+        const y = doc.y;
+        const notFound = item.encontrado === false;
+        if (notFound) doc.fillColor("#cc4444"); else doc.fillColor("#111111");
+        doc.text(item.descricao + (notFound ? " ⚠" : ""), 50, y, { width: 230 });
+        doc.text(String(Number(item.quantidade).toFixed(2)), 285, y, { width: 50, align: "right" });
+        doc.text(item.unidade || "", 340, y, { width: 40 });
+        doc.text(`${Number(item.precoUnitario).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, 385, y, { width: 70, align: "right" });
+        doc.text(`${Number(item.precoTotal).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, 460, y, { width: 85, align: "right" });
+        doc.fillColor("#111111");
+        doc.moveDown(0.4);
+      }
+
+      doc.moveDown(0.5);
+      doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke();
+      doc.moveDown(0.5);
+
+      // Total
+      doc.font("Helvetica-Bold").fontSize(12);
+      doc.text(`VALOR TOTAL: R$ ${Number(total).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`, { align: "right" });
+      doc.moveDown(1);
+
+      // Observations
+      if (observacoes) {
+        doc.font("Helvetica-Bold").fontSize(9).text("Observações:");
+        doc.font("Helvetica").fontSize(9).fillColor("#8B6914").text(observacoes);
+        doc.fillColor("#111111");
+        doc.moveDown(0.5);
+      }
+
+      // Materials not found
+      if (materiaisNaoEncontrados && materiaisNaoEncontrados.length > 0) {
+        doc.font("Helvetica-Bold").fontSize(9).fillColor("#cc4444").text("Materiais não encontrados no cadastro:");
+        doc.font("Helvetica").fontSize(9);
+        for (const m of materiaisNaoEncontrados) {
+          doc.text(`• ${m}`);
+        }
+        doc.fillColor("#111111");
+      }
+
+      doc.end();
+    } catch (err) { handleError(res, err); }
   });
 
   return httpServer;

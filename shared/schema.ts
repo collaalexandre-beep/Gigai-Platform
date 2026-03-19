@@ -970,6 +970,27 @@ export const whatsappMessages = pgTable(
 
 export type WhatsappMessage = typeof whatsappMessages.$inferSelect;
 
+// ─── QUOTE RULES ─────────────────────────────────────────────────────────────
+
+export const quoteRules = pgTable(
+  "quote_rules",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    nome: text("nome").notNull(),
+    descricao: text("descricao"),
+    regra: text("regra").notNull(),
+    ativa: boolean("ativa").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  }
+);
+
+export const insertQuoteRuleSchema = createInsertSchema(quoteRules).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertQuoteRule = z.infer<typeof insertQuoteRuleSchema>;
+export type QuoteRule = typeof quoteRules.$inferSelect;
+
 // ─── DASHBOARD STATS (view types) ────────────────────────────────────────────
 
 export interface DashboardStats {

@@ -148,3 +148,165 @@ Regras:
 
   return JSON.parse(content) as QuoteItemSuggestion;
 }
+
+// ─── SPECIAL QUOTE GENERATION ─────────────────────────────────────────────────
+
+export interface SpecialQuoteItem {
+  descricao: string;
+  quantidade: number;
+  unidade: string;
+  precoUnitario: number;
+  precoTotal: number;
+  materialId?: string | null;
+  materialNome?: string | null;
+  encontrado: boolean;
+}
+
+export interface SpecialQuoteResult {
+  titulo: string;
+  itens: SpecialQuoteItem[];
+  subtotal: number;
+  total: number;
+  observacoes: string;
+  materiaisNaoEncontrados: string[];
+  novoMaterial?: {
+    nome: string;
+    categoria: string;
+    custoUnitario: number;
+    unidade: string;
+    descricao?: string;
+  } | null;
+}
+
+export async function generateSpecialQuote(
+  prompt: string,
+  rawMaterials: { id: string; nome: string; categoria: string; custoUnitario: string | null; unidadeCompra: string }[],
+  products: { id: string; nome: string; categoria: string; tipoCalculo: string; unidadeVenda: string }[],
+  rules: { nome: string; regra: string }[]
+): Promise<SpecialQuoteResult> {
+  const matList = rawMaterials.map((m) =>
+    `ID: ${m.id} | Nome: ${m.nome} | Categoria: ${m.categoria} | Custo: R$${m.custoUnitario ?? "?"} / ${m.unidadeCompra}`
+  ).join("\n");
+
+  const prodList = products.map((p) =>
+    `ID: ${p.id} | Nome: ${p.nome} | Categoria: ${p.categoria} | Cálculo: ${p.tipoCalculo} / ${p.unidadeVenda}`
+  ).join("\n");
+
+  const rulesList = rules.filter((r) => r.regra).map((r) => `- ${r.nome}: ${r.regra}`).join("\n");
+
+  const systemPrompt = `Você é um especialista em orçamentos de gráfica e comunicação visual brasileira.
+Analise o pedido do cliente e gere um orçamento detalhado consultando a lista de matérias-primas e produtos.
+
+MATÉRIAS-PRIMAS DISPONÍVEIS:
+${matList || "Nenhuma matéria-prima cadastrada."}
+
+PRODUTOS DISPONÍVEIS:
+${prodList || "Nenhum produto cadastrado."}
+
+REGRAS DE ORÇAMENTO:
+${rulesList || "Sem regras específicas."}
+
+INSTRUÇÕES:
+1. Analise o pedido e identifique todos os materiais necessários
+2. Consulte a lista de matérias-primas para encontrar os itens mais próximos
+3. Se não encontrar um material exato, use o mais similar e anote na observação
+4. Calcule as quantidades com base nas dimensões informadas (adicione 5cm de margem para corte)
+5. Use os preços do cadastro quando disponíveis; caso contrário, estime preços de mercado brasileiros
+6. Aplique as regras de orçamento quando relevantes
+7. Liste claramente os materiais não encontrados no cadastro
+
+Retorne APENAS um JSON com este formato exato:
+{
+  "titulo": "Título descritivo do trabalho",
+  "itens": [
+    {
+      "descricao": "Nome do material/serviço",
+      "quantidade": 1.0,
+      "unidade": "m²",
+      "precoUnitario": 100.00,
+      "precoTotal": 100.00,
+      "materialId": "id_se_encontrado_ou_null",
+      "materialNome": "nome_exato_da_lista_ou_null",
+      "encontrado": true
+    }
+  ],
+  "subtotal": 100.00,
+  "total": 100.00,
+  "observacoes": "Notas técnicas importantes, substituições realizadas, margens aplicadas etc.",
+  "materiaisNaoEncontrados": ["Lista de materiais pedidos mas não encontrados no cadastro"],
+  "novoMaterial": null
+}`;
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: prompt },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.3,
+  });
+
+  const content = response.choices[0].message.content;
+  if (!content) throw new Error("Falha ao obter resposta da IA");
+  return JSON.parse(content) as SpecialQuoteResult;
+}
+
+export async function adjustSpecialQuote(
+  originalPrompt: string,
+  previousResult: SpecialQuoteResult,
+  adjustment: string,
+  rawMaterials: { id: string; nome: string; categoria: string; custoUnitario: string | null; unidadeCompra: string }[],
+  products: { id: string; nome: string; categoria: string; tipoCalculo: string; unidadeVenda: string }[],
+  rules: { nome: string; regra: string }[]
+): Promise<SpecialQuoteResult> {
+  const matList = rawMaterials.map((m) =>
+    `ID: ${m.id} | Nome: ${m.nome} | Categoria: ${m.categoria} | Custo: R$${m.custoUnitario ?? "?"} / ${m.unidadeCompra}`
+  ).join("\n");
+
+  const rulesList = rules.filter((r) => r.regra).map((r) => `- ${r.nome}: ${r.regra}`).join("\n");
+
+  const systemPrompt = `Você é um especialista em orçamentos de gráfica e comunicação visual brasileira.
+Você receberá um orçamento existente e uma instrução de ajuste do vendedor.
+
+MATÉRIAS-PRIMAS DISPONÍVEIS:
+${matList || "Nenhuma matéria-prima cadastrada."}
+
+REGRAS DE ORÇAMENTO:
+${rulesList || "Sem regras específicas."}
+
+INSTRUÇÕES:
+1. Analise o ajuste solicitado pelo vendedor
+2. Se o vendedor mencionar um novo material com preço, inclua-o no campo "novoMaterial" para ser cadastrado
+3. Recalcule o orçamento com base no ajuste
+4. Mantenha os itens já corretos e modifique apenas o necessário
+5. Se uma nova regra for sugerida, aplique-a e inclua nas observações
+
+Retorne APENAS um JSON com o mesmo formato do orçamento anterior, atualizado.
+Se um novo material for identificado para cadastro, preencha "novoMaterial":
+{
+  "novoMaterial": {
+    "nome": "Nome do material",
+    "categoria": "chapas|impressao|estruturas|iluminacao|fixacao|adesivos|tintas|acabamento|instalacao|servicos_terceirizados|outros",
+    "custoUnitario": 100.00,
+    "unidade": "m²",
+    "descricao": "Descrição opcional"
+  }
+}`;
+
+  const previousResultStr = JSON.stringify(previousResult, null, 2);
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: `Pedido original: ${originalPrompt}\n\nOrçamento atual:\n${previousResultStr}\n\nAjuste solicitado: ${adjustment}` },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.3,
+  });
+
+  const content = response.choices[0].message.content;
+  if (!content) throw new Error("Falha ao obter resposta da IA");
+  return JSON.parse(content) as SpecialQuoteResult;
+}
