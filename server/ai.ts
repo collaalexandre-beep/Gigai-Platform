@@ -178,6 +178,19 @@ export interface SpecialQuoteResult {
   } | null;
 }
 
+function normalizeSpecialQuoteResult(parsed: Record<string, unknown>): SpecialQuoteResult {
+  // AI may return "items" (English) instead of "itens" (Portuguese)
+  if (!parsed.itens && parsed.items) {
+    parsed.itens = parsed.items;
+    delete parsed.items;
+  }
+  if (!Array.isArray(parsed.itens)) parsed.itens = [];
+  if (!Array.isArray(parsed.materiaisNaoEncontrados)) parsed.materiaisNaoEncontrados = [];
+  if (typeof parsed.subtotal !== "number") parsed.subtotal = Number(parsed.subtotal) || 0;
+  if (typeof parsed.total !== "number") parsed.total = Number(parsed.total) || 0;
+  return parsed as unknown as SpecialQuoteResult;
+}
+
 export async function generateSpecialQuote(
   prompt: string,
   rawMaterials: { id: string; nome: string; categoria: string; custoUnitario: string | null; unidadeCompra: string }[],
@@ -249,7 +262,7 @@ Retorne APENAS um JSON com este formato exato:
 
   const content = response.choices[0].message.content;
   if (!content) throw new Error("Falha ao obter resposta da IA");
-  return JSON.parse(content) as SpecialQuoteResult;
+  return normalizeSpecialQuoteResult(JSON.parse(content));
 }
 
 export async function adjustSpecialQuote(
@@ -308,5 +321,5 @@ Se um novo material for identificado para cadastro, preencha "novoMaterial":
 
   const content = response.choices[0].message.content;
   if (!content) throw new Error("Falha ao obter resposta da IA");
-  return JSON.parse(content) as SpecialQuoteResult;
+  return normalizeSpecialQuoteResult(JSON.parse(content));
 }
