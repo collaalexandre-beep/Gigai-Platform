@@ -165,6 +165,7 @@ export interface SpecialQuoteItem {
 export interface SpecialQuoteResult {
   titulo: string;
   itens: SpecialQuoteItem[];
+  memoriaCalculo: string;
   subtotal: number;
   total: number;
   observacoes: string;
@@ -188,6 +189,16 @@ function normalizeSpecialQuoteResult(parsed: Record<string, unknown>): SpecialQu
   if (!Array.isArray(parsed.materiaisNaoEncontrados)) parsed.materiaisNaoEncontrados = [];
   if (typeof parsed.subtotal !== "number") parsed.subtotal = Number(parsed.subtotal) || 0;
   if (typeof parsed.total !== "number") parsed.total = Number(parsed.total) || 0;
+  if (typeof parsed.memoriaCalculo !== "string") parsed.memoriaCalculo = "";
+  // Ensure all item prices are numbers
+  if (Array.isArray(parsed.itens)) {
+    parsed.itens = (parsed.itens as Record<string, unknown>[]).map((item) => ({
+      ...item,
+      quantidade: Number(item.quantidade) || 0,
+      precoUnitario: Number(item.precoUnitario) || 0,
+      precoTotal: Number(item.precoTotal) || 0,
+    }));
+  }
   return parsed as unknown as SpecialQuoteResult;
 }
 
@@ -207,48 +218,78 @@ export async function generateSpecialQuote(
 
   const rulesList = rules.filter((r) => r.regra).map((r) => `- ${r.nome}: ${r.regra}`).join("\n");
 
-  const systemPrompt = `Você é um especialista em orçamentos de gráfica e comunicação visual brasileira.
-Analise o pedido do cliente e gere um orçamento detalhado consultando a lista de matérias-primas e produtos.
+  const systemPrompt = `Você é o orçamentista sênior de uma gráfica de comunicação visual no Brasil com 20 anos de experiência.
+Você conhece profundamente os preços praticados no mercado brasileiro de impressão, plotagem, adesivos, lona, ACM, policarbonato, metalon, iluminação, instalação e afins.
 
-MATÉRIAS-PRIMAS DISPONÍVEIS:
-${matList || "Nenhuma matéria-prima cadastrada."}
+REGRA FUNDAMENTAL: NUNCA retorne preço zero. Se o material não estiver no cadastro, use seu conhecimento de mercado brasileiro atual para estimar um preço realista. Você DEVE calcular um valor para cada item.
 
-PRODUTOS DISPONÍVEIS:
-${prodList || "Nenhum produto cadastrado."}
+MATÉRIAS-PRIMAS CADASTRADAS (use estes preços quando disponíveis — prioridade máxima):
+${matList || "Nenhuma cadastrada ainda — use preços de mercado."}
 
-REGRAS DE ORÇAMENTO:
+PRODUTOS CADASTRADOS:
+${prodList || "Nenhum cadastrado ainda."}
+
+REGRAS DE ORÇAMENTO DA EMPRESA (aplique obrigatoriamente):
 ${rulesList || "Sem regras específicas."}
 
-INSTRUÇÕES:
-1. Analise o pedido e identifique todos os materiais necessários
-2. Consulte a lista de matérias-primas para encontrar os itens mais próximos
-3. Se não encontrar um material exato, use o mais similar e anote na observação
-4. Calcule as quantidades com base nas dimensões informadas (adicione 5cm de margem para corte)
-5. Use os preços do cadastro quando disponíveis; caso contrário, estime preços de mercado brasileiros
-6. Aplique as regras de orçamento quando relevantes
-7. Liste claramente os materiais não encontrados no cadastro
+TABELA DE PREÇOS DE REFERÊNCIA BRASIL (use quando material não estiver no cadastro):
+- Lona impressa (banner/faixa): R$ 35-55/m² (impressão inclusa)
+- Lona crua sem impressão: R$ 8-15/m²
+- Vinil adesivo comum: R$ 25-45/m²
+- Vinil premium (Mactac, 3M): R$ 55-90/m²
+- Polipropileno / Couché: R$ 0,08-0,25/folha A4
+- ACM (Alumínio Composto) 3mm: R$ 120-180/m²
+- Policarbonato 4mm: R$ 180-280/m²
+- Policarbonato 6mm: R$ 250-380/m²
+- Acrílico 3mm: R$ 90-140/m²
+- Acrílico 5mm: R$ 140-200/m²
+- MDF 15mm: R$ 70-110/m²
+- Metalon 20×20 (6m): R$ 35-55/barra
+- Metalon 30×30 (6m): R$ 55-80/barra
+- Perfil de alumínio: R$ 40-80/m
+- LED Neon flex/strip: R$ 30-70/m
+- Letra caixa em acrílico/ACM: R$ 150-400/letra (tamanho médio)
+- Mão de obra instalação externa simples: R$ 80-150/h
+- Mão de obra instalação complexa/altura: R$ 120-250/h
+- Plotagem A0: R$ 12-25/folha
+- Impressão digital grande formato: R$ 30-80/m²
+- Recorte a laser/plotter: R$ 15-40/m linear
 
-Retorne APENAS um JSON com este formato exato:
+COMO CALCULAR:
+- Faixas/banners: calcule área total (L×A) + 10% margem corte → impressão lona + acabamento (ilhós/bastão)
+- Fachadas ACM: área da fachada + estrutura metalon (perímetro × 3 barras/m²) + fixação + instalação
+- Adesivos: área aplicada + 15% perda de corte
+- Letras caixa: contagem de letras × custo/letra + instalação
+- Impressão: área × preço/m² do substrato + acabamento
+- Horas de trabalho: estime o tempo real necessário (montagem, aplicação, instalação)
+
+MEMÓRIA DE CÁLCULO obrigatória: detalhe cada conta passo a passo.
+Exemplo: "Lona: 3,00m × 1,10m (c/ margem) = 3,30m² × R$45/m² = R$148,50 | Ilhós: 10un × R$1,50 = R$15,00"
+
+Retorne APENAS um JSON com este formato exato (todos os campos obrigatórios, sem exceção):
 {
   "titulo": "Título descritivo do trabalho",
   "itens": [
     {
       "descricao": "Nome do material/serviço",
-      "quantidade": 1.0,
+      "quantidade": 3.30,
       "unidade": "m²",
-      "precoUnitario": 100.00,
-      "precoTotal": 100.00,
-      "materialId": "id_se_encontrado_ou_null",
-      "materialNome": "nome_exato_da_lista_ou_null",
-      "encontrado": true
+      "precoUnitario": 45.00,
+      "precoTotal": 148.50,
+      "materialId": "id_do_cadastro_ou_null",
+      "materialNome": "nome_exato_do_cadastro_ou_null",
+      "encontrado": false
     }
   ],
-  "subtotal": 100.00,
-  "total": 100.00,
-  "observacoes": "Notas técnicas importantes, substituições realizadas, margens aplicadas etc.",
-  "materiaisNaoEncontrados": ["Lista de materiais pedidos mas não encontrados no cadastro"],
+  "memoriaCalculo": "Passo a passo detalhado de como cada valor foi calculado, linha por linha",
+  "subtotal": 163.50,
+  "total": 163.50,
+  "observacoes": "Margens aplicadas, substituições, prazo estimado, observações técnicas relevantes",
+  "materiaisNaoEncontrados": ["material1 — preço estimado por mercado", "material2"],
   "novoMaterial": null
-}`;
+}
+
+IMPORTANTE: subtotal e total devem ser a soma exata de todos os precoTotal dos itens. Nunca retorne 0 nesses campos.`;
 
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
@@ -279,33 +320,53 @@ export async function adjustSpecialQuote(
 
   const rulesList = rules.filter((r) => r.regra).map((r) => `- ${r.nome}: ${r.regra}`).join("\n");
 
-  const systemPrompt = `Você é um especialista em orçamentos de gráfica e comunicação visual brasileira.
-Você receberá um orçamento existente e uma instrução de ajuste do vendedor.
+  const systemPrompt = `Você é o orçamentista sênior de uma gráfica de comunicação visual no Brasil com 20 anos de experiência.
+Você está em modo de APRENDIZADO e AJUSTE — o vendedor está corrigindo ou ensinando informações ao sistema.
 
-MATÉRIAS-PRIMAS DISPONÍVEIS:
-${matList || "Nenhuma matéria-prima cadastrada."}
+REGRA FUNDAMENTAL: NUNCA retorne preço zero. Aplique todos os ajustes solicitados e recalcule tudo.
 
-REGRAS DE ORÇAMENTO:
+MATÉRIAS-PRIMAS CADASTRADAS (preços atualizados pelo vendedor têm prioridade máxima):
+${matList || "Nenhuma cadastrada ainda."}
+
+REGRAS DE ORÇAMENTO DA EMPRESA:
 ${rulesList || "Sem regras específicas."}
 
-INSTRUÇÕES:
-1. Analise o ajuste solicitado pelo vendedor
-2. Se o vendedor mencionar um novo material com preço, inclua-o no campo "novoMaterial" para ser cadastrado
-3. Recalcule o orçamento com base no ajuste
-4. Mantenha os itens já corretos e modifique apenas o necessário
-5. Se uma nova regra for sugerida, aplique-a e inclua nas observações
+O QUE O VENDEDOR PODE ENSINAR NESTE CAMPO:
+- Corrigir preços: "a lona custa R$38/m², não R$45" → corrija o preço e recalcule
+- Cadastrar material novo: "o acrílico 5mm aqui custa R$160/m²" → crie em novoMaterial
+- Aplicar percentual: "coloque 30% de margem de lucro" → aplique ao total
+- Corrigir quantidade: "são 3 peças, não 1" → ajuste e recalcule
+- Remover item: "não precisa de instalação" → remova o item
+- Adicionar item: "adicione 2 horas de arte" → insira novo item
+- Trocar material: "use lona fria em vez de lona quente" → substitua
+- Regra nova: "clientes da região ganham 5% de desconto" → aplique e mencione nas observações
 
-Retorne APENAS um JSON com o mesmo formato do orçamento anterior, atualizado.
-Se um novo material for identificado para cadastro, preencha "novoMaterial":
+INSTRUÇÕES:
+1. Interprete o ajuste do vendedor e aplique EXATAMENTE o que foi pedido
+2. Se o vendedor informar um preço real de material, use esse preço para recalcular todos os itens afetados
+3. Se for um novo material com preço, preencha "novoMaterial" para ser salvo no cadastro
+4. Atualize a memória de cálculo refletindo os novos valores
+5. Mantenha itens não afetados pelo ajuste inalterados
+6. Recalcule subtotal e total após qualquer mudança — nunca deixe valores desatualizados
+
+Retorne APENAS um JSON com o mesmo formato, completamente atualizado (incluindo memoriaCalculo):
 {
+  "titulo": "...",
+  "itens": [...],
+  "memoriaCalculo": "Memória de cálculo atualizada refletindo todos os ajustes feitos",
+  "subtotal": 0.00,
+  "total": 0.00,
+  "observacoes": "Explique quais ajustes foram feitos e por quê",
+  "materiaisNaoEncontrados": [],
   "novoMaterial": {
-    "nome": "Nome do material",
+    "nome": "Nome do material a cadastrar",
     "categoria": "chapas|impressao|estruturas|iluminacao|fixacao|adesivos|tintas|acabamento|instalacao|servicos_terceirizados|outros",
     "custoUnitario": 100.00,
     "unidade": "m²",
     "descricao": "Descrição opcional"
   }
-}`;
+}
+Se não houver novo material para cadastrar, use "novoMaterial": null.`;
 
   const previousResultStr = JSON.stringify(previousResult, null, 2);
 

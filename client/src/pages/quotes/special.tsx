@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
   Sparkles, ArrowLeft, Download, Wand2, Settings2, Plus, Trash2,
-  AlertTriangle, CheckCircle, Loader2, Pencil, Save, X, ToggleLeft, ToggleRight
+  AlertTriangle, CheckCircle, Loader2, Pencil, Save, X, Calculator
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -297,6 +297,19 @@ function ResultPanel({
         </table>
       </div>
 
+      {/* Calculation Memory */}
+      {result.memoriaCalculo && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800/50 dark:bg-blue-950/20 p-3">
+          <div className="flex items-center gap-1.5 mb-2">
+            <Calculator className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <p className="text-xs font-semibold text-blue-800 dark:text-blue-400">Memória de Cálculo</p>
+          </div>
+          <p className="text-xs text-blue-700 dark:text-blue-300 leading-relaxed whitespace-pre-wrap font-mono">
+            {result.memoriaCalculo}
+          </p>
+        </div>
+      )}
+
       {/* Subtotal / Total */}
       <div className="rounded-lg border bg-muted/20 p-3 space-y-1">
         <div className="flex justify-between text-sm text-muted-foreground">
@@ -506,26 +519,26 @@ export default function SpecialQuotePage() {
             <Card className="border-primary/30 bg-primary/5">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Settings2 className="w-4 h-4 text-primary" />
-                  Ajustar Orçamento / Ensinar IA
+                  <Wand2 className="w-4 h-4 text-primary" />
+                  Ensinar e Afinar a IA
                 </CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  Se algum material faltou ou o preço está errado, informe abaixo. A IA irá atualizar o cadastro e recalcular.
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Corrija preços, adicione materiais, ajuste quantidades ou aplique margens. A IA aprende e recalcula tudo.
                 </p>
               </CardHeader>
               <CardContent className="space-y-3">
                 {materialAdded && (
                   <div className="text-xs bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800/50 rounded p-2 flex items-center gap-1.5">
                     <CheckCircle className="w-3.5 h-3.5 text-green-500" />
-                    <span className="text-green-700 dark:text-green-400">Material "<strong>{materialAdded}</strong>" adicionado ao cadastro de matérias-primas!</span>
+                    <span className="text-green-700 dark:text-green-400">Material "<strong>{materialAdded}</strong>" salvo no cadastro!</span>
                   </div>
                 )}
                 <Textarea
                   value={ajuste}
                   onChange={(e) => setAjuste(e.target.value)}
-                  placeholder="Ex: O policarbonato 3mm custa R$600,00 o m². Adicione ao cadastro.&#10;Ex: Instalação em horário especial — acrescentar 50%.&#10;Ex: Substituir o metalon por alumínio."
-                  rows={4}
-                  className="resize-none"
+                  placeholder={"Exemplos:\n• \"A lona aqui custa R$38/m², corrija\"\n• \"Policarbonato 6mm = R$320/m² — cadastre no sistema\"\n• \"Adicione 25% de margem de lucro\"\n• \"São 3 peças, não 1\"\n• \"Remova a instalação\"\n• \"Coloque 2h de arte a R$120/h\""}
+                  rows={5}
+                  className="resize-none text-xs"
                   data-testid="textarea-adjustment"
                 />
                 <Button
