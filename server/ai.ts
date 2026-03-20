@@ -207,15 +207,24 @@ function normalizeSpecialQuoteResult(parsed: Record<string, unknown>): SpecialQu
   if (!Array.isArray(parsed.novosMateriais)) parsed.novosMateriais = [];
   if (!Array.isArray(parsed.novasRegras)) parsed.novasRegras = [];
 
-  // Ensure all item prices are numbers
+  // Ensure all item prices are numbers AND recompute precoTotal from quantidade × precoUnitario
+  // This fixes inconsistency where the AI writes one value in memoriaCalculo and a different one in itens
   if (Array.isArray(parsed.itens)) {
-    parsed.itens = (parsed.itens as Record<string, unknown>[]).map((item) => ({
-      ...item,
-      quantidade: Number(item.quantidade) || 0,
-      precoUnitario: Number(item.precoUnitario) || 0,
-      precoTotal: Number(item.precoTotal) || 0,
-    }));
+    parsed.itens = (parsed.itens as Record<string, unknown>[]).map((item) => {
+      const quantidade = Number(item.quantidade) || 0;
+      const precoUnitario = Number(item.precoUnitario) || 0;
+      const precoTotal = Math.round(quantidade * precoUnitario * 100) / 100;
+      return { ...item, quantidade, precoUnitario, precoTotal };
+    });
   }
+
+  // Recompute subtotal and total from the sum of item precoTotal values
+  // Never trust the AI's own sum — recompute it deterministically
+  const itens = parsed.itens as { precoTotal: number }[];
+  const subtotalCalculado = Math.round(itens.reduce((acc, i) => acc + (i.precoTotal || 0), 0) * 100) / 100;
+  parsed.subtotal = subtotalCalculado;
+  parsed.total = subtotalCalculado;
+
   return parsed as unknown as SpecialQuoteResult;
 }
 
@@ -283,6 +292,13 @@ COMO CALCULAR (padrão — as REGRAS DE ORÇAMENTO acima sobrepõem estes crité
 
 MEMÓRIA DE CÁLCULO obrigatória: detalhe cada conta passo a passo.
 Exemplo: "Lona: 3,00m × 1,10m (c/ margem) = 3,30m² × R$45/m² = R$148,50 | Ilhós: 10un × R$1,50 = R$15,00"
+
+REGRA CRÍTICA DE CONSISTÊNCIA:
+Os valores em "itens" DEVEM ser idênticos aos valores calculados na "memoriaCalculo".
+- Se a memória diz "2 chapas × R$500 = R$1000", o item deve ter: quantidade=2, precoUnitario=500, precoTotal=1000
+- precoTotal de cada item = quantidade × precoUnitario (sempre, sem exceção)
+- subtotal = soma de todos os precoTotal
+- Calcule a memória PRIMEIRO e depois preencha os itens com exatamente os mesmos números
 
 Retorne APENAS um JSON com este formato exato (todos os campos obrigatórios, sem exceção):
 {
@@ -364,6 +380,12 @@ INSTRUÇÕES:
 3. Atualize a memória de cálculo refletindo os novos valores
 4. Mantenha itens não afetados pelo ajuste inalterados
 5. Recalcule subtotal e total após qualquer mudança — nunca deixe valores desatualizados
+
+REGRA CRÍTICA DE CONSISTÊNCIA:
+Os valores em "itens" DEVEM ser idênticos aos da "memoriaCalculo".
+- precoTotal de cada item = quantidade × precoUnitario
+- subtotal = soma de todos os precoTotal
+- Calcule a memória PRIMEIRO e depois preencha os itens com exatamente os mesmos números
 
 Retorne APENAS um JSON com o mesmo formato, completamente atualizado:
 {
