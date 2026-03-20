@@ -29,7 +29,7 @@ import {
   type InsertOrder,
   insertQuoteRuleSchema,
 } from "@shared/schema";
-import { generateProductSuggestion, suggestQuoteItem, generateSpecialQuote, adjustSpecialQuote } from "./ai";
+import { generateProductSuggestion, suggestQuoteItem, generateSpecialQuote, adjustSpecialQuote, extractFromAdjustment } from "./ai";
 
 function handleError(res: Response, err: unknown) {
   console.error("[API Error]", err);
@@ -1725,40 +1725,49 @@ Responda SOMENTE com JSON válido:
         storage.listQuoteRules(),
       ]);
 
-      const result = await adjustSpecialQuote(
-        originalPrompt || "",
-        previousResult,
-        adjustment,
-        mats.data.map((m) => ({ id: m.id, nome: m.nome, categoria: m.categoria, custoUnitario: m.custoUnitario, unidadeCompra: m.unidadeCompra })),
-        prods.data.map((p) => ({ id: p.id, nome: p.nome, categoria: p.categoria, tipoCalculo: p.tipoCalculo, unidadeVenda: p.unidadeVenda })),
-        rules.filter((r) => r.ativa).map((r) => ({ nome: r.nome, regra: r.regra }))
-      );
+      // Run adjustment and extraction in parallel for speed
+      const [result, extracted] = await Promise.all([
+        adjustSpecialQuote(
+          originalPrompt || "",
+          previousResult,
+          adjustment,
+          mats.data.map((m) => ({ id: m.id, nome: m.nome, categoria: m.categoria, custoUnitario: m.custoUnitario, unidadeCompra: m.unidadeCompra })),
+          prods.data.map((p) => ({ id: p.id, nome: p.nome, categoria: p.categoria, tipoCalculo: p.tipoCalculo, unidadeVenda: p.unidadeVenda })),
+          rules.filter((r) => r.ativa).map((r) => ({ nome: r.nome, regra: r.regra }))
+        ),
+        extractFromAdjustment(adjustment),
+      ]);
 
       type MatCat = "chapas" | "impressao" | "estruturas" | "iluminacao" | "fixacao" | "adesivos" | "tintas" | "acabamento" | "instalacao" | "servicos_terceirizados" | "outros";
       const validCats: MatCat[] = ["chapas","impressao","estruturas","iluminacao","fixacao","adesivos","tintas","acabamento","instalacao","servicos_terceirizados","outros"];
 
-      // Create all new raw materials suggested by AI
+      // Merge: prefer dedicated extraction, fall back to whatever the adjust AI returned
+      const materiaisParaCriar = extracted.materiais.length > 0 ? extracted.materiais : (result.novosMateriais || []);
+      const regrasParaCriar = extracted.regras.length > 0 ? extracted.regras : (result.novasRegras || []);
+
+      // Create extracted raw materials
       const createdMaterials: string[] = [];
-      for (const nm of (result.novosMateriais || [])) {
+      for (const nm of materiaisParaCriar) {
         if (!nm?.nome || !nm?.custoUnitario) continue;
         try {
           await storage.createRawMaterial({
             nome: nm.nome,
             categoria: validCats.includes(nm.categoria as MatCat) ? (nm.categoria as MatCat) : "outros",
-            unidadeCompra: nm.unidade || "un",
+            unidadeCompra: (nm as { unidade?: string; unidadeCompra?: string }).unidade || (nm as { unidade?: string; unidadeCompra?: string }).unidadeCompra || "un",
             custoUnitario: String(nm.custoUnitario),
             descricao: nm.descricao || null,
             ativo: true,
           });
           createdMaterials.push(nm.nome);
+          console.log(`[Special Quote] Material cadastrado: ${nm.nome} @ R$${nm.custoUnitario}`);
         } catch (e) {
           console.error("[Special Quote] Failed to create raw material:", nm.nome, e);
         }
       }
 
-      // Create all new quote rules suggested by AI
+      // Create extracted quote rules
       const createdRules: string[] = [];
-      for (const nr of (result.novasRegras || [])) {
+      for (const nr of regrasParaCriar) {
         if (!nr?.nome || !nr?.regra) continue;
         try {
           await storage.createQuoteRule({
@@ -1768,6 +1777,7 @@ Responda SOMENTE com JSON válido:
             ativa: true,
           });
           createdRules.push(nr.nome);
+          console.log(`[Special Quote] Regra cadastrada: ${nr.nome}`);
         } catch (e) {
           console.error("[Special Quote] Failed to create quote rule:", nr.nome, e);
         }

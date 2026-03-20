@@ -351,21 +351,18 @@ ${rulesList || "Sem regras específicas."}
 
 O QUE O VENDEDOR PODE ENSINAR NESTE CAMPO:
 - Corrigir preços: "a lona custa R$38/m², não R$45" → corrija o preço e recalcule
-- Cadastrar material novo: "o acrílico 5mm aqui custa R$160/m²" → crie em novoMaterial
 - Aplicar percentual: "coloque 30% de margem de lucro" → aplique ao total
 - Corrigir quantidade: "são 3 peças, não 1" → ajuste e recalcule
 - Remover item: "não precisa de instalação" → remova o item
 - Adicionar item: "adicione 2 horas de arte" → insira novo item
 - Trocar material: "use lona fria em vez de lona quente" → substitua
-- Regra nova: "clientes da região ganham 5% de desconto" → aplique e mencione nas observações
 
 INSTRUÇÕES:
 1. Interprete o ajuste do vendedor e aplique EXATAMENTE o que foi pedido
-2. Se o vendedor informar um preço real de material, use esse preço para recalcular todos os itens afetados
-3. Se for um novo material com preço, preencha "novoMaterial" para ser salvo no cadastro
-4. Atualize a memória de cálculo refletindo os novos valores
-5. Mantenha itens não afetados pelo ajuste inalterados
-6. Recalcule subtotal e total após qualquer mudança — nunca deixe valores desatualizados
+2. Se o vendedor informar um preço real de material, use ESSE PREÇO para recalcular todos os itens afetados
+3. Atualize a memória de cálculo refletindo os novos valores
+4. Mantenha itens não afetados pelo ajuste inalterados
+5. Recalcule subtotal e total após qualquer mudança — nunca deixe valores desatualizados
 
 Retorne APENAS um JSON com o mesmo formato, completamente atualizado:
 {
@@ -374,28 +371,9 @@ Retorne APENAS um JSON com o mesmo formato, completamente atualizado:
   "memoriaCalculo": "Memória de cálculo atualizada com os novos valores",
   "subtotal": 0.00,
   "total": 0.00,
-  "observacoes": "Explique quais ajustes foram feitos e o que foi cadastrado",
-  "materiaisNaoEncontrados": [],
-  "novosMateriais": [
-    {
-      "nome": "Nome exato do material",
-      "categoria": "chapas|impressao|estruturas|iluminacao|fixacao|adesivos|tintas|acabamento|instalacao|servicos_terceirizados|outros",
-      "custoUnitario": 45.00,
-      "unidade": "m ou barra ou m² ou un",
-      "descricao": "Descrição opcional"
-    }
-  ],
-  "novasRegras": [
-    {
-      "nome": "Nome curto da regra",
-      "regra": "Instrução completa para a IA aplicar em orçamentos futuros",
-      "descricao": "Contexto da regra (opcional)"
-    }
-  ]
-}
-Se não houver materiais novos, use "novosMateriais": []. Se não houver regras novas, use "novasRegras": [].
-ATENÇÃO: Se o vendedor informar qualquer preço de material que não está no cadastro, OBRIGATORIAMENTE inclua-o em novosMateriais para ser salvo permanentemente.
-Se o vendedor mencionar uma regra de negócio nova (desconto, margem, horário especial, etc.), inclua-a em novasRegras.`;
+  "observacoes": "Explique quais ajustes foram feitos",
+  "materiaisNaoEncontrados": []
+}`;
 
   const previousResultStr = JSON.stringify(previousResult, null, 2);
 
@@ -412,4 +390,79 @@ Se o vendedor mencionar uma regra de negócio nova (desconto, margem, horário e
   const content = response.choices[0].message.content;
   if (!content) throw new Error("Falha ao obter resposta da IA");
   return normalizeSpecialQuoteResult(JSON.parse(content));
+}
+
+export interface ExtractedMaterial {
+  nome: string;
+  categoria: string;
+  custoUnitario: number;
+  unidade: string;
+  descricao?: string;
+}
+
+export interface ExtractedRule {
+  nome: string;
+  regra: string;
+  descricao?: string;
+}
+
+export interface ExtractionResult {
+  materiais: ExtractedMaterial[];
+  regras: ExtractedRule[];
+}
+
+export async function extractFromAdjustment(adjustment: string): Promise<ExtractionResult> {
+  const systemPrompt = `Você é um extrator de dados de gráfica. Analise a frase do vendedor e extraia APENAS informações explícitas de:
+1. MATERIAIS com preço mencionado (ex: "ACM é R$500/m²" → material)
+2. REGRAS de negócio (ex: "clientes fiéis ganham 10% de desconto" → regra)
+
+Retorne JSON estrito:
+{
+  "materiais": [
+    {
+      "nome": "Nome do material (ex: ACM 3mm, Lona Fosca 440g)",
+      "categoria": "chapas|impressao|estruturas|iluminacao|fixacao|adesivos|tintas|acabamento|instalacao|servicos_terceirizados|outros",
+      "custoUnitario": 500.00,
+      "unidade": "m² ou m ou un ou barra ou kg",
+      "descricao": "descrição curta opcional"
+    }
+  ],
+  "regras": [
+    {
+      "nome": "Nome curto da regra",
+      "regra": "Instrução para IA aplicar em orçamentos futuros",
+      "descricao": "contexto opcional"
+    }
+  ]
+}
+
+REGRAS:
+- Só inclua material se o vendedor informou um PREÇO EXPLÍCITO (ex: R$500, 500 reais)
+- Categoria: ACM/alumínio/chapa = "chapas"; lona/impressão = "impressao"; metalon/estrutura = "estruturas"; LED/iluminação = "iluminacao"; mão de obra/instalação = "instalacao"; serviços = "servicos_terceirizados"
+- Se não houver materiais com preço explícito, retorne "materiais": []
+- Se não houver regras, retorne "regras": []
+- Nunca invente informações não ditas pelo vendedor`;
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: adjustment },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.1,
+  });
+
+  const rawContent = response.choices[0].message.content;
+  if (!rawContent) return { materiais: [], regras: [] };
+
+  try {
+    const parsed = JSON.parse(rawContent);
+    return {
+      materiais: Array.isArray(parsed.materiais) ? parsed.materiais : [],
+      regras: Array.isArray(parsed.regras) ? parsed.regras : [],
+    };
+  } catch {
+    return { materiais: [], regras: [] };
+  }
 }
