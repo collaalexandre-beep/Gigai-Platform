@@ -371,7 +371,7 @@ export default function SpecialQuotePage() {
   const generateMut = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/special-quotes/generate", { prompt: pedido });
-      return res as unknown as SpecialQuoteResult;
+      return res.json() as Promise<SpecialQuoteResult>;
     },
     onSuccess: (data) => {
       setResult(data);
@@ -387,7 +387,7 @@ export default function SpecialQuotePage() {
         previousResult: result,
         adjustment: ajuste,
       });
-      return res as unknown as SpecialQuoteResult & { novoMaterial?: { nome: string } | null };
+      return res.json() as Promise<SpecialQuoteResult & { novoMaterial?: { nome: string } | null }>;
     },
     onSuccess: (data) => {
       if (data.novoMaterial?.nome) {
