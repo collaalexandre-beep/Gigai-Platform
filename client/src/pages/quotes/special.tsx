@@ -395,9 +395,12 @@ export default function SpecialQuotePage() {
       setCreatedItems({ materials: mats, rules });
       if (mats.length > 0 || rules.length > 0) {
         const parts = [];
-        if (mats.length > 0) parts.push(`${mats.length} matéria(s)-prima cadastrada(s)`);
-        if (rules.length > 0) parts.push(`${rules.length} regra(s) de orçamento salva(s)`);
+        if (mats.length > 0) parts.push(`${mats.length} matéria(s)-prima atualizada(s)/cadastrada(s)`);
+        if (rules.length > 0) parts.push(`${rules.length} regra(s) salva(s)`);
         toast({ title: `IA aprendeu: ${parts.join(" e ")}!` });
+        // Invalidate caches so raw materials and rules lists reflect updates immediately
+        qc.invalidateQueries({ queryKey: ["/api/raw-materials"] });
+        qc.invalidateQueries({ queryKey: ["/api/quote-rules"] });
       }
       setResult(data);
       setAjuste("");
@@ -538,7 +541,7 @@ export default function SpecialQuotePage() {
                       <div className="flex items-start gap-1.5">
                         <CheckCircle className="w-3.5 h-3.5 text-green-500 mt-0.5 flex-shrink-0" />
                         <span className="text-green-700 dark:text-green-400">
-                          <strong>Matérias-primas cadastradas:</strong> {createdItems.materials.join(", ")}
+                          <strong>Matérias-primas:</strong> {createdItems.materials.join(" | ")}
                         </span>
                       </div>
                     )}

@@ -1745,41 +1745,81 @@ Responda SOMENTE com JSON válido:
       const materiaisParaCriar = extracted.materiais.length > 0 ? extracted.materiais : (result.novosMateriais || []);
       const regrasParaCriar = extracted.regras.length > 0 ? extracted.regras : (result.novasRegras || []);
 
-      // Create extracted raw materials
+      // Normalize a name for fuzzy matching: lowercase, strip punctuation, split into meaningful words
+      const normalizeWords = (name: string) =>
+        name.toLowerCase()
+          .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // strip accents
+          .replace(/[^a-z0-9\s]/g, " ")
+          .split(/\s+/)
+          .filter((w) => w.length > 2); // ignore short words like "de", "do", "e"
+
+      const namesSimilar = (a: string, b: string): boolean => {
+        const wa = normalizeWords(a);
+        const wb = normalizeWords(b);
+        if (wa.length === 0 || wb.length === 0) return false;
+        const common = wa.filter((w) => wb.includes(w));
+        // Similar if: ≥2 words in common, OR one is a subset of the other (≥60% overlap)
+        if (common.length >= 2) return true;
+        const overlapA = common.length / wa.length;
+        const overlapB = common.length / wb.length;
+        return overlapA >= 0.6 || overlapB >= 0.6;
+      };
+
+      // UPSERT raw materials: update price if name is similar to existing, else create
       const createdMaterials: string[] = [];
       for (const nm of materiaisParaCriar) {
         if (!nm?.nome || !nm?.custoUnitario) continue;
         try {
-          await storage.createRawMaterial({
-            nome: nm.nome,
-            categoria: validCats.includes(nm.categoria as MatCat) ? (nm.categoria as MatCat) : "outros",
-            unidadeCompra: (nm as { unidade?: string; unidadeCompra?: string }).unidade || (nm as { unidade?: string; unidadeCompra?: string }).unidadeCompra || "un",
-            custoUnitario: String(nm.custoUnitario),
-            descricao: nm.descricao || null,
-            ativo: true,
-          });
-          createdMaterials.push(nm.nome);
-          console.log(`[Special Quote] Material cadastrado: ${nm.nome} @ R$${nm.custoUnitario}`);
+          const existing = mats.data.find((m) => namesSimilar(m.nome, nm.nome));
+          if (existing) {
+            await storage.updateRawMaterial(existing.id, {
+              custoUnitario: String(nm.custoUnitario),
+              ...(nm.descricao ? { descricao: nm.descricao } : {}),
+            });
+            createdMaterials.push(`${existing.nome} (preço atualizado → R$${nm.custoUnitario})`);
+            console.log(`[Special Quote] Material atualizado: ${existing.nome} → R$${nm.custoUnitario}`);
+          } else {
+            await storage.createRawMaterial({
+              nome: nm.nome,
+              categoria: validCats.includes(nm.categoria as MatCat) ? (nm.categoria as MatCat) : "outros",
+              unidadeCompra: (nm as { unidade?: string; unidadeCompra?: string }).unidade || (nm as { unidade?: string; unidadeCompra?: string }).unidadeCompra || "un",
+              custoUnitario: String(nm.custoUnitario),
+              descricao: nm.descricao || null,
+              ativo: true,
+            });
+            createdMaterials.push(`${nm.nome} (novo cadastro)`);
+            console.log(`[Special Quote] Material cadastrado: ${nm.nome} @ R$${nm.custoUnitario}`);
+          }
         } catch (e) {
-          console.error("[Special Quote] Failed to create raw material:", nm.nome, e);
+          console.error("[Special Quote] Failed to upsert raw material:", nm.nome, e);
         }
       }
 
-      // Create extracted quote rules
+      // UPSERT quote rules: update if similar name exists, else create
       const createdRules: string[] = [];
       for (const nr of regrasParaCriar) {
         if (!nr?.nome || !nr?.regra) continue;
         try {
-          await storage.createQuoteRule({
-            nome: nr.nome,
-            regra: nr.regra,
-            descricao: nr.descricao || null,
-            ativa: true,
-          });
-          createdRules.push(nr.nome);
-          console.log(`[Special Quote] Regra cadastrada: ${nr.nome}`);
+          const existingRule = rules.find((r) => namesSimilar(r.nome, nr.nome));
+          if (existingRule) {
+            await storage.updateQuoteRule(existingRule.id, {
+              regra: nr.regra,
+              ...(nr.descricao ? { descricao: nr.descricao } : {}),
+            });
+            createdRules.push(`${existingRule.nome} (regra atualizada)`);
+            console.log(`[Special Quote] Regra atualizada: ${existingRule.nome}`);
+          } else {
+            await storage.createQuoteRule({
+              nome: nr.nome,
+              regra: nr.regra,
+              descricao: nr.descricao || null,
+              ativa: true,
+            });
+            createdRules.push(nr.nome);
+            console.log(`[Special Quote] Regra cadastrada: ${nr.nome}`);
+          }
         } catch (e) {
-          console.error("[Special Quote] Failed to create quote rule:", nr.nome, e);
+          console.error("[Special Quote] Failed to upsert quote rule:", nr.nome, e);
         }
       }
 
