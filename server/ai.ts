@@ -162,6 +162,20 @@ export interface SpecialQuoteItem {
   encontrado: boolean;
 }
 
+export interface SpecialQuoteNewMaterial {
+  nome: string;
+  categoria: string;
+  custoUnitario: number;
+  unidade: string;
+  descricao?: string;
+}
+
+export interface SpecialQuoteNewRule {
+  nome: string;
+  regra: string;
+  descricao?: string;
+}
+
 export interface SpecialQuoteResult {
   titulo: string;
   itens: SpecialQuoteItem[];
@@ -170,13 +184,8 @@ export interface SpecialQuoteResult {
   total: number;
   observacoes: string;
   materiaisNaoEncontrados: string[];
-  novoMaterial?: {
-    nome: string;
-    categoria: string;
-    custoUnitario: number;
-    unidade: string;
-    descricao?: string;
-  } | null;
+  novosMateriais?: SpecialQuoteNewMaterial[] | null;
+  novasRegras?: SpecialQuoteNewRule[] | null;
 }
 
 function normalizeSpecialQuoteResult(parsed: Record<string, unknown>): SpecialQuoteResult {
@@ -190,6 +199,14 @@ function normalizeSpecialQuoteResult(parsed: Record<string, unknown>): SpecialQu
   if (typeof parsed.subtotal !== "number") parsed.subtotal = Number(parsed.subtotal) || 0;
   if (typeof parsed.total !== "number") parsed.total = Number(parsed.total) || 0;
   if (typeof parsed.memoriaCalculo !== "string") parsed.memoriaCalculo = "";
+
+  // Handle backward compat: singular novoMaterial → novosMateriais array
+  if (parsed.novoMaterial && !parsed.novosMateriais) {
+    parsed.novosMateriais = [parsed.novoMaterial];
+  }
+  if (!Array.isArray(parsed.novosMateriais)) parsed.novosMateriais = [];
+  if (!Array.isArray(parsed.novasRegras)) parsed.novasRegras = [];
+
   // Ensure all item prices are numbers
   if (Array.isArray(parsed.itens)) {
     parsed.itens = (parsed.itens as Record<string, unknown>[]).map((item) => ({
@@ -285,8 +302,9 @@ Retorne APENAS um JSON com este formato exato (todos os campos obrigatórios, se
   "subtotal": 163.50,
   "total": 163.50,
   "observacoes": "Margens aplicadas, substituições, prazo estimado, observações técnicas relevantes",
-  "materiaisNaoEncontrados": ["material1 — preço estimado por mercado", "material2"],
-  "novoMaterial": null
+  "materiaisNaoEncontrados": ["material1 — preço estimado por mercado: R$X/un"],
+  "novosMateriais": [],
+  "novasRegras": []
 }
 
 IMPORTANTE: subtotal e total devem ser a soma exata de todos os precoTotal dos itens. Nunca retorne 0 nesses campos.`;
@@ -349,24 +367,35 @@ INSTRUÇÕES:
 5. Mantenha itens não afetados pelo ajuste inalterados
 6. Recalcule subtotal e total após qualquer mudança — nunca deixe valores desatualizados
 
-Retorne APENAS um JSON com o mesmo formato, completamente atualizado (incluindo memoriaCalculo):
+Retorne APENAS um JSON com o mesmo formato, completamente atualizado:
 {
   "titulo": "...",
   "itens": [...],
-  "memoriaCalculo": "Memória de cálculo atualizada refletindo todos os ajustes feitos",
+  "memoriaCalculo": "Memória de cálculo atualizada com os novos valores",
   "subtotal": 0.00,
   "total": 0.00,
-  "observacoes": "Explique quais ajustes foram feitos e por quê",
+  "observacoes": "Explique quais ajustes foram feitos e o que foi cadastrado",
   "materiaisNaoEncontrados": [],
-  "novoMaterial": {
-    "nome": "Nome do material a cadastrar",
-    "categoria": "chapas|impressao|estruturas|iluminacao|fixacao|adesivos|tintas|acabamento|instalacao|servicos_terceirizados|outros",
-    "custoUnitario": 100.00,
-    "unidade": "m²",
-    "descricao": "Descrição opcional"
-  }
+  "novosMateriais": [
+    {
+      "nome": "Nome exato do material",
+      "categoria": "chapas|impressao|estruturas|iluminacao|fixacao|adesivos|tintas|acabamento|instalacao|servicos_terceirizados|outros",
+      "custoUnitario": 45.00,
+      "unidade": "m ou barra ou m² ou un",
+      "descricao": "Descrição opcional"
+    }
+  ],
+  "novasRegras": [
+    {
+      "nome": "Nome curto da regra",
+      "regra": "Instrução completa para a IA aplicar em orçamentos futuros",
+      "descricao": "Contexto da regra (opcional)"
+    }
+  ]
 }
-Se não houver novo material para cadastrar, use "novoMaterial": null.`;
+Se não houver materiais novos, use "novosMateriais": []. Se não houver regras novas, use "novasRegras": [].
+ATENÇÃO: Se o vendedor informar qualquer preço de material que não está no cadastro, OBRIGATORIAMENTE inclua-o em novosMateriais para ser salvo permanentemente.
+Se o vendedor mencionar uma regra de negócio nova (desconto, margem, horário especial, etc.), inclua-a em novasRegras.`;
 
   const previousResultStr = JSON.stringify(previousResult, null, 2);
 

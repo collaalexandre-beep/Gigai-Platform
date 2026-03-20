@@ -366,7 +366,7 @@ export default function SpecialQuotePage() {
   const [result, setResult] = useState<SpecialQuoteResult | null>(null);
   const [showRules, setShowRules] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [materialAdded, setMaterialAdded] = useState<string | null>(null);
+  const [createdItems, setCreatedItems] = useState<{ materials: string[]; rules: string[] }>({ materials: [], rules: [] });
 
   const generateMut = useMutation({
     mutationFn: async () => {
@@ -375,7 +375,7 @@ export default function SpecialQuotePage() {
     },
     onSuccess: (data) => {
       setResult(data);
-      setMaterialAdded(null);
+      setCreatedItems({ materials: [], rules: [] });
     },
     onError: (err: Error) => toast({ title: "Erro ao gerar orçamento", description: err.message, variant: "destructive" }),
   });
@@ -387,12 +387,17 @@ export default function SpecialQuotePage() {
         previousResult: result,
         adjustment: ajuste,
       });
-      return res.json() as Promise<SpecialQuoteResult & { novoMaterial?: { nome: string } | null }>;
+      return res.json() as Promise<SpecialQuoteResult & { _createdMaterials?: string[]; _createdRules?: string[] }>;
     },
     onSuccess: (data) => {
-      if (data.novoMaterial?.nome) {
-        setMaterialAdded(data.novoMaterial.nome);
-        toast({ title: `Material "${data.novoMaterial.nome}" adicionado ao cadastro!` });
+      const mats = data._createdMaterials || [];
+      const rules = data._createdRules || [];
+      setCreatedItems({ materials: mats, rules });
+      if (mats.length > 0 || rules.length > 0) {
+        const parts = [];
+        if (mats.length > 0) parts.push(`${mats.length} matéria(s)-prima cadastrada(s)`);
+        if (rules.length > 0) parts.push(`${rules.length} regra(s) de orçamento salva(s)`);
+        toast({ title: `IA aprendeu: ${parts.join(" e ")}!` });
       }
       setResult(data);
       setAjuste("");
@@ -527,10 +532,24 @@ export default function SpecialQuotePage() {
                 </p>
               </CardHeader>
               <CardContent className="space-y-3">
-                {materialAdded && (
-                  <div className="text-xs bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800/50 rounded p-2 flex items-center gap-1.5">
-                    <CheckCircle className="w-3.5 h-3.5 text-green-500" />
-                    <span className="text-green-700 dark:text-green-400">Material "<strong>{materialAdded}</strong>" salvo no cadastro!</span>
+                {(createdItems.materials.length > 0 || createdItems.rules.length > 0) && (
+                  <div className="text-xs bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800/50 rounded p-2 space-y-1">
+                    {createdItems.materials.length > 0 && (
+                      <div className="flex items-start gap-1.5">
+                        <CheckCircle className="w-3.5 h-3.5 text-green-500 mt-0.5 flex-shrink-0" />
+                        <span className="text-green-700 dark:text-green-400">
+                          <strong>Matérias-primas cadastradas:</strong> {createdItems.materials.join(", ")}
+                        </span>
+                      </div>
+                    )}
+                    {createdItems.rules.length > 0 && (
+                      <div className="flex items-start gap-1.5">
+                        <CheckCircle className="w-3.5 h-3.5 text-green-500 mt-0.5 flex-shrink-0" />
+                        <span className="text-green-700 dark:text-green-400">
+                          <strong>Regras de orçamento salvas:</strong> {createdItems.rules.join(", ")}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
                 <Textarea

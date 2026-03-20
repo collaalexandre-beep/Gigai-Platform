@@ -1734,24 +1734,46 @@ Responda SOMENTE com JSON válido:
         rules.filter((r) => r.ativa).map((r) => ({ nome: r.nome, regra: r.regra }))
       );
 
-      // If AI suggests a new material, create it automatically
-      if (result.novoMaterial) {
+      type MatCat = "chapas" | "impressao" | "estruturas" | "iluminacao" | "fixacao" | "adesivos" | "tintas" | "acabamento" | "instalacao" | "servicos_terceirizados" | "outros";
+      const validCats: MatCat[] = ["chapas","impressao","estruturas","iluminacao","fixacao","adesivos","tintas","acabamento","instalacao","servicos_terceirizados","outros"];
+
+      // Create all new raw materials suggested by AI
+      const createdMaterials: string[] = [];
+      for (const nm of (result.novosMateriais || [])) {
+        if (!nm?.nome || !nm?.custoUnitario) continue;
         try {
-          const nm = result.novoMaterial;
           await storage.createRawMaterial({
             nome: nm.nome,
-            categoria: (nm.categoria as "chapas" | "impressao" | "estruturas" | "iluminacao" | "fixacao" | "adesivos" | "tintas" | "acabamento" | "instalacao" | "servicos_terceirizados" | "outros") || "outros",
-            unidadeCompra: nm.unidade,
+            categoria: validCats.includes(nm.categoria as MatCat) ? (nm.categoria as MatCat) : "outros",
+            unidadeCompra: nm.unidade || "un",
             custoUnitario: String(nm.custoUnitario),
             descricao: nm.descricao || null,
             ativo: true,
           });
+          createdMaterials.push(nm.nome);
         } catch (e) {
-          console.error("[Special Quote] Failed to create raw material:", e);
+          console.error("[Special Quote] Failed to create raw material:", nm.nome, e);
         }
       }
 
-      res.json(result);
+      // Create all new quote rules suggested by AI
+      const createdRules: string[] = [];
+      for (const nr of (result.novasRegras || [])) {
+        if (!nr?.nome || !nr?.regra) continue;
+        try {
+          await storage.createQuoteRule({
+            nome: nr.nome,
+            regra: nr.regra,
+            descricao: nr.descricao || null,
+            ativa: true,
+          });
+          createdRules.push(nr.nome);
+        } catch (e) {
+          console.error("[Special Quote] Failed to create quote rule:", nr.nome, e);
+        }
+      }
+
+      res.json({ ...result, _createdMaterials: createdMaterials, _createdRules: createdRules });
     } catch (err) { handleError(res, err); }
   });
 
