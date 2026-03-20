@@ -246,8 +246,8 @@ ${matList || "Nenhuma cadastrada ainda — use preços de mercado."}
 PRODUTOS CADASTRADOS:
 ${prodList || "Nenhum cadastrado ainda."}
 
-REGRAS DE ORÇAMENTO DA EMPRESA (aplique obrigatoriamente):
-${rulesList || "Sem regras específicas."}
+REGRAS DE ORÇAMENTO DA EMPRESA — PRIORIDADE MÁXIMA:
+${rulesList ? `As regras abaixo SUBSTITUEM qualquer cálculo padrão. Aplique-as antes de qualquer outro critério:\n${rulesList}` : "Sem regras específicas — use os cálculos padrão abaixo."}
 
 TABELA DE PREÇOS DE REFERÊNCIA BRASIL (use quando material não estiver no cadastro):
 - Lona impressa (banner/faixa): R$ 35-55/m² (impressão inclusa)
@@ -272,13 +272,14 @@ TABELA DE PREÇOS DE REFERÊNCIA BRASIL (use quando material não estiver no cad
 - Impressão digital grande formato: R$ 30-80/m²
 - Recorte a laser/plotter: R$ 15-40/m linear
 
-COMO CALCULAR:
+COMO CALCULAR (padrão — as REGRAS DE ORÇAMENTO acima sobrepõem estes critérios quando existirem):
 - Faixas/banners: calcule área total (L×A) + 10% margem corte → impressão lona + acabamento (ilhós/bastão)
-- Fachadas ACM: área da fachada + estrutura metalon (perímetro × 3 barras/m²) + fixação + instalação
+- Fachadas ACM: calcule a quantidade de CHAPAS necessárias (chapa padrão = 3,00m × 1,22m = 3,66m²); arredonde para cima; some estrutura metalon (perímetro × 3 barras/m²) + fixação + instalação
 - Adesivos: área aplicada + 15% perda de corte
 - Letras caixa: contagem de letras × custo/letra + instalação
 - Impressão: área × preço/m² do substrato + acabamento
 - Horas de trabalho: estime o tempo real necessário (montagem, aplicação, instalação)
+- SEMPRE arredonde materiais vendidos em unidades (chapas, barras, peças) para cima — nunca venda meia chapa
 
 MEMÓRIA DE CÁLCULO obrigatória: detalhe cada conta passo a passo.
 Exemplo: "Lona: 3,00m × 1,10m (c/ margem) = 3,30m² × R$45/m² = R$148,50 | Ilhós: 10un × R$1,50 = R$15,00"
@@ -346,8 +347,8 @@ REGRA FUNDAMENTAL: NUNCA retorne preço zero. Aplique todos os ajustes solicitad
 MATÉRIAS-PRIMAS CADASTRADAS (preços atualizados pelo vendedor têm prioridade máxima):
 ${matList || "Nenhuma cadastrada ainda."}
 
-REGRAS DE ORÇAMENTO DA EMPRESA:
-${rulesList || "Sem regras específicas."}
+REGRAS DE ORÇAMENTO DA EMPRESA — PRIORIDADE MÁXIMA:
+${rulesList ? `As regras abaixo SUBSTITUEM qualquer cálculo padrão:\n${rulesList}` : "Sem regras específicas."}
 
 O QUE O VENDEDOR PODE ENSINAR NESTE CAMPO:
 - Corrigir preços: "a lona custa R$38/m², não R$45" → corrija o preço e recalcule
@@ -412,36 +413,48 @@ export interface ExtractionResult {
 }
 
 export async function extractFromAdjustment(adjustment: string): Promise<ExtractionResult> {
-  const systemPrompt = `Você é um extrator de dados de gráfica. Analise a frase do vendedor e extraia APENAS informações explícitas de:
-1. MATERIAIS com preço mencionado (ex: "ACM é R$500/m²" → material)
-2. REGRAS de negócio (ex: "clientes fiéis ganham 10% de desconto" → regra)
+  const systemPrompt = `Você é um extrator de dados de gráfica. Analise a instrução do vendedor e extraia:
+
+1. MATERIAIS com preço explícito mencionado
+   Exemplos que DEVEM virar material:
+   - "ACM é R$500/m²" → { nome: "ACM 3mm", custoUnitario: 500, unidade: "m²", categoria: "chapas" }
+   - "lona custa R$38/m²" → { nome: "Lona impressa", custoUnitario: 38, unidade: "m²", categoria: "impressao" }
+
+2. REGRAS DE CÁLCULO ou NEGÓCIO que o vendedor está ensinando
+   Exemplos que DEVEM virar regra:
+   - "chapa de ACM tem 3m de largura, calcule quantas chapas precisam" → regra de cálculo
+   - "fachada de 7x1m precisa de 2 chapas" → regra de cálculo de chapas ACM
+   - "clientes com 3+ pedidos ganham 8% de desconto" → regra de desconto
+   - "instalação após 18h tem 60% a mais" → regra de horário especial
+   - "sempre arredondar material para cima" → regra de arredondamento
+   - Qualquer instrução sobre COMO calcular, quantificar ou cobrar
 
 Retorne JSON estrito:
 {
   "materiais": [
     {
-      "nome": "Nome do material (ex: ACM 3mm, Lona Fosca 440g)",
+      "nome": "Nome do material",
       "categoria": "chapas|impressao|estruturas|iluminacao|fixacao|adesivos|tintas|acabamento|instalacao|servicos_terceirizados|outros",
       "custoUnitario": 500.00,
       "unidade": "m² ou m ou un ou barra ou kg",
-      "descricao": "descrição curta opcional"
+      "descricao": "descrição curta"
     }
   ],
   "regras": [
     {
-      "nome": "Nome curto da regra",
-      "regra": "Instrução para IA aplicar em orçamentos futuros",
-      "descricao": "contexto opcional"
+      "nome": "Nome curto e claro da regra",
+      "regra": "Instrução detalhada e precisa para a IA seguir em todos os orçamentos futuros. Inclua o método de cálculo, arredondamento, exemplos numéricos se houver.",
+      "descricao": "contexto breve"
     }
   ]
 }
 
-REGRAS:
-- Só inclua material se o vendedor informou um PREÇO EXPLÍCITO (ex: R$500, 500 reais)
-- Categoria: ACM/alumínio/chapa = "chapas"; lona/impressão = "impressao"; metalon/estrutura = "estruturas"; LED/iluminação = "iluminacao"; mão de obra/instalação = "instalacao"; serviços = "servicos_terceirizados"
-- Se não houver materiais com preço explícito, retorne "materiais": []
-- Se não houver regras, retorne "regras": []
-- Nunca invente informações não ditas pelo vendedor`;
+INSTRUÇÕES:
+- Material: só inclua se houver PREÇO EXPLÍCITO (R$xxx)
+- Regra: inclua SEMPRE que o vendedor ensinar um método, critério ou cálculo — mesmo sem preço
+- Campo "regra" deve ser uma instrução completa que a IA possa seguir sozinha em orçamentos futuros
+- Nunca invente — só extraia o que foi explicitamente dito
+- Se nada se aplica, retorne arrays vazios`;
 
   const response = await openai.chat.completions.create({
     model: "gpt-4o-mini",
