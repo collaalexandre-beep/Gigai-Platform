@@ -363,6 +363,7 @@ export const sellers = pgTable(
     cnhCategoria: text("cnh_categoria"),
     cnhValidade: date("cnh_validade"),
     cnhObservacoes: text("cnh_observacoes"),
+    whatsappNumber: text("whatsapp_number"),
     // Timestamps
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -1064,8 +1065,8 @@ export const vehicleExits = pgTable(
     vehicleId: varchar("vehicle_id").notNull().references(() => vehicles.id),
     driverId: varchar("driver_id").notNull().references(() => sellers.id),
     dataHoraSaida: timestamp("data_hora_saida").notNull(),
-    kmInicial: decimal("km_inicial", { precision: 12, scale: 1 }).notNull(),
-    combustivelInicial: fuelLevelEnum("combustivel_inicial").notNull(),
+    kmInicial: decimal("km_inicial", { precision: 12, scale: 1 }),
+    combustivelInicial: fuelLevelEnum("combustivel_inicial"),
     fotoInicialUrl: text("foto_inicial_url"),
     orderId: varchar("order_id").references(() => orders.id),
     motivoSaida: text("motivo_saida"),

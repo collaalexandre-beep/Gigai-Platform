@@ -22,6 +22,15 @@ const STEP_LABELS: Record<string, string> = {
   confirmar: "Aguardando confirmação",
   status_query: "Consultando status",
   done: "Concluído",
+  collecting: "Aguardando mensagem",
+  // Vehicle flow steps
+  veh_escolher_veiculo:      "🚗 [Frota] Escolhendo veículo",
+  veh_aguardando_os:         "🚗 [Frota] Aguardando OS",
+  veh_aguardando_motivo:     "🚗 [Frota] Aguardando motivo",
+  veh_aguardando_destino:    "🚗 [Frota] Aguardando destino",
+  veh_aguardando_foto_saida: "🚗 [Frota] Aguardando foto de saída",
+  veh_retorno_foto:          "🚗 [Frota] Aguardando foto de retorno",
+  veh_retorno_obs:           "🚗 [Frota] Aguardando observações",
 };
 
 function StatusBadge({ status }: { status: string }) {

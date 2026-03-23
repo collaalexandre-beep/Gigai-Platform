@@ -16,7 +16,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Car, User, MapPin, Clock, CheckCircle2, Fuel, Navigation,
-  ArrowDownToLine, XCircle, AlertCircle
+  ArrowDownToLine, XCircle, AlertCircle, Camera, Image as ImageIcon
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -217,6 +217,58 @@ export default function VehicleExitDetailPage() {
           {exit.orderId && <InfoRow label="OS vinculada" value={exit.orderId} />}
         </CardContent>
       </Card>
+
+      {/* Fotos */}
+      {(exit.fotoInicialUrl || exit.fotoFinalUrl) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Camera className="w-4 h-4" />
+              Fotos do Painel
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {exit.fotoInicialUrl ? (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2 font-medium">📸 Saída</p>
+                  <a href={exit.fotoInicialUrl} target="_blank" rel="noopener noreferrer">
+                    <img
+                      src={exit.fotoInicialUrl}
+                      alt="Foto do painel na saída"
+                      className="w-full rounded-lg border object-cover max-h-56 hover:opacity-90 transition-opacity cursor-pointer"
+                      data-testid="img-foto-inicial"
+                    />
+                  </a>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-32 bg-muted/30 rounded-lg border border-dashed">
+                  <ImageIcon className="w-6 h-6 text-muted-foreground/40 mb-1" />
+                  <p className="text-xs text-muted-foreground">Sem foto de saída</p>
+                </div>
+              )}
+              {exit.fotoFinalUrl ? (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2 font-medium">📸 Retorno</p>
+                  <a href={exit.fotoFinalUrl} target="_blank" rel="noopener noreferrer">
+                    <img
+                      src={exit.fotoFinalUrl}
+                      alt="Foto do painel no retorno"
+                      className="w-full rounded-lg border object-cover max-h-56 hover:opacity-90 transition-opacity cursor-pointer"
+                      data-testid="img-foto-final"
+                    />
+                  </a>
+                </div>
+              ) : exit.dataHoraRetorno ? (
+                <div className="flex flex-col items-center justify-center h-32 bg-muted/30 rounded-lg border border-dashed">
+                  <ImageIcon className="w-6 h-6 text-muted-foreground/40 mb-1" />
+                  <p className="text-xs text-muted-foreground">Sem foto de retorno</p>
+                </div>
+              ) : null}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {exit.dataHoraRetorno && (
         <Card>

@@ -32,6 +32,9 @@ import {
   insertVehicleExitSchema,
 } from "@shared/schema";
 import { generateProductSuggestion, suggestQuoteItem, generateSpecialQuote, adjustSpecialQuote, extractFromAdjustment } from "./ai";
+import { handleVehicleWaFlow, isVehicleExitCommand, isVehicleReturnCommand, VEH_STEP_LABELS } from "./vehicle-wa";
+import path from "path";
+import express from "express";
 
 function handleError(res: Response, err: unknown) {
   console.error("[API Error]", err);
@@ -81,6 +84,10 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // ─── STATIC FILE SERVING (vehicle photos) ──────────────────────────────────
+  const uploadsDir = path.join(process.cwd(), "uploads");
+  app.use("/uploads", express.static(uploadsDir));
+
   // ─── CNPJ LOOKUP ───────────────────────────────────────────────────────────
 
   app.get("/api/cnpj/:cnpj", async (req: Request, res: Response) => {
@@ -1423,16 +1430,25 @@ Responda SOMENTE com JSON válido:
           const botNumber: string = value.metadata?.display_phone_number ?? "";
 
           for (const msg of value.messages) {
-            if (msg.type !== "text") continue;
+            const msgType: string = msg.type ?? "text";
+            if (msgType !== "text" && msgType !== "image") continue;
+
             const from: string = msg.from;
-            const rawBody: string = (msg.text?.body ?? "").trim();
+            const rawBody: string = msgType === "text" ? (msg.text?.body ?? "").trim() : "";
+            const mediaId: string | undefined = msgType === "image" ? msg.image?.id : undefined;
             const msgNorm = rawBody.toLowerCase().replace(/[^a-z0-9çãáéíóúâêîôûàèìòùü ]/g, "").trim();
-            console.log("[WhatsApp] Mensagem recebida", { from, body: rawBody });
+            console.log("[WhatsApp] Mensagem recebida", { from, type: msgType, body: rawBody || "(image)" });
 
             const fromKey = `meta:${from}`;
             let session = await storage.getWhatsappSession(fromKey);
             if (!session) session = await storage.createWhatsappSession(fromKey);
-            await storage.addWhatsappMessage(session.id, "inbound", rawBody, fromKey, botNumber);
+            await storage.addWhatsappMessage(
+              session.id,
+              "inbound",
+              msgType === "image" ? "[📸 Foto enviada]" : rawBody,
+              fromKey,
+              botNumber
+            );
 
             const reply = async (replyMsg: string, nextStep?: string, extraData?: Record<string, unknown>) => {
               if (nextStep !== undefined || extraData) {
@@ -1442,6 +1458,25 @@ Responda SOMENTE com JSON válido:
               await storage.addWhatsappMessage(session!.id, "outbound", replyMsg, botNumber, fromKey);
               await sendMetaMessage(phoneNumberId, from, replyMsg);
             };
+
+            const updateSession = async (data: Partial<typeof session>) => {
+              await storage.updateWhatsappSession(session!.id, data);
+              session = { ...session!, ...data };
+            };
+
+            // ── VEHICLE FLOW (internal employees) ─────────────────────────────
+            const vehicleHandled = await handleVehicleWaFlow({
+              from,
+              rawBody,
+              msgNorm,
+              msgType,
+              mediaId,
+              session,
+              token: getMetaToken(),
+              reply,
+              updateSession,
+            });
+            if (vehicleHandled) continue;
 
             if (msgNorm === "cancelar" || msgNorm === "sair") {
               await storage.updateWhatsappSession(session.id, { step: "collecting", data: {} });

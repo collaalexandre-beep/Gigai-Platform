@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useParams, useLocation } from "wouter";
 import {
   ArrowLeft, ChevronRight, Pencil, Trash2, UserCheck, Phone, Mail,
-  MapPin, Calendar, Percent, CreditCard, Building, User,
+  MapPin, Calendar, Percent, CreditCard, Building, User, Car,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -214,6 +214,54 @@ export default function SellerDetailPage() {
                 <InfoRow label="CEP" value={seller.cep} mono />
                 <InfoRow label="Cidade" value={seller.cidade} />
                 <InfoRow label="Estado" value={seller.estado} />
+              </dl>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Habilitação / Motorista */}
+        {((seller as any).autorizadoDirigir || (seller as any).cnhCategoria || (seller as any).whatsappNumber) && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Car className="w-4 h-4 text-muted-foreground" />
+                Habilitação e Controle de Frota
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <dl className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Status de motorista</dt>
+                  <dd className="text-sm mt-0.5">
+                    {(seller as any).autorizadoDirigir ? (
+                      <span className="inline-flex items-center gap-1 text-green-700 dark:text-green-400 font-medium">
+                        <UserCheck className="w-3.5 h-3.5" /> Autorizado a conduzir veículos
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">Não autorizado</span>
+                    )}
+                  </dd>
+                </div>
+                {(seller as any).cnhCategoria && (
+                  <InfoRow label="Categoria CNH" value={(seller as any).cnhCategoria} />
+                )}
+                {(seller as any).cnhValidade && (
+                  <InfoRow label="Validade CNH" value={
+                    format(new Date((seller as any).cnhValidade + "T00:00:00"), "dd/MM/yyyy")
+                  } />
+                )}
+                {(seller as any).whatsappNumber && (
+                  <div className="col-span-2">
+                    <dt className="text-xs font-medium text-muted-foreground uppercase tracking-wide">WhatsApp Bot de Frota</dt>
+                    <dd className="text-sm font-mono mt-0.5">{(seller as any).whatsappNumber}</dd>
+                    <dd className="text-xs text-muted-foreground mt-0.5">Número configurado para o bot de controle de saída de veículos</dd>
+                  </div>
+                )}
+                {(seller as any).cnhObservacoes && (
+                  <div className="col-span-2">
+                    <InfoRow label="Obs. CNH / Motorista" value={(seller as any).cnhObservacoes} />
+                  </div>
+                )}
               </dl>
             </CardContent>
           </Card>

@@ -277,12 +277,14 @@ export interface IStorage {
   getVehicle(id: string): Promise<Vehicle | undefined>;
   createVehicle(data: InsertVehicle): Promise<Vehicle>;
   updateVehicle(id: string, data: Partial<InsertVehicle>): Promise<Vehicle | undefined>;
+  getSellerByWhatsappNumber(phone: string): Promise<Seller | undefined>;
 
   // Vehicle Exits
   getVehicleExits(params?: { vehicleId?: string; driverId?: string; status?: string }): Promise<(VehicleExit & { vehicle: Vehicle; driver: { id: string; nomeCompleto: string } })[]>;
   getVehicleExit(id: string): Promise<(VehicleExit & { vehicle: Vehicle; driver: { id: string; nomeCompleto: string } }) | undefined>;
   createVehicleExit(data: InsertVehicleExit): Promise<VehicleExit>;
   updateVehicleExit(id: string, data: Partial<InsertVehicleExit>): Promise<VehicleExit | undefined>;
+  getOpenVehicleExitByDriver(driverId: string): Promise<(VehicleExit & { vehicle: Vehicle; driver: { id: string; nomeCompleto: string } }) | undefined>;
 }
 
 // ─── DATABASE STORAGE ─────────────────────────────────────────────────────────
@@ -1461,6 +1463,44 @@ export class DatabaseStorage implements IStorage {
   async updateVehicleExit(id: string, data: Partial<InsertVehicleExit>): Promise<VehicleExit | undefined> {
     const [v] = await db.update(vehicleExits).set({ ...data, updatedAt: new Date() } as any).where(eq(vehicleExits.id, id)).returning();
     return v;
+  }
+
+  async getSellerByWhatsappNumber(phone: string): Promise<Seller | undefined> {
+    const normalized = phone.replace(/\D/g, "");
+    const [seller] = await db
+      .select()
+      .from(sellers)
+      .where(
+        and(
+          eq(sellers.whatsappNumber, normalized),
+          isNull(sellers.deletedAt),
+        )
+      )
+      .limit(1);
+    return seller;
+  }
+
+  async getOpenVehicleExitByDriver(driverId: string): Promise<(VehicleExit & { vehicle: Vehicle; driver: { id: string; nomeCompleto: string } }) | undefined> {
+    const [r] = await db
+      .select({
+        exit: vehicleExits,
+        vehicle: vehicles,
+        driverName: sellers.nomeCompleto,
+        driverId: sellers.id,
+      })
+      .from(vehicleExits)
+      .innerJoin(vehicles, eq(vehicleExits.vehicleId, vehicles.id))
+      .innerJoin(sellers, eq(vehicleExits.driverId, sellers.id))
+      .where(
+        and(
+          eq(vehicleExits.driverId, driverId),
+          eq(vehicleExits.status, "em_rota")
+        )
+      )
+      .orderBy(desc(vehicleExits.dataHoraSaida))
+      .limit(1);
+    if (!r) return undefined;
+    return { ...r.exit, vehicle: r.vehicle, driver: { id: r.driverId, nomeCompleto: r.driverName } };
   }
 }
 

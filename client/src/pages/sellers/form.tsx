@@ -48,6 +48,7 @@ interface SellerFormData {
   cnhCategoria: string;
   cnhValidade: string;
   cnhObservacoes: string;
+  whatsappNumber: string;
 }
 
 interface BankFormData {
@@ -70,6 +71,7 @@ const emptySellerForm: SellerFormData = {
   cargo: "", dataEntrada: "", status: "ativo",
   percentualComissao: "", observacoes: "",
   autorizadoDirigir: false, cnhCategoria: "", cnhValidade: "", cnhObservacoes: "",
+  whatsappNumber: "",
 };
 
 const emptyBankForm: BankFormData = {
@@ -143,6 +145,7 @@ export default function SellerFormPage() {
         cnhCategoria: (existingData as any).cnhCategoria || "",
         cnhValidade: (existingData as any).cnhValidade || "",
         cnhObservacoes: (existingData as any).cnhObservacoes || "",
+        whatsappNumber: (existingData as any).whatsappNumber || "",
       });
       setCnpjInput((existingData as any).cnpj || "");
       if (existingData.bankAccounts?.[0]) {
@@ -673,6 +676,22 @@ export default function SellerFormPage() {
                 <Label htmlFor="autorizadoDirigir" className="text-sm cursor-pointer">
                   Motorista autorizado a conduzir veículos da empresa
                 </Label>
+              </div>
+              <div className="md:col-span-2">
+                <FormField label="Número WhatsApp (Bot de Frota)" id="whatsappNumber">
+                  <div className="space-y-1">
+                    <Input
+                      id="whatsappNumber"
+                      value={form.whatsappNumber}
+                      onChange={(e) => set("whatsappNumber", e.target.value.replace(/\D/g, ""))}
+                      placeholder="Ex: 5531999990000 (só números, com DDI e DDD)"
+                      data-testid="input-whatsapp-number"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Número usado pelo funcionário para enviar mensagens ao bot de controle de frota. Informe exatamente como aparece no WhatsApp Business (DDI + DDD + número, sem espaços ou traços). Ex: 5531999990000
+                    </p>
+                  </div>
+                </FormField>
               </div>
               <FormField label="Categoria da CNH" id="cnhCategoria">
                 <Select value={form.cnhCategoria} onValueChange={(v) => set("cnhCategoria", v)}>
