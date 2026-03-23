@@ -48,8 +48,15 @@ client/src/
       detail.tsx           — Detalhe do pedido com status tracking; botão Imprimir → /orders/:id/print
       print.tsx            — Layout A4 de impressão do pedido (sem sidebar)
     crm.tsx                — CRM com kanban de tarefas
+    vehicles/
+      index.tsx            — Lista de veículos da frota (cards com status, km, combustível)
+      form.tsx             — Cadastro/edição de veículo
+      exits/
+        index.tsx          — Lista de saídas (stats: em rota/finalizadas/canceladas)
+        form.tsx           — Registro de nova saída (com validação de negócio)
+        detail.tsx         — Detalhe da saída + formulário de retorno
   components/
-    app-sidebar.tsx        — Sidebar: Principal | Comercial | Cadastros | Configurações
+    app-sidebar.tsx        — Sidebar: Principal | Comercial | Cadastros | Veículos | Configurações
     contacts-panel.tsx     — Gestão de contatos (add/edit/delete com permissões)
     timeline-feed.tsx      — Feed de atividades/histórico do cliente
     status-badge.tsx       — Badges coloridos por status/tipo
@@ -71,7 +78,7 @@ shared/
 
 - `clients` — Clientes com dados fiscais, endereço, CRM, CNPJ lookup metadata
 - `client_contacts` — Contatos por cliente com permissões granulares
-- `sellers` — Vendedores com dados bancários e Pix
+- `sellers` — Vendedores com dados bancários, Pix e habilitação de motorista (autorizadoDirigir, cnhCategoria, cnhValidade)
 - `seller_bank_accounts` — Contas bancárias e Pix dos vendedores
 - `client_seller_links` — Vínculo vendedor-cliente (N:N)
 - `crm_interactions` — Interações CRM (ligação, email, reunião, etc.)
@@ -87,6 +94,8 @@ shared/
 - `quote_items` — Itens do orçamento com medidas e cálculo de área
 - `orders` — Pedidos gerados de orçamentos com status de produção
 - `order_items` — Itens do pedido
+- `vehicles` — Frota de veículos (placa, modelo, marca, km, combustível, status)
+- `vehicle_exits` — Registro de saída/retorno de veículos (motorista, km, combustível, OS vinculada, status)
 
 ## Rotas de API principais
 
@@ -103,6 +112,10 @@ shared/
 - `POST /api/ai/suggest-product` — IA sugere composição de produto
 - `POST /api/ai/suggest-quote-item` — IA sugere item de orçamento com preço
 - `GET /api/cnpj/:cnpj` — Consulta CNPJ
+- `GET/POST /api/vehicles` — CRUD de veículos
+- `PATCH /api/vehicles/:id` — Atualizar veículo (status, km, etc.)
+- `GET/POST /api/vehicle-exits` — Registro de saídas (com regras de negócio)
+- `PATCH /api/vehicle-exits/:id` — Registrar retorno (calcula km percorridos, atualiza odômetro)
 
 ## Funcionalidades
 
@@ -118,12 +131,17 @@ shared/
 - Impressão profissional A4 para orçamentos e pedidos (sem sidebar, com botão imprimir)
 - Tema dark/light com persistência
 
+- Controle de Veículos: cadastro da frota, registro de saídas/retornos, rastreabilidade por motorista
+- Regras de negócio: bloqueia veículo inativo, avisa sobre motorista não autorizado, exige motivo sem OS
+- Motoristas vinculados ao cadastro de Vendedores (campos: autorizadoDirigir, cnhCategoria, cnhValidade)
+
 ## Sidebar (grupos de navegação)
 
 - **Principal**: Dashboard, Clientes, Vendedores, CRM
-- **Comercial**: Orçamentos, Pedidos
+- **Comercial**: Orçamentos, Pedidos, WhatsApp Bot
 - **Cadastros**: Matérias-primas, Produtos
-- **Configurações**: Prazos de Pagamento, Formas de Pagamento
+- **Veículos**: Frota, Saídas
+- **Configurações**: Empresas, Prazos de Pagamento, Formas de Pagamento
 
 ## Design
 

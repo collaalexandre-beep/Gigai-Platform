@@ -74,6 +74,12 @@ import {
   quoteRules,
   type QuoteRule,
   type InsertQuoteRule,
+  vehicles,
+  vehicleExits,
+  type Vehicle,
+  type InsertVehicle,
+  type VehicleExit,
+  type InsertVehicleExit,
 } from "@shared/schema";
 import { addDays } from "date-fns";
 
@@ -265,6 +271,18 @@ export interface IStorage {
   createQuoteRule(data: InsertQuoteRule): Promise<QuoteRule>;
   updateQuoteRule(id: string, data: Partial<InsertQuoteRule>): Promise<QuoteRule | undefined>;
   deleteQuoteRule(id: string): Promise<void>;
+
+  // Vehicles
+  getVehicles(params?: { search?: string; status?: string }): Promise<Vehicle[]>;
+  getVehicle(id: string): Promise<Vehicle | undefined>;
+  createVehicle(data: InsertVehicle): Promise<Vehicle>;
+  updateVehicle(id: string, data: Partial<InsertVehicle>): Promise<Vehicle | undefined>;
+
+  // Vehicle Exits
+  getVehicleExits(params?: { vehicleId?: string; driverId?: string; status?: string }): Promise<(VehicleExit & { vehicle: Vehicle; driver: { id: string; nomeCompleto: string } })[]>;
+  getVehicleExit(id: string): Promise<(VehicleExit & { vehicle: Vehicle; driver: { id: string; nomeCompleto: string } }) | undefined>;
+  createVehicleExit(data: InsertVehicleExit): Promise<VehicleExit>;
+  updateVehicleExit(id: string, data: Partial<InsertVehicleExit>): Promise<VehicleExit | undefined>;
 }
 
 // ─── DATABASE STORAGE ─────────────────────────────────────────────────────────
@@ -1357,6 +1375,92 @@ export class DatabaseStorage implements IStorage {
 
   async deleteQuoteRule(id: string): Promise<void> {
     await db.delete(quoteRules).where(eq(quoteRules.id, id));
+  }
+
+  // ─── VEHICLES ─────────────────────────────────────────────────────────────────
+
+  async getVehicles(params?: { search?: string; status?: string }): Promise<Vehicle[]> {
+    const conditions: any[] = [];
+    if (params?.status) conditions.push(eq(vehicles.status, params.status as any));
+    if (params?.search) {
+      conditions.push(or(
+        ilike(vehicles.placa, `%${params.search}%`),
+        ilike(vehicles.modelo, `%${params.search}%`),
+        ilike(vehicles.marca, `%${params.search}%`),
+      ));
+    }
+    return db.select().from(vehicles)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(asc(vehicles.marca), asc(vehicles.modelo));
+  }
+
+  async getVehicle(id: string): Promise<Vehicle | undefined> {
+    const [v] = await db.select().from(vehicles).where(eq(vehicles.id, id));
+    return v;
+  }
+
+  async createVehicle(data: InsertVehicle): Promise<Vehicle> {
+    const [v] = await db.insert(vehicles).values(data).returning();
+    return v;
+  }
+
+  async updateVehicle(id: string, data: Partial<InsertVehicle>): Promise<Vehicle | undefined> {
+    const [v] = await db.update(vehicles).set({ ...data, updatedAt: new Date() }).where(eq(vehicles.id, id)).returning();
+    return v;
+  }
+
+  // ─── VEHICLE EXITS ────────────────────────────────────────────────────────────
+
+  async getVehicleExits(params?: { vehicleId?: string; driverId?: string; status?: string }): Promise<(VehicleExit & { vehicle: Vehicle; driver: { id: string; nomeCompleto: string } })[]> {
+    const conditions: any[] = [];
+    if (params?.vehicleId) conditions.push(eq(vehicleExits.vehicleId, params.vehicleId));
+    if (params?.driverId) conditions.push(eq(vehicleExits.driverId, params.driverId));
+    if (params?.status) conditions.push(eq(vehicleExits.status, params.status as any));
+
+    const rows = await db
+      .select({
+        exit: vehicleExits,
+        vehicle: vehicles,
+        driverName: sellers.nomeCompleto,
+        driverId: sellers.id,
+      })
+      .from(vehicleExits)
+      .innerJoin(vehicles, eq(vehicleExits.vehicleId, vehicles.id))
+      .innerJoin(sellers, eq(vehicleExits.driverId, sellers.id))
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(vehicleExits.dataHoraSaida));
+
+    return rows.map((r) => ({
+      ...r.exit,
+      vehicle: r.vehicle,
+      driver: { id: r.driverId, nomeCompleto: r.driverName },
+    }));
+  }
+
+  async getVehicleExit(id: string): Promise<(VehicleExit & { vehicle: Vehicle; driver: { id: string; nomeCompleto: string } }) | undefined> {
+    const [r] = await db
+      .select({
+        exit: vehicleExits,
+        vehicle: vehicles,
+        driverName: sellers.nomeCompleto,
+        driverId: sellers.id,
+      })
+      .from(vehicleExits)
+      .innerJoin(vehicles, eq(vehicleExits.vehicleId, vehicles.id))
+      .innerJoin(sellers, eq(vehicleExits.driverId, sellers.id))
+      .where(eq(vehicleExits.id, id));
+    if (!r) return undefined;
+    return { ...r.exit, vehicle: r.vehicle, driver: { id: r.driverId, nomeCompleto: r.driverName } };
+  }
+
+  async createVehicleExit(data: InsertVehicleExit): Promise<VehicleExit> {
+    const [v] = await db.insert(vehicleExits).values(data as any).returning();
+    return v;
+  }
+
+  async updateVehicleExit(id: string, data: Partial<InsertVehicleExit>): Promise<VehicleExit | undefined> {
+    const [v] = await db.update(vehicleExits).set({ ...data, updatedAt: new Date() } as any).where(eq(vehicleExits.id, id)).returning();
+    return v;
   }
 }
 

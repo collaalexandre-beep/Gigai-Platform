@@ -44,6 +44,10 @@ interface SellerFormData {
   status: string;
   percentualComissao: string;
   observacoes: string;
+  autorizadoDirigir: boolean;
+  cnhCategoria: string;
+  cnhValidade: string;
+  cnhObservacoes: string;
 }
 
 interface BankFormData {
@@ -65,6 +69,7 @@ const emptySellerForm: SellerFormData = {
   cidade: "", estado: "", cep: "",
   cargo: "", dataEntrada: "", status: "ativo",
   percentualComissao: "", observacoes: "",
+  autorizadoDirigir: false, cnhCategoria: "", cnhValidade: "", cnhObservacoes: "",
 };
 
 const emptyBankForm: BankFormData = {
@@ -134,6 +139,10 @@ export default function SellerFormPage() {
         status: existingData.status || "ativo",
         percentualComissao: existingData.percentualComissao || "",
         observacoes: existingData.observacoes || "",
+        autorizadoDirigir: (existingData as any).autorizadoDirigir ?? false,
+        cnhCategoria: (existingData as any).cnhCategoria || "",
+        cnhValidade: (existingData as any).cnhValidade || "",
+        cnhObservacoes: (existingData as any).cnhObservacoes || "",
       });
       setCnpjInput((existingData as any).cnpj || "");
       if (existingData.bankAccounts?.[0]) {
@@ -635,6 +644,70 @@ export default function SellerFormPage() {
                     rows={2}
                     placeholder="Observações sobre o vendedor..."
                     data-testid="input-seller-obs"
+                  />
+                </FormField>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Habilitação / Motorista */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <span>🚗</span>
+              Habilitação e Motorista
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2 flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="autorizadoDirigir"
+                  checked={form.autorizadoDirigir}
+                  onChange={(e) => set("autorizadoDirigir", e.target.checked)}
+                  className="w-4 h-4 rounded"
+                  data-testid="checkbox-autorizado-dirigir"
+                />
+                <Label htmlFor="autorizadoDirigir" className="text-sm cursor-pointer">
+                  Motorista autorizado a conduzir veículos da empresa
+                </Label>
+              </div>
+              <FormField label="Categoria da CNH" id="cnhCategoria">
+                <Select value={form.cnhCategoria} onValueChange={(v) => set("cnhCategoria", v)}>
+                  <SelectTrigger data-testid="select-cnh-categoria">
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="A">A (moto)</SelectItem>
+                    <SelectItem value="B">B (carro)</SelectItem>
+                    <SelectItem value="AB">AB (moto + carro)</SelectItem>
+                    <SelectItem value="C">C (veículo de carga)</SelectItem>
+                    <SelectItem value="D">D (passageiros)</SelectItem>
+                    <SelectItem value="E">E (carreta)</SelectItem>
+                    <SelectItem value="ACC">ACC (veículo ciclomotor)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormField>
+              <FormField label="Validade da CNH" id="cnhValidade">
+                <Input
+                  id="cnhValidade"
+                  type="date"
+                  value={form.cnhValidade}
+                  onChange={(e) => set("cnhValidade", e.target.value)}
+                  data-testid="input-cnh-validade"
+                />
+              </FormField>
+              <div className="md:col-span-2">
+                <FormField label="Observações da CNH / Motorista" id="cnhObservacoes">
+                  <Textarea
+                    id="cnhObservacoes"
+                    value={form.cnhObservacoes}
+                    onChange={(e) => set("cnhObservacoes", e.target.value)}
+                    rows={2}
+                    placeholder="Ex: Restrições, observações sobre a habilitação..."
+                    data-testid="input-cnh-obs"
                   />
                 </FormField>
               </div>

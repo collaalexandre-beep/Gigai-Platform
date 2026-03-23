@@ -358,6 +358,11 @@ export const sellers = pgTable(
       scale: 2,
     }),
     observacoes: text("observacoes"),
+    // Driver / Vehicle Control
+    autorizadoDirigir: boolean("autorizado_dirigir").notNull().default(false),
+    cnhCategoria: text("cnh_categoria"),
+    cnhValidade: date("cnh_validade"),
+    cnhObservacoes: text("cnh_observacoes"),
     // Timestamps
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -990,6 +995,107 @@ export const insertQuoteRuleSchema = createInsertSchema(quoteRules).omit({
 });
 export type InsertQuoteRule = z.infer<typeof insertQuoteRuleSchema>;
 export type QuoteRule = typeof quoteRules.$inferSelect;
+
+// ─── VEHICLE CONTROL ─────────────────────────────────────────────────────────
+
+export const vehicleStatusEnum = pgEnum("vehicle_status", [
+  "ativo",
+  "manutencao",
+  "inativo",
+]);
+
+export const fuelTypeEnum = pgEnum("fuel_type", [
+  "gasolina",
+  "etanol",
+  "diesel",
+  "flex",
+  "gnv",
+  "eletrico",
+  "hibrido",
+]);
+
+export const fuelLevelEnum = pgEnum("fuel_level", [
+  "vazio",
+  "quarto",
+  "metade",
+  "tres_quartos",
+  "cheio",
+]);
+
+export const vehicleExitStatusEnum = pgEnum("vehicle_exit_status", [
+  "em_rota",
+  "finalizada",
+  "cancelada",
+]);
+
+export const vehicles = pgTable(
+  "vehicles",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    placa: text("placa").notNull().unique(),
+    modelo: text("modelo").notNull(),
+    marca: text("marca").notNull(),
+    ano: integer("ano"),
+    cor: text("cor"),
+    tipoCombustivel: fuelTypeEnum("tipo_combustivel"),
+    kmAtual: decimal("km_atual", { precision: 12, scale: 1 }),
+    consumoMedioKmL: decimal("consumo_medio_km_l", { precision: 6, scale: 2 }),
+    status: vehicleStatusEnum("status").notNull().default("ativo"),
+    observacoes: text("observacoes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_vehicles_placa").on(t.placa),
+    index("idx_vehicles_status").on(t.status),
+  ]
+);
+
+export const insertVehicleSchema = createInsertSchema(vehicles).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertVehicle = z.infer<typeof insertVehicleSchema>;
+export type Vehicle = typeof vehicles.$inferSelect;
+
+export const vehicleExits = pgTable(
+  "vehicle_exits",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    vehicleId: varchar("vehicle_id").notNull().references(() => vehicles.id),
+    driverId: varchar("driver_id").notNull().references(() => sellers.id),
+    dataHoraSaida: timestamp("data_hora_saida").notNull(),
+    kmInicial: decimal("km_inicial", { precision: 12, scale: 1 }).notNull(),
+    combustivelInicial: fuelLevelEnum("combustivel_inicial").notNull(),
+    fotoInicialUrl: text("foto_inicial_url"),
+    orderId: varchar("order_id").references(() => orders.id),
+    motivoSaida: text("motivo_saida"),
+    destino: text("destino"),
+    status: vehicleExitStatusEnum("status").notNull().default("em_rota"),
+    // Return fields
+    dataHoraRetorno: timestamp("data_hora_retorno"),
+    kmFinal: decimal("km_final", { precision: 12, scale: 1 }),
+    combustivelFinal: fuelLevelEnum("combustivel_final"),
+    fotoFinalUrl: text("foto_final_url"),
+    observacoesRetorno: text("observacoes_retorno"),
+    kmPercorridos: decimal("km_percorridos", { precision: 12, scale: 1 }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_vehicle_exits_vehicle").on(t.vehicleId),
+    index("idx_vehicle_exits_driver").on(t.driverId),
+    index("idx_vehicle_exits_status").on(t.status),
+  ]
+);
+
+export const insertVehicleExitSchema = createInsertSchema(vehicleExits).omit({
+  id: true, createdAt: true, updatedAt: true,
+}).extend({
+  dataHoraSaida: z.union([z.date(), z.string().transform((s) => new Date(s))]),
+  dataHoraRetorno: z.union([z.date(), z.string().transform((s) => new Date(s))]).optional().nullable(),
+});
+export type InsertVehicleExit = z.infer<typeof insertVehicleExitSchema>;
+export type VehicleExit = typeof vehicleExits.$inferSelect;
 
 // ─── DASHBOARD STATS (view types) ────────────────────────────────────────────
 

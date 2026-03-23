@@ -35,6 +35,11 @@ import OrderPrintPage from "@/pages/orders/print";
 import CompaniesPage from "@/pages/companies/index";
 import CompanyFormPage from "@/pages/companies/form";
 import WhatsappPage from "@/pages/whatsapp/index";
+import VehiclesPage from "@/pages/vehicles/index";
+import VehicleFormPage from "@/pages/vehicles/form";
+import VehicleExitsPage from "@/pages/vehicles/exits/index";
+import VehicleExitFormPage from "@/pages/vehicles/exits/form";
+import VehicleExitDetailPage from "@/pages/vehicles/exits/detail";
 
 function PrintRouter() {
   return (
@@ -81,6 +86,12 @@ function AppRouter() {
       <Route path="/companies/new" component={CompanyFormPage} />
       <Route path="/companies/:id/edit" component={CompanyFormPage} />
       <Route path="/whatsapp" component={WhatsappPage} />
+      <Route path="/vehicles" component={VehiclesPage} />
+      <Route path="/vehicles/exits" component={VehicleExitsPage} />
+      <Route path="/vehicles/exits/new" component={VehicleExitFormPage} />
+      <Route path="/vehicles/exits/:id" component={VehicleExitDetailPage} />
+      <Route path="/vehicles/new" component={VehicleFormPage} />
+      <Route path="/vehicles/:id/edit" component={VehicleFormPage} />
       <Route component={NotFound} />
     </Switch>
   );

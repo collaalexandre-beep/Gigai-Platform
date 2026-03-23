@@ -28,6 +28,8 @@ import {
   type InsertQuote,
   type InsertOrder,
   insertQuoteRuleSchema,
+  insertVehicleSchema,
+  insertVehicleExitSchema,
 } from "@shared/schema";
 import { generateProductSuggestion, suggestQuoteItem, generateSpecialQuote, adjustSpecialQuote, extractFromAdjustment } from "./ai";
 
@@ -1913,6 +1915,114 @@ Responda SOMENTE com JSON válido:
       }
 
       doc.end();
+    } catch (err) { handleError(res, err); }
+  });
+
+  // ─── VEHICLES ──────────────────────────────────────────────────────────────
+
+  app.get("/api/vehicles", async (req: Request, res: Response) => {
+    try {
+      const { search, status } = req.query as Record<string, string>;
+      const data = await storage.getVehicles({ search, status });
+      res.json(data);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.get("/api/vehicles/:id", async (req: Request, res: Response) => {
+    try {
+      const vehicle = await storage.getVehicle(getParam(req, "id"));
+      if (!vehicle) return res.status(404).json({ message: "Veículo não encontrado" });
+      res.json(vehicle);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.post("/api/vehicles", async (req: Request, res: Response) => {
+    try {
+      const body = insertVehicleSchema.parse(req.body);
+      const vehicle = await storage.createVehicle(body);
+      res.status(201).json(vehicle);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.patch("/api/vehicles/:id", async (req: Request, res: Response) => {
+    try {
+      const vehicle = await storage.updateVehicle(getParam(req, "id"), req.body);
+      if (!vehicle) return res.status(404).json({ message: "Veículo não encontrado" });
+      res.json(vehicle);
+    } catch (err) { handleError(res, err); }
+  });
+
+  // ─── VEHICLE EXITS ──────────────────────────────────────────────────────────
+
+  app.get("/api/vehicle-exits", async (req: Request, res: Response) => {
+    try {
+      const { vehicleId, driverId, status } = req.query as Record<string, string>;
+      const data = await storage.getVehicleExits({ vehicleId, driverId, status });
+      res.json(data);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.get("/api/vehicle-exits/:id", async (req: Request, res: Response) => {
+    try {
+      const exit = await storage.getVehicleExit(getParam(req, "id"));
+      if (!exit) return res.status(404).json({ message: "Saída não encontrada" });
+      res.json(exit);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.post("/api/vehicle-exits", async (req: Request, res: Response) => {
+    try {
+      const body = insertVehicleExitSchema.parse(req.body);
+
+      // Business rules
+      const vehicle = await storage.getVehicle(body.vehicleId);
+      if (!vehicle) return res.status(404).json({ message: "Veículo não encontrado" });
+      if (vehicle.status === "inativo") return res.status(400).json({ message: "Veículo inativo não pode sair" });
+
+      const driver = await storage.getSeller(body.driverId);
+      if (driver && !driver.autorizadoDirigir) {
+        // Return a warning but still allow (with flag)
+        const exit = await storage.createVehicleExit(body as any);
+        return res.status(201).json({ ...exit, _aviso: "Motorista não está marcado como autorizado a dirigir" });
+      }
+
+      // Require motivo if no orderId
+      if (!body.orderId && !body.motivoSaida) {
+        return res.status(400).json({ message: "Informe o motivo da saída ou vincule uma Ordem de Serviço" });
+      }
+
+      const exit = await storage.createVehicleExit(body as any);
+      res.status(201).json(exit);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.patch("/api/vehicle-exits/:id", async (req: Request, res: Response) => {
+    try {
+      const id = getParam(req, "id");
+      let data = req.body;
+
+      // Auto-calculate km percorridos on return
+      if (data.kmFinal != null && data.kmInicial != null) {
+        data.kmPercorridos = String(Number(data.kmFinal) - Number(data.kmInicial));
+      } else if (data.kmFinal != null) {
+        const existing = await storage.getVehicleExit(id);
+        if (existing) {
+          data.kmPercorridos = String(Number(data.kmFinal) - Number(existing.kmInicial));
+        }
+      }
+
+      // Mark as finalizada when returning
+      if (data.dataHoraRetorno && !data.status) data.status = "finalizada";
+
+      // Update vehicle km when finalizing
+      if (data.kmFinal && data.status === "finalizada") {
+        const existing = await storage.getVehicleExit(id);
+        if (existing) await storage.updateVehicle(existing.vehicleId, { kmAtual: String(data.kmFinal) });
+      }
+
+      const exit = await storage.updateVehicleExit(id, data);
+      if (!exit) return res.status(404).json({ message: "Saída não encontrada" });
+      res.json(exit);
     } catch (err) { handleError(res, err); }
   });
 

@@ -27,6 +27,8 @@ import {
   CreditCard,
   Building2,
   MessageCircle,
+  Car,
+  LogOut,
 } from "lucide-react";
 
 const navItems = [
@@ -45,6 +47,11 @@ const comercialItems = [
 const cadastroItems = [
   { title: "Matérias-primas", url: "/raw-materials", icon: FlaskConical },
   { title: "Produtos", url: "/products", icon: Box },
+];
+
+const vehicleItems = [
+  { title: "Frota", url: "/vehicles", icon: Car },
+  { title: "Saídas", url: "/vehicles/exits", icon: LogOut },
 ];
 
 const configItems = [
@@ -132,6 +139,17 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {renderMenuItems(cadastroItems)}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup className="mt-4">
+          <SidebarGroupLabel className="text-xs text-muted-foreground font-medium px-2 mb-1">
+            Veículos
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {renderMenuItems(vehicleItems)}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
