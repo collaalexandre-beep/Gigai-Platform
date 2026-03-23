@@ -16,7 +16,8 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Car, User, MapPin, Clock, CheckCircle2, Fuel, Navigation,
-  ArrowDownToLine, XCircle, AlertCircle, Camera, Image as ImageIcon
+  ArrowDownToLine, XCircle, AlertCircle, Camera, Image as ImageIcon,
+  Bot, Hand, AlertTriangle, Gauge,
 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -65,6 +66,55 @@ function InfoRow({ label, value }: { label: string; value?: string | null }) {
   );
 }
 
+function OrigemBadge({ origem }: { origem?: string | null }) {
+  if (!origem) return null;
+  if (origem === "ia_confirmado") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+        <Bot className="w-3 h-3" /> IA confirmado
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+      <Hand className="w-3 h-3" /> Manual
+    </span>
+  );
+}
+
+function ConfiancaBar({ value }: { value?: string | null }) {
+  const pct = Math.min(100, Math.max(0, Number(value ?? 0)));
+  const color = pct >= 80 ? "bg-green-500" : pct >= 60 ? "bg-yellow-500" : "bg-red-400";
+  return (
+    <div className="flex items-center gap-2 mt-1">
+      <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+      <span className="text-xs text-muted-foreground">{pct.toFixed(0)}%</span>
+    </div>
+  );
+}
+
+function AlertasPainel({ alertasJson }: { alertasJson?: string | null }) {
+  if (!alertasJson) return null;
+  let alertas: string[] = [];
+  try { alertas = JSON.parse(alertasJson); } catch { return null; }
+  if (!alertas.length) return null;
+  return (
+    <div className="col-span-2 mt-1">
+      <p className="text-xs text-muted-foreground mb-1.5">Alertas detectados no painel</p>
+      <div className="flex flex-wrap gap-1.5">
+        {alertas.map((a, i) => (
+          <span key={i} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400 font-medium">
+            <AlertTriangle className="w-3 h-3" />
+            {a}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function VehicleExitDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
@@ -100,6 +150,8 @@ export default function VehicleExitDetailPage() {
         dataHoraRetorno: new Date(data.dataHoraRetorno).toISOString(),
         kmInicial: exit?.kmInicial,
         status: "finalizada",
+        origemKmFinal: "manual",
+        origemCombustivelFinal: "manual",
       };
       const res = await apiRequest("PATCH", `/api/vehicle-exits/${id}`, payload);
       return res.json();
@@ -145,12 +197,16 @@ export default function VehicleExitDetailPage() {
     );
   }
 
+  const e = exit as ExitWithRelations & Record<string, any>;
   const cfg = STATUS_CONFIG[exit.status];
   const StatusIcon = cfg.icon;
   const isOpen = exit.status === "em_rota";
   const kmPercorridos = exit.kmFinal && exit.kmInicial
     ? Number(exit.kmPercorridos ?? (Number(exit.kmFinal) - Number(exit.kmInicial))).toFixed(1)
     : null;
+
+  const hasIAInicial = e.origemKmInicial || e.origemCombustivelInicial || e.alertasPainelInicial;
+  const hasIAFinal = e.origemKmFinal || e.origemCombustivelFinal || e.alertasPainelFinal;
 
   return (
     <div className="p-6 max-w-2xl space-y-6">
@@ -170,6 +226,7 @@ export default function VehicleExitDetailPage() {
         </div>
       </div>
 
+      {/* Veículo */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -185,6 +242,7 @@ export default function VehicleExitDetailPage() {
         </CardContent>
       </Card>
 
+      {/* Motorista */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -197,6 +255,7 @@ export default function VehicleExitDetailPage() {
         </CardContent>
       </Card>
 
+      {/* Dados da Saída */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base flex items-center gap-2">
@@ -204,17 +263,56 @@ export default function VehicleExitDetailPage() {
             Dados da Saída
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4">
-          <InfoRow label="Saída" value={fmt(exit.dataHoraSaida)} />
-          <InfoRow label="KM na saída" value={exit.kmInicial ? `${Number(exit.kmInicial).toLocaleString("pt-BR")} km` : undefined} />
-          <InfoRow label="Combustível na saída" value={exit.combustivelInicial ? FUEL_LEVEL_LABELS[exit.combustivelInicial] : undefined} />
-          {exit.destino && <InfoRow label="Destino" value={exit.destino} />}
-          {exit.motivoSaida && (
-            <div className="col-span-2">
-              <InfoRow label="Motivo" value={exit.motivoSaida} />
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <InfoRow label="Saída" value={fmt(exit.dataHoraSaida)} />
+            {exit.destino && <InfoRow label="Destino" value={exit.destino} />}
+            {exit.motivoSaida && (
+              <div className="col-span-2">
+                <InfoRow label="Motivo" value={exit.motivoSaida} />
+              </div>
+            )}
+            {exit.orderId && <InfoRow label="OS vinculada" value={exit.orderId} />}
+          </div>
+
+          {/* KM e Combustível Inicial */}
+          <Separator />
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <Gauge className="w-4 h-4 text-muted-foreground" />
+              <p className="text-sm font-semibold">Painel na Saída</p>
             </div>
-          )}
-          {exit.orderId && <InfoRow label="OS vinculada" value={exit.orderId} />}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs text-muted-foreground">KM na saída</p>
+                <p className="text-sm font-medium mt-0.5" data-testid="text-km-inicial">
+                  {exit.kmInicial ? `${Number(exit.kmInicial).toLocaleString("pt-BR")} km` : "—"}
+                </p>
+                {hasIAInicial && <OrigemBadge origem={e.origemKmInicial} />}
+                {e.leituraKmInicialConfianca && (
+                  <ConfiancaBar value={e.leituraKmInicialConfianca} />
+                )}
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Combustível na saída</p>
+                <p className="text-sm font-medium mt-0.5" data-testid="text-combustivel-inicial">
+                  {exit.combustivelInicial ? FUEL_LEVEL_LABELS[exit.combustivelInicial] : "—"}
+                </p>
+                {hasIAInicial && <OrigemBadge origem={e.origemCombustivelInicial} />}
+                {e.leituraCombustivelInicialConfianca && (
+                  <ConfiancaBar value={e.leituraCombustivelInicialConfianca} />
+                )}
+              </div>
+              <AlertasPainel alertasJson={e.alertasPainelInicial} />
+              {e.fotoInicialAnalisadaEm && (
+                <div className="col-span-2">
+                  <p className="text-xs text-muted-foreground">
+                    Painel analisado em {fmt(e.fotoInicialAnalisadaEm)}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -270,6 +368,7 @@ export default function VehicleExitDetailPage() {
         </Card>
       )}
 
+      {/* Retorno */}
       {exit.dataHoraRetorno && (
         <Card>
           <CardHeader>
@@ -278,22 +377,62 @@ export default function VehicleExitDetailPage() {
               Retorno
             </CardTitle>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-4">
-            <InfoRow label="Retorno" value={fmt(exit.dataHoraRetorno)} />
-            <InfoRow label="KM no retorno" value={exit.kmFinal ? `${Number(exit.kmFinal).toLocaleString("pt-BR")} km` : undefined} />
-            <InfoRow label="Combustível no retorno" value={exit.combustivelFinal ? FUEL_LEVEL_LABELS[exit.combustivelFinal] : undefined} />
-            {kmPercorridos && (
-              <InfoRow label="KM percorridos" value={`${Number(kmPercorridos).toLocaleString("pt-BR")} km`} />
-            )}
-            {exit.observacoesRetorno && (
-              <div className="col-span-2">
-                <InfoRow label="Observações do retorno" value={exit.observacoesRetorno} />
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <InfoRow label="Retorno" value={fmt(exit.dataHoraRetorno)} />
+              {kmPercorridos && (
+                <InfoRow label="KM percorridos" value={`${Number(kmPercorridos).toLocaleString("pt-BR")} km`} />
+              )}
+              {exit.observacoesRetorno && (
+                <div className="col-span-2">
+                  <InfoRow label="Observações" value={exit.observacoesRetorno} />
+                </div>
+              )}
+            </div>
+
+            {/* KM e Combustível Final */}
+            <Separator />
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <Gauge className="w-4 h-4 text-muted-foreground" />
+                <p className="text-sm font-semibold">Painel no Retorno</p>
               </div>
-            )}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs text-muted-foreground">KM no retorno</p>
+                  <p className="text-sm font-medium mt-0.5" data-testid="text-km-final">
+                    {exit.kmFinal ? `${Number(exit.kmFinal).toLocaleString("pt-BR")} km` : "—"}
+                  </p>
+                  {hasIAFinal && <OrigemBadge origem={e.origemKmFinal} />}
+                  {e.leituraKmFinalConfianca && (
+                    <ConfiancaBar value={e.leituraKmFinalConfianca} />
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Combustível no retorno</p>
+                  <p className="text-sm font-medium mt-0.5" data-testid="text-combustivel-final">
+                    {exit.combustivelFinal ? FUEL_LEVEL_LABELS[exit.combustivelFinal] : "—"}
+                  </p>
+                  {hasIAFinal && <OrigemBadge origem={e.origemCombustivelFinal} />}
+                  {e.leituraCombustivelFinalConfianca && (
+                    <ConfiancaBar value={e.leituraCombustivelFinalConfianca} />
+                  )}
+                </div>
+                <AlertasPainel alertasJson={e.alertasPainelFinal} />
+                {e.fotoFinalAnalisadaEm && (
+                  <div className="col-span-2">
+                    <p className="text-xs text-muted-foreground">
+                      Painel analisado em {fmt(e.fotoFinalAnalisadaEm)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
           </CardContent>
         </Card>
       )}
 
+      {/* Register return form */}
       {isOpen && !showReturnForm && (
         <div className="flex gap-3">
           <Button className="flex-1" onClick={() => setShowReturnForm(true)} data-testid="button-register-return">

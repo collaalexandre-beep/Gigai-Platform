@@ -24,13 +24,19 @@ const STEP_LABELS: Record<string, string> = {
   done: "Concluído",
   collecting: "Aguardando mensagem",
   // Vehicle flow steps
-  veh_escolher_veiculo:      "🚗 [Frota] Escolhendo veículo",
-  veh_aguardando_os:         "🚗 [Frota] Aguardando OS",
-  veh_aguardando_motivo:     "🚗 [Frota] Aguardando motivo",
-  veh_aguardando_destino:    "🚗 [Frota] Aguardando destino",
-  veh_aguardando_foto_saida: "🚗 [Frota] Aguardando foto de saída",
-  veh_retorno_foto:          "🚗 [Frota] Aguardando foto de retorno",
-  veh_retorno_obs:           "🚗 [Frota] Aguardando observações",
+  veh_escolher_veiculo:             "🚗 [Frota] Escolhendo veículo",
+  veh_aguardando_os:                "🚗 [Frota] Aguardando OS",
+  veh_aguardando_motivo:            "🚗 [Frota] Aguardando motivo",
+  veh_aguardando_destino:           "🚗 [Frota] Aguardando destino",
+  veh_aguardando_foto_saida:        "🚗 [Frota] Aguardando foto de saída",
+  veh_confirmando_leitura_inicial:  "🚗 [Frota] ✅ Confirmando leitura IA (saída)",
+  veh_km_manual_inicial:            "🚗 [Frota] 📝 KM manual (saída)",
+  veh_combustivel_manual_inicial:   "🚗 [Frota] ⛽ Combustível manual (saída)",
+  veh_retorno_foto:                 "🚗 [Frota] Aguardando foto de retorno",
+  veh_confirmando_leitura_final:    "🚗 [Frota] ✅ Confirmando leitura IA (retorno)",
+  veh_km_manual_final:              "🚗 [Frota] 📝 KM manual (retorno)",
+  veh_combustivel_manual_final:     "🚗 [Frota] ⛽ Combustível manual (retorno)",
+  veh_retorno_obs:                  "🚗 [Frota] Aguardando observações",
 };
 
 function StatusBadge({ status }: { status: string }) {
