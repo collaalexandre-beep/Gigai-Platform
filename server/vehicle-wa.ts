@@ -44,17 +44,31 @@ export const VEH_STEP_LABELS: Record<string, string> = {
 // ─── COMMAND DETECTION ────────────────────────────────────────────────────────
 
 export function isVehicleExitCommand(msgNorm: string): boolean {
-  const saida = msgNorm.includes("saida") || msgNorm.includes("saída");
   const veiculo =
     msgNorm.includes("veiculo") ||
     msgNorm.includes("veículo") ||
     msgNorm.includes("carro") ||
     msgNorm.includes("moto") ||
     msgNorm.includes("caminhao") ||
-    msgNorm.includes("caminhão");
-  if (saida && veiculo) return true;
-  if ((msgNorm.includes("retirar") || msgNorm.includes("retirada")) && veiculo) return true;
-  if (msgNorm === "saida veiculo" || msgNorm === "saída veículo") return true;
+    msgNorm.includes("caminhão") ||
+    msgNorm.includes("van") ||
+    msgNorm.includes("utilitario") ||
+    msgNorm.includes("utilitário") ||
+    msgNorm.includes("picape") ||
+    msgNorm.includes("pickup");
+
+  const saidaVerb =
+    msgNorm.includes("saida") ||
+    msgNorm.includes("saída") ||
+    msgNorm.includes("sair") ||    // "vou sair com o carro", "iria sair com um veículo"
+    msgNorm.includes("saindo");    // "estou saindo com o carro"
+
+  const outraAcao =
+    (msgNorm.includes("retirar") || msgNorm.includes("retirada") || msgNorm.includes("pegar") || msgNorm.includes("usar")) && veiculo;
+
+  if (saidaVerb && veiculo) return true;
+  if (outraAcao) return true;
+  if (msgNorm === "saida" || msgNorm === "saída") return true;
   return false;
 }
 
