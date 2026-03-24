@@ -214,6 +214,8 @@ export async function handleVehicleWaFlow(
   const isExitCmd = isVehicleExitCommand(msgNorm);
   const isReturnCmd = isVehicleReturnCommand(msgNorm);
 
+  console.log("[VehicleWA] Detecção:", { msgNorm, step, isVehStep, isExitCmd, isReturnCmd });
+
   if (!isVehStep && !isExitCmd && !isReturnCmd) return false;
 
   // "cancelar" within vehicle flow

@@ -1476,6 +1476,7 @@ Responda SOMENTE com JSON válido:
               reply,
               updateSession,
             });
+            console.log("[WhatsApp] vehicleHandled:", vehicleHandled, "| msgNorm:", msgNorm);
             if (vehicleHandled) continue;
 
             if (msgNorm === "cancelar" || msgNorm === "sair") {
