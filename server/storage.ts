@@ -80,6 +80,9 @@ import {
   type InsertVehicle,
   type VehicleExit,
   type InsertVehicleExit,
+  sellerDocuments,
+  type SellerDocument,
+  type InsertSellerDocument,
 } from "@shared/schema";
 import { addDays } from "date-fns";
 
@@ -116,6 +119,7 @@ export interface IStorage {
   getSellers(params?: {
     search?: string;
     status?: string;
+    funcao?: string;
     page?: number;
     limit?: number;
   }): Promise<{ data: Seller[]; total: number }>;
@@ -129,6 +133,11 @@ export interface IStorage {
   createSellerBankAccount(account: InsertSellerBankAccount): Promise<SellerBankAccount>;
   updateSellerBankAccount(id: string, data: Partial<InsertSellerBankAccount>): Promise<SellerBankAccount | undefined>;
   deleteSellerBankAccount(id: string): Promise<void>;
+
+  // Seller Documents
+  getSellerDocuments(sellerId: string): Promise<SellerDocument[]>;
+  createSellerDocument(doc: InsertSellerDocument): Promise<SellerDocument>;
+  deleteSellerDocument(id: string): Promise<void>;
 
   // Client-Seller links
   getClientSellers(clientId: string): Promise<(ClientSellerLink & { seller: Seller })[]>;
@@ -435,10 +444,11 @@ export class DatabaseStorage implements IStorage {
   async getSellers(params: {
     search?: string;
     status?: string;
+    funcao?: string;
     page?: number;
     limit?: number;
   } = {}): Promise<{ data: Seller[]; total: number }> {
-    const { search, status, page = 1, limit = 25 } = params;
+    const { search, status, funcao, page = 1, limit = 25 } = params;
     const offset = (page - 1) * limit;
     const conditions = [isNull(sellers.deletedAt)];
 
@@ -454,6 +464,10 @@ export class DatabaseStorage implements IStorage {
 
     if (status) {
       conditions.push(eq(sellers.status, status as any));
+    }
+
+    if (funcao) {
+      conditions.push(eq(sellers.funcao, funcao as any));
     }
 
     const where = and(...conditions);
@@ -527,6 +541,25 @@ export class DatabaseStorage implements IStorage {
 
   async deleteSellerBankAccount(id: string): Promise<void> {
     await db.delete(sellerBankAccounts).where(eq(sellerBankAccounts.id, id));
+  }
+
+  // ─── SELLER DOCUMENTS ──────────────────────────────────────────────────────
+
+  async getSellerDocuments(sellerId: string): Promise<SellerDocument[]> {
+    return db
+      .select()
+      .from(sellerDocuments)
+      .where(eq(sellerDocuments.sellerId, sellerId))
+      .orderBy(desc(sellerDocuments.createdAt));
+  }
+
+  async createSellerDocument(doc: InsertSellerDocument): Promise<SellerDocument> {
+    const [result] = await db.insert(sellerDocuments).values(doc).returning();
+    return result;
+  }
+
+  async deleteSellerDocument(id: string): Promise<void> {
+    await db.delete(sellerDocuments).where(eq(sellerDocuments.id, id));
   }
 
   // ─── CLIENT-SELLER LINKS ───────────────────────────────────────────────────

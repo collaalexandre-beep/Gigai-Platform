@@ -34,7 +34,28 @@ import {
 import { generateProductSuggestion, suggestQuoteItem, generateSpecialQuote, adjustSpecialQuote, extractFromAdjustment } from "./ai";
 import { handleVehicleWaFlow, isVehicleExitCommand, isVehicleReturnCommand, VEH_STEP_LABELS } from "./vehicle-wa";
 import path from "path";
+import fs from "fs";
+import multer from "multer";
 import express from "express";
+
+const UPLOADS_DIR = path.join(process.cwd(), "uploads", "team-docs");
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+const teamDocUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+    filename: (_req, file, cb) => {
+      const unique = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const ext = path.extname(file.originalname);
+      cb(null, `${unique}${ext}`);
+    },
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
+  fileFilter: (_req, file, cb) => {
+    const allowed = ["application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif"];
+    cb(null, allowed.includes(file.mimetype));
+  },
+});
 
 function handleError(res: Response, err: unknown) {
   console.error("[API Error]", err);
@@ -304,6 +325,7 @@ export async function registerRoutes(
       const result = await storage.getSellers({
         search: getQuery(req, "search"),
         status: getQuery(req, "status"),
+        funcao: getQuery(req, "funcao"),
         page: getQuery(req, "page") ? Number(getQuery(req, "page")) : 1,
         limit: getQuery(req, "limit") ? Number(getQuery(req, "limit")) : 25,
       });
@@ -394,6 +416,61 @@ export async function registerRoutes(
   app.delete("/api/bank-accounts/:id", async (req: Request, res: Response) => {
     try {
       await storage.deleteSellerBankAccount(getParam(req, "id"));
+      res.json({ success: true });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  // ─── SELLER DOCUMENTS ──────────────────────────────────────────────────────
+
+  app.get("/api/sellers/:sellerId/documents", async (req: Request, res: Response) => {
+    try {
+      const docs = await storage.getSellerDocuments(getParam(req, "sellerId"));
+      res.json(docs);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.post(
+    "/api/sellers/:sellerId/documents",
+    teamDocUpload.single("arquivo"),
+    async (req: Request, res: Response) => {
+      try {
+        const sellerId = getParam(req, "sellerId");
+        const file = req.file;
+        if (!file) {
+          res.status(400).json({ message: "Nenhum arquivo enviado." });
+          return;
+        }
+        const descricao = typeof req.body.descricao === "string" ? req.body.descricao : "";
+        const relativePath = `/uploads/team-docs/${file.filename}`;
+        const doc = await storage.createSellerDocument({
+          sellerId,
+          nomeArquivo: file.originalname,
+          descricao: descricao || null,
+          mimeType: file.mimetype,
+          caminho: relativePath,
+          tamanhoBytes: file.size,
+        });
+        res.status(201).json(doc);
+      } catch (err) {
+        handleError(res, err);
+      }
+    }
+  );
+
+  app.delete("/api/sellers/:sellerId/documents/:docId", async (req: Request, res: Response) => {
+    try {
+      const docId = getParam(req, "docId");
+      const docs = await storage.getSellerDocuments(getParam(req, "sellerId"));
+      const doc = docs.find((d) => d.id === docId);
+      if (doc) {
+        const fullPath = path.join(process.cwd(), doc.caminho);
+        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+      }
+      await storage.deleteSellerDocument(docId);
       res.json({ success: true });
     } catch (err) {
       handleError(res, err);

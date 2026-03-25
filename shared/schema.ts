@@ -42,6 +42,18 @@ export const sellerStatusEnum = pgEnum("seller_status", [
   "afastado",
 ]);
 
+export const membroFuncaoEnum = pgEnum("membro_funcao", [
+  "vendedor",
+  "serralheiro",
+  "instalador",
+  "financeiro",
+  "diretor",
+  "motorista",
+  "administrativo",
+  "tecnico",
+  "outro",
+]);
+
 export const interactionTypeEnum = pgEnum("interaction_type", [
   "ligacao",
   "email",
@@ -351,6 +363,7 @@ export const sellers = pgTable(
     estado: varchar("estado", { length: 2 }),
     // Commercial
     cargo: text("cargo"),
+    funcao: membroFuncaoEnum("funcao"),
     dataEntrada: date("data_entrada"),
     status: sellerStatusEnum("status").notNull().default("ativo"),
     percentualComissao: decimal("percentual_comissao", {
@@ -412,6 +425,28 @@ export type InsertSellerBankAccount = z.infer<
   typeof insertSellerBankAccountSchema
 >;
 export type SellerBankAccount = typeof sellerBankAccounts.$inferSelect;
+
+// ─── SELLER DOCUMENTS ─────────────────────────────────────────────────────────
+
+export const sellerDocuments = pgTable("seller_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sellerId: varchar("seller_id")
+    .notNull()
+    .references(() => sellers.id),
+  nomeArquivo: text("nome_arquivo").notNull(),
+  descricao: text("descricao"),
+  mimeType: text("mime_type").notNull(),
+  caminho: text("caminho").notNull(),
+  tamanhoBytes: integer("tamanho_bytes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertSellerDocumentSchema = createInsertSchema(sellerDocuments).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertSellerDocument = z.infer<typeof insertSellerDocumentSchema>;
+export type SellerDocument = typeof sellerDocuments.$inferSelect;
 
 // ─── CLIENT SELLER LINKS ──────────────────────────────────────────────────────
 

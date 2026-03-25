@@ -34,7 +34,7 @@ import {
 const navItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
   { title: "Clientes", url: "/clients", icon: Users },
-  { title: "Vendedores", url: "/sellers", icon: UserCheck },
+  { title: "Equipe", url: "/sellers", icon: UserCheck },
   { title: "CRM", url: "/crm", icon: Kanban },
 ];
 

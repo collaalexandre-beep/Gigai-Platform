@@ -21,9 +21,9 @@ client/src/
       detail.tsx           — Detalhe do cliente (tabs: Geral, Contatos, CRM, Histórico)
       form.tsx             — Cadastro/edição; toggle PF/PJ; PJ=CNPJ auto-fill; prazo de pagamento
     sellers/
-      index.tsx            — Lista de vendedores (cards)
-      detail.tsx           — Detalhe do vendedor
-      form.tsx             — Cadastro/edição; toggle PF/PJ; PJ=CNPJ auto-fill + nomeFantasia
+      index.tsx            — Lista de equipe/colaboradores (cards com filtro por função)
+      detail.tsx           — Detalhe do membro (funcao badge, documentos digitalizados)
+      form.tsx             — Cadastro/edição; toggle PF/PJ; funcao select; upload de documentos
     companies/
       index.tsx            — Listagem de empresas (logo, CNPJ, status, empresa padrão)
       form.tsx             — Cadastro/edição com 3 abas: Informações | Imagens | Nota Fiscal (em breve)
@@ -78,9 +78,10 @@ shared/
 
 - `clients` — Clientes com dados fiscais, endereço, CRM, CNPJ lookup metadata
 - `client_contacts` — Contatos por cliente com permissões granulares
-- `sellers` — Vendedores com dados bancários, Pix e habilitação de motorista (autorizadoDirigir, cnhCategoria, cnhValidade)
-- `seller_bank_accounts` — Contas bancárias e Pix dos vendedores
-- `client_seller_links` — Vínculo vendedor-cliente (N:N)
+- `sellers` — Equipe/colaboradores com funcao (enum), dados bancários, Pix e habilitação de motorista (autorizadoDirigir, cnhCategoria, cnhValidade)
+- `seller_bank_accounts` — Contas bancárias e Pix dos colaboradores
+- `seller_documents` — Documentos digitalizados (PDF/imagem) por colaborador; armazenados em uploads/team-docs/
+- `client_seller_links` — Vínculo membro-cliente (N:N)
 - `crm_interactions` — Interações CRM (ligação, email, reunião, etc.)
 - `crm_tasks` — Tarefas com prioridade e status (pendente/em_andamento/concluida)
 - `activity_timeline` — Timeline de eventos por cliente

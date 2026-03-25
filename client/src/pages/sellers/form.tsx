@@ -40,6 +40,7 @@ interface SellerFormData {
   estado: string;
   cep: string;
   cargo: string;
+  funcao: string;
   dataEntrada: string;
   status: string;
   percentualComissao: string;
@@ -68,7 +69,7 @@ const emptySellerForm: SellerFormData = {
   telefone: "", whatsapp: "", email: "", instagram: "",
   logradouro: "", numero: "", complemento: "", bairro: "",
   cidade: "", estado: "", cep: "",
-  cargo: "", dataEntrada: "", status: "ativo",
+  cargo: "", funcao: "", dataEntrada: "", status: "ativo",
   percentualComissao: "", observacoes: "",
   autorizadoDirigir: false, cnhCategoria: "", cnhValidade: "", cnhObservacoes: "",
   whatsappNumber: "",
@@ -137,6 +138,7 @@ export default function SellerFormPage() {
         estado: existingData.estado || "",
         cep: existingData.cep || "",
         cargo: existingData.cargo || "",
+        funcao: (existingData as any).funcao || "",
         dataEntrada: existingData.dataEntrada || "",
         status: existingData.status || "ativo",
         percentualComissao: existingData.percentualComissao || "",
@@ -229,6 +231,7 @@ export default function SellerFormPage() {
       const payload = {
         ...data,
         percentualComissao: data.percentualComissao || undefined,
+        funcao: data.funcao || undefined,
         cpf: isPF ? data.cpf : undefined,
         cnpj: !isPF ? data.cnpj : undefined,
         rg: isPF ? data.rg : undefined,
@@ -257,7 +260,7 @@ export default function SellerFormPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/sellers"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
       if (isEdit) queryClient.invalidateQueries({ queryKey: ["/api/sellers", id] });
-      toast({ title: isEdit ? "Vendedor atualizado." : "Vendedor cadastrado com sucesso." });
+      toast({ title: isEdit ? "Membro atualizado." : "Membro cadastrado com sucesso." });
       setLocation(`/sellers/${isEdit ? id : seller.id}`);
     },
     onError: (err: Error) => toast({ title: `Erro: ${err.message}`, variant: "destructive" }),
@@ -286,7 +289,7 @@ export default function SellerFormPage() {
       <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
         <Link href="/sellers" className="flex items-center gap-1">
           <ArrowLeft className="w-3.5 h-3.5" />
-          Vendedores
+          Equipe
         </Link>
         {isEdit && (
           <>
@@ -297,12 +300,12 @@ export default function SellerFormPage() {
           </>
         )}
         <ChevronRight className="w-3.5 h-3.5" />
-        <span className="text-foreground">{isEdit ? "Editar" : "Novo Vendedor"}</span>
+        <span className="text-foreground">{isEdit ? "Editar" : "Novo Membro"}</span>
       </div>
 
       <div>
         <h1 className="text-2xl font-bold text-foreground">
-          {isEdit ? "Editar Vendedor" : "Novo Vendedor"}
+          {isEdit ? "Editar Membro" : "Novo Membro da Equipe"}
         </h1>
       </div>
 
@@ -590,17 +593,35 @@ export default function SellerFormPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Percent className="w-4 h-4 text-muted-foreground" />
-              Dados Comerciais
+              Dados na Empresa
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField label="Cargo" id="cargo">
+              <FormField label="Função" id="funcao">
+                <Select value={form.funcao || ""} onValueChange={(v) => set("funcao", v)}>
+                  <SelectTrigger data-testid="select-seller-funcao">
+                    <SelectValue placeholder="Selecione a função..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="vendedor">Vendedor</SelectItem>
+                    <SelectItem value="serralheiro">Serralheiro</SelectItem>
+                    <SelectItem value="instalador">Instalador</SelectItem>
+                    <SelectItem value="financeiro">Financeiro</SelectItem>
+                    <SelectItem value="diretor">Diretor</SelectItem>
+                    <SelectItem value="motorista">Motorista</SelectItem>
+                    <SelectItem value="administrativo">Administrativo</SelectItem>
+                    <SelectItem value="tecnico">Técnico</SelectItem>
+                    <SelectItem value="outro">Outro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormField>
+              <FormField label="Cargo / Título" id="cargo">
                 <Input
                   id="cargo"
                   value={form.cargo}
                   onChange={(e) => set("cargo", e.target.value)}
-                  placeholder="Consultor Comercial"
+                  placeholder="Ex: Consultor Sênior, Gerente..."
                   data-testid="input-seller-cargo"
                 />
               </FormField>
@@ -818,7 +839,7 @@ export default function SellerFormPage() {
           <Button type="submit" disabled={saveMutation.isPending} data-testid="button-save-seller">
             {saveMutation.isPending ? (
               <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" />Salvando...</>
-            ) : isEdit ? "Salvar alterações" : "Cadastrar vendedor"}
+            ) : isEdit ? "Salvar alterações" : "Cadastrar membro"}
           </Button>
         </div>
       </form>

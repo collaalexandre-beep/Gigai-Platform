@@ -394,7 +394,7 @@ export default function ClientDetailPage() {
               data-testid="button-link-seller"
             >
               <UserCheck className="w-4 h-4 mr-1.5" />
-              Vincular vendedor
+              Vincular membro da equipe
             </Button>
             <Button asChild size="sm" data-testid="button-edit-client">
               <Link href={`/clients/${id}/edit`}>
@@ -417,7 +417,7 @@ export default function ClientDetailPage() {
         {/* Sellers row */}
         {clientSellers && clientSellers.length > 0 && (
           <div className="mt-4 pt-4 border-t flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium text-muted-foreground">Vendedores:</span>
+            <span className="text-xs font-medium text-muted-foreground">Equipe:</span>
             {clientSellers.map((link) => (
               <div key={link.id} className="flex items-center gap-1">
                 <Badge

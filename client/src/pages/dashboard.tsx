@@ -154,7 +154,7 @@ export default function Dashboard() {
           loading={isLoading}
         />
         <StatCard
-          title="Vendedores"
+          title="Equipe"
           value={stats?.totalVendedores}
           icon={UserCheck}
           color="bg-teal-600"
@@ -310,7 +310,7 @@ export default function Dashboard() {
             <Button asChild variant="outline" size="sm" data-testid="quick-new-seller">
               <Link href="/sellers/new">
                 <UserCheck className="w-4 h-4 mr-1.5" />
-                Novo Vendedor
+                Novo Membro
               </Link>
             </Button>
             <Button asChild variant="outline" size="sm" data-testid="quick-view-crm">
