@@ -1149,6 +1149,23 @@ export const insertVehicleExitSchema = createInsertSchema(vehicleExits).omit({
 export type InsertVehicleExit = z.infer<typeof insertVehicleExitSchema>;
 export type VehicleExit = typeof vehicleExits.$inferSelect;
 
+// ─── WHATSAPP BOT CONFIG ──────────────────────────────────────────────────────
+
+export const waBotConfig = pgTable("wa_bot_config", {
+  id: varchar("id").primaryKey().default("default"),
+  nomeBot: varchar("nome_bot", { length: 100 }).notNull().default("Assistente Gráfica+"),
+  nomeEmpresa: varchar("nome_empresa", { length: 100 }).notNull().default("Gráfica+"),
+  systemPrompt: text("system_prompt").notNull().default(""),
+  welcomeMessage: text("welcome_message").notNull().default(""),
+  cancelMessage: text("cancel_message").notNull().default(""),
+  attendantMessage: text("attendant_message").notNull().default(""),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertWaBotConfigSchema = createInsertSchema(waBotConfig).omit({ updatedAt: true });
+export type InsertWaBotConfig = z.infer<typeof insertWaBotConfigSchema>;
+export type WaBotConfig = typeof waBotConfig.$inferSelect;
+
 // ─── DASHBOARD STATS (view types) ────────────────────────────────────────────
 
 export interface DashboardStats {

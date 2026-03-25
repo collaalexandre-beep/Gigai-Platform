@@ -1262,30 +1262,10 @@ export async function registerRoutes(
     }
   }
 
-  interface QuoteData {
-    produto?: string | null;
-    largura?: number | null;
-    altura?: number | null;
-    quantidade?: number | null;
-    nomeCliente?: string | null;
-    cidade?: string | null;
-  }
+  // ── DEFAULT BOT CONFIG ────────────────────────────────────────────────────
+  const DEFAULT_SYSTEM_PROMPT = `Você é o assistente virtual da Gráfica+, uma gráfica profissional brasileira. Converse de forma natural, amigável e direta em português brasileiro.
 
-  interface AiExtractResult extends QuoteData {
-    reply: string;
-    complete: boolean;
-    intent?: "orcamento" | "status" | "atendente" | "outro";
-  }
-
-  async function extractQuoteInfoWithAI(userMessage: string, collected: QuoteData): Promise<AiExtractResult> {
-    const collected_summary = Object.entries(collected)
-      .filter(([, v]) => v != null && v !== undefined)
-      .map(([k, v]) => `${k}=${v}`)
-      .join(", ") || "nenhuma";
-
-    const systemPrompt = `Você é o assistente virtual da *Gráfica+*, uma gráfica profissional brasileira. Converse de forma natural, amigável e direta em português brasileiro.
-
-Informações JÁ coletadas para o orçamento: ${collected_summary}
+Informações JÁ coletadas para o orçamento: {DADOS_COLETADOS}
 
 Sua tarefa: entender o que o cliente quer e extrair dados para um orçamento de impressão.
 
@@ -1318,6 +1298,33 @@ Responda SOMENTE com JSON válido:
   "complete": boolean,
   "intent": "orcamento" | "status" | "atendente" | "outro"
 }`;
+
+  const DEFAULT_WELCOME_MSG = `Olá! 👋 Sou a assistente virtual da *Gráfica+*.\n\nComo posso te ajudar? Me diga o que você precisa — pode escrever normalmente, como:\n\n_"Quero um banner de 3x1m, 50 unidades"_\n_"Preciso de 100 adesivos 10x10cm para minha empresa"_\n_"Qual o status do meu pedido ORC-2026-0001?"_`;
+  const DEFAULT_CANCEL_MSG = `Tudo bem! Recomeçamos do zero. 😊\n\nComo posso ajudar? Me diga o que você precisa!`;
+  const DEFAULT_ATTENDANT_MSG = `Entendido! 🙋 Em breve um atendente entrará em contato com você.\n\nSe precisar de algo mais, é só dizer!`;
+
+  interface QuoteData {
+    produto?: string | null;
+    largura?: number | null;
+    altura?: number | null;
+    quantidade?: number | null;
+    nomeCliente?: string | null;
+    cidade?: string | null;
+  }
+
+  interface AiExtractResult extends QuoteData {
+    reply: string;
+    complete: boolean;
+    intent?: "orcamento" | "status" | "atendente" | "outro";
+  }
+
+  async function extractQuoteInfoWithAI(userMessage: string, collected: QuoteData, systemPromptTemplate: string): Promise<AiExtractResult> {
+    const collected_summary = Object.entries(collected)
+      .filter(([, v]) => v != null && v !== undefined)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(", ") || "nenhuma";
+
+    const systemPrompt = systemPromptTemplate.replace("{DADOS_COLETADOS}", collected_summary);
 
     try {
       const resp = await openaiBot.chat.completions.create({
@@ -1499,6 +1506,12 @@ Responda SOMENTE com JSON válido:
       const body = req.body;
       if (body.object !== "whatsapp_business_account") return;
 
+      const botCfg = await storage.getWaBotConfig();
+      const cfgSystemPrompt = botCfg?.systemPrompt || DEFAULT_SYSTEM_PROMPT;
+      const cfgWelcomeMsg = botCfg?.welcomeMessage || DEFAULT_WELCOME_MSG;
+      const cfgCancelMsg = botCfg?.cancelMessage || DEFAULT_CANCEL_MSG;
+      const cfgAttendantMsg = botCfg?.attendantMessage || DEFAULT_ATTENDANT_MSG;
+
       for (const entry of body.entry ?? []) {
         for (const change of entry.changes ?? []) {
           const value = change.value;
@@ -1557,7 +1570,7 @@ Responda SOMENTE com JSON válido:
 
             if (msgNorm === "cancelar" || msgNorm === "sair") {
               await storage.updateWhatsappSession(session.id, { step: "collecting", data: {} });
-              await reply(`Tudo bem! Recomeçamos do zero. 😊\n\nComo posso ajudar? Me diga o que você precisa!`, "collecting");
+              await reply(cfgCancelMsg, "collecting");
               continue;
             }
 
@@ -1565,7 +1578,7 @@ Responda SOMENTE com JSON válido:
               if (session.step === "done" || session.step === "menu") {
                 await storage.updateWhatsappSession(session.id, { step: "collecting", data: {} });
               }
-              await reply(`Olá! 👋 Sou a assistente virtual da *Gráfica+*.\n\nComo posso te ajudar? Me diga o que você precisa — pode escrever normalmente, como:\n\n_"Quero um banner de 3x1m, 50 unidades"_\n_"Preciso de 100 adesivos 10x10cm para minha empresa"_\n_"Qual o status do meu pedido ORC-2026-0001?"_`, "collecting");
+              await reply(cfgWelcomeMsg, "collecting");
               continue;
             }
 
@@ -1715,10 +1728,10 @@ Responda SOMENTE com JSON válido:
               session = await storage.createWhatsappSession(fromKey);
             }
 
-            const aiResult = await extractQuoteInfoWithAI(rawBody, data);
+            const aiResult = await extractQuoteInfoWithAI(rawBody, data, cfgSystemPrompt);
 
             if (aiResult.intent === "atendente") {
-              await reply(`Entendido! 🙋 Em breve um atendente entrará em contato com você.\n\nSe precisar de algo mais, é só dizer!`, "collecting", {});
+              await reply(cfgAttendantMsg, "collecting", {});
               continue;
             }
 
@@ -1770,6 +1783,29 @@ Responda SOMENTE com JSON válido:
     } catch (err) {
       handleError(res, err);
     }
+  });
+
+  app.get("/api/whatsapp/config", async (_req: Request, res: Response) => {
+    try {
+      const cfg = await storage.getWaBotConfig();
+      res.json(cfg ?? {
+        id: "default",
+        nomeBot: "Assistente Gráfica+",
+        nomeEmpresa: "Gráfica+",
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        welcomeMessage: DEFAULT_WELCOME_MSG,
+        cancelMessage: DEFAULT_CANCEL_MSG,
+        attendantMessage: DEFAULT_ATTENDANT_MSG,
+      });
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.put("/api/whatsapp/config", async (req: Request, res: Response) => {
+    try {
+      const { nomeBot, nomeEmpresa, systemPrompt, welcomeMessage, cancelMessage, attendantMessage } = req.body;
+      const cfg = await storage.upsertWaBotConfig({ nomeBot, nomeEmpresa, systemPrompt, welcomeMessage, cancelMessage, attendantMessage });
+      res.json(cfg);
+    } catch (err) { handleError(res, err); }
   });
 
   // ─── QUOTE RULES ──────────────────────────────────────────────────────────

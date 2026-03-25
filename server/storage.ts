@@ -83,6 +83,9 @@ import {
   sellerDocuments,
   type SellerDocument,
   type InsertSellerDocument,
+  waBotConfig,
+  type WaBotConfig,
+  type InsertWaBotConfig,
 } from "@shared/schema";
 import { addDays } from "date-fns";
 
@@ -294,6 +297,10 @@ export interface IStorage {
   createVehicleExit(data: InsertVehicleExit): Promise<VehicleExit>;
   updateVehicleExit(id: string, data: Partial<InsertVehicleExit>): Promise<VehicleExit | undefined>;
   getOpenVehicleExitByDriver(driverId: string): Promise<(VehicleExit & { vehicle: Vehicle; driver: { id: string; nomeCompleto: string } }) | undefined>;
+
+  // WaBotConfig
+  getWaBotConfig(): Promise<WaBotConfig | undefined>;
+  upsertWaBotConfig(data: Partial<InsertWaBotConfig>): Promise<WaBotConfig>;
 }
 
 // ─── DATABASE STORAGE ─────────────────────────────────────────────────────────
@@ -1534,6 +1541,25 @@ export class DatabaseStorage implements IStorage {
       .limit(1);
     if (!r) return undefined;
     return { ...r.exit, vehicle: r.vehicle, driver: { id: r.driverId, nomeCompleto: r.driverName } };
+  }
+
+  // ─── WA BOT CONFIG ──────────────────────────────────────────────────────────
+
+  async getWaBotConfig(): Promise<WaBotConfig | undefined> {
+    const [row] = await db.select().from(waBotConfig).where(eq(waBotConfig.id, "default")).limit(1);
+    return row;
+  }
+
+  async upsertWaBotConfig(data: Partial<InsertWaBotConfig>): Promise<WaBotConfig> {
+    const [row] = await db
+      .insert(waBotConfig)
+      .values({ id: "default", ...data } as any)
+      .onConflictDoUpdate({
+        target: waBotConfig.id,
+        set: { ...data, updatedAt: new Date() } as any,
+      })
+      .returning();
+    return row;
   }
 }
 

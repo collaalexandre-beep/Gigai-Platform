@@ -1,16 +1,35 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { MessageCircle, CheckCircle, Clock, XCircle, RefreshCw, ChevronRight, Send, ArrowDown } from "lucide-react";
+import {
+  MessageCircle, CheckCircle, RefreshCw, ArrowDown,
+  Settings, Save, RotateCcw, Bot, Loader2, ChevronDown, ChevronUp,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { WhatsappSession, WhatsappMessage } from "@shared/schema";
-import { queryClient } from "@/lib/queryClient";
 
 type SessionWithMessages = WhatsappSession & { messages: WhatsappMessage[] };
+
+interface WaBotConfig {
+  id: string;
+  nomeBot: string;
+  nomeEmpresa: string;
+  systemPrompt: string;
+  welcomeMessage: string;
+  cancelMessage: string;
+  attendantMessage: string;
+  updatedAt?: string;
+}
 
 const STEP_LABELS: Record<string, string> = {
   menu: "Menu",
@@ -23,7 +42,6 @@ const STEP_LABELS: Record<string, string> = {
   status_query: "Consultando status",
   done: "Concluído",
   collecting: "Aguardando mensagem",
-  // Vehicle flow steps
   veh_escolher_veiculo:             "🚗 [Frota] Escolhendo veículo",
   veh_aguardando_os:                "🚗 [Frota] Aguardando OS",
   veh_aguardando_motivo:            "🚗 [Frota] Aguardando motivo",
@@ -53,7 +71,6 @@ function formatPhone(from: string) {
 
 function ConversationPanel({ session }: { session: SessionWithMessages }) {
   const data = (session.data ?? {}) as Record<string, unknown>;
-
   return (
     <div className="flex flex-col h-full">
       <div className="px-4 py-3 border-b bg-muted/30">
@@ -84,17 +101,12 @@ function ConversationPanel({ session }: { session: SessionWithMessages }) {
           <p className="text-center text-xs text-muted-foreground py-8">Nenhuma mensagem ainda</p>
         )}
         {session.messages.map((msg) => (
-          <div
-            key={msg.id}
-            className={`flex ${msg.direction === "inbound" ? "justify-start" : "justify-end"}`}
-          >
-            <div
-              className={`max-w-[80%] rounded-lg px-3 py-1.5 text-sm shadow-sm ${
-                msg.direction === "inbound"
-                  ? "bg-white dark:bg-gray-800 text-foreground"
-                  : "bg-[#dcf8c6] dark:bg-[#005c4b] text-foreground"
-              }`}
-            >
+          <div key={msg.id} className={`flex ${msg.direction === "inbound" ? "justify-start" : "justify-end"}`}>
+            <div className={`max-w-[80%] rounded-lg px-3 py-1.5 text-sm shadow-sm ${
+              msg.direction === "inbound"
+                ? "bg-white dark:bg-gray-800 text-foreground"
+                : "bg-[#dcf8c6] dark:bg-[#005c4b] text-foreground"
+            }`}>
               <p className="whitespace-pre-wrap">{msg.body}</p>
               <p className="text-[10px] text-muted-foreground mt-0.5 text-right">
                 {format(new Date(msg.createdAt), "HH:mm")}
@@ -113,15 +125,269 @@ function ConversationPanel({ session }: { session: SessionWithMessages }) {
   );
 }
 
+// ─── CONFIG TAB ───────────────────────────────────────────────────────────────
+
+function BotConfigTab() {
+  const { toast } = useToast();
+  const [showPromptHelp, setShowPromptHelp] = useState(false);
+
+  const { data: cfg, isLoading } = useQuery<WaBotConfig>({
+    queryKey: ["/api/whatsapp/config"],
+  });
+
+  const [form, setForm] = useState<Partial<WaBotConfig>>({});
+
+  useEffect(() => {
+    if (cfg) setForm(cfg);
+  }, [cfg]);
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: Partial<WaBotConfig>) => {
+      const res = await apiRequest("PUT", "/api/whatsapp/config", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/whatsapp/config"] });
+      toast({ title: "Configurações salvas!", description: "O bot já está usando as novas instruções." });
+    },
+    onError: () => {
+      toast({ title: "Erro ao salvar", description: "Tente novamente.", variant: "destructive" });
+    },
+  });
+
+  const handleReset = () => {
+    if (cfg) setForm(cfg);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-3xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Bot className="w-5 h-5 text-emerald-500" />
+          <div>
+            <h2 className="font-semibold text-base">Configurar Bot de Atendimento</h2>
+            <p className="text-xs text-muted-foreground">Personalize como o bot conversa com seus clientes</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={handleReset} data-testid="button-reset-config">
+            <RotateCcw className="w-4 h-4 mr-1.5" />
+            Desfazer
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => saveMutation.mutate(form)}
+            disabled={saveMutation.isPending}
+            data-testid="button-save-config"
+          >
+            {saveMutation.isPending ? (
+              <><Loader2 className="w-4 h-4 mr-1.5 animate-spin" />Salvando...</>
+            ) : (
+              <><Save className="w-4 h-4 mr-1.5" />Salvar configurações</>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {/* Identidade */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">🤖 Identidade do Bot</CardTitle>
+          <CardDescription className="text-xs">Nome e empresa que o bot usará ao se apresentar</CardDescription>
+        </CardHeader>
+        <CardContent className="grid grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="nomeBot" className="text-xs">Nome do assistente</Label>
+            <Input
+              id="nomeBot"
+              value={form.nomeBot ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, nomeBot: e.target.value }))}
+              placeholder="Ex: Assistente Gráfica+"
+              data-testid="input-nome-bot"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="nomeEmpresa" className="text-xs">Nome da empresa</Label>
+            <Input
+              id="nomeEmpresa"
+              value={form.nomeEmpresa ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, nomeEmpresa: e.target.value }))}
+              placeholder="Ex: Gráfica+"
+              data-testid="input-nome-empresa"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Mensagens fixas */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">💬 Mensagens Fixas do Fluxo</CardTitle>
+          <CardDescription className="text-xs">
+            Mensagens enviadas em situações específicas — suportam emojis e formatação do WhatsApp (*negrito*, _itálico_)
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="welcomeMessage" className="text-xs font-medium">
+              👋 Mensagem de Boas-Vindas
+              <span className="text-muted-foreground font-normal ml-1">— enviada ao digitar "oi", "olá", "menu"</span>
+            </Label>
+            <Textarea
+              id="welcomeMessage"
+              value={form.welcomeMessage ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, welcomeMessage: e.target.value }))}
+              rows={4}
+              className="text-sm font-mono resize-none"
+              placeholder="Olá! 👋 Sou o assistente virtual..."
+              data-testid="textarea-welcome-msg"
+            />
+          </div>
+
+          <Separator />
+
+          <div className="space-y-1.5">
+            <Label htmlFor="cancelMessage" className="text-xs font-medium">
+              ❌ Mensagem de Cancelamento
+              <span className="text-muted-foreground font-normal ml-1">— enviada ao digitar "cancelar" ou "sair"</span>
+            </Label>
+            <Textarea
+              id="cancelMessage"
+              value={form.cancelMessage ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, cancelMessage: e.target.value }))}
+              rows={3}
+              className="text-sm font-mono resize-none"
+              placeholder="Tudo bem! Recomeçamos do zero. 😊"
+              data-testid="textarea-cancel-msg"
+            />
+          </div>
+
+          <Separator />
+
+          <div className="space-y-1.5">
+            <Label htmlFor="attendantMessage" className="text-xs font-medium">
+              🙋 Mensagem de Atendente Humano
+              <span className="text-muted-foreground font-normal ml-1">— enviada quando cliente pede um atendente</span>
+            </Label>
+            <Textarea
+              id="attendantMessage"
+              value={form.attendantMessage ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, attendantMessage: e.target.value }))}
+              rows={3}
+              className="text-sm font-mono resize-none"
+              placeholder="Entendido! 🙋 Em breve um atendente entrará em contato..."
+              data-testid="textarea-attendant-msg"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Prompt de IA */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">🧠 Prompt de Atendimento (IA)</CardTitle>
+          <CardDescription className="text-xs">
+            Instruções completas para a inteligência artificial — define como o bot entende e responde aos clientes
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <button
+            type="button"
+            onClick={() => setShowPromptHelp((v) => !v)}
+            className="flex items-center gap-1.5 text-xs text-primary hover:underline"
+            data-testid="button-toggle-prompt-help"
+          >
+            {showPromptHelp ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            {showPromptHelp ? "Ocultar dicas" : "Ver dicas de uso"}
+          </button>
+
+          {showPromptHelp && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-900 p-3 space-y-2 text-xs">
+              <p className="font-semibold text-amber-800 dark:text-amber-400">📌 Como usar o prompt:</p>
+              <ul className="space-y-1 text-amber-700 dark:text-amber-400/80 list-disc list-inside">
+                <li>Use <code className="bg-amber-100 dark:bg-amber-900/50 px-1 rounded">{"{DADOS_COLETADOS}"}</code> onde o bot deve inserir as informações já coletadas do cliente</li>
+                <li>Defina claramente quais campos o bot deve coletar (produto, medidas, quantidade, etc.)</li>
+                <li>Especifique as regras de negócio: conversão de unidades, comportamento ao finalizar, etc.</li>
+                <li>O bot sempre responde com JSON — mantenha a seção de estrutura JSON ao final</li>
+                <li>Você pode adicionar produtos específicos, preços fixos ou regras especiais da sua gráfica</li>
+              </ul>
+              <p className="font-semibold text-amber-800 dark:text-amber-400 mt-2">💡 Exemplos de personalização:</p>
+              <ul className="space-y-1 text-amber-700 dark:text-amber-400/80 list-disc list-inside">
+                <li>Adicione uma lista dos seus produtos mais vendidos</li>
+                <li>Instrua o bot a sempre mencionar o prazo de entrega padrão</li>
+                <li>Configure o bot para pedir aprovação de arte antes do orçamento</li>
+                <li>Defina mensagens específicas para clientes de determinadas cidades</li>
+              </ul>
+            </div>
+          )}
+
+          <Textarea
+            value={form.systemPrompt ?? ""}
+            onChange={(e) => setForm((f) => ({ ...f, systemPrompt: e.target.value }))}
+            rows={20}
+            className="text-xs font-mono resize-y"
+            placeholder="Você é o assistente virtual da Gráfica+..."
+            data-testid="textarea-system-prompt"
+          />
+          <p className="text-xs text-muted-foreground">
+            {(form.systemPrompt ?? "").length} caracteres
+          </p>
+        </CardContent>
+      </Card>
+
+      {/* Webhook info */}
+      <Card className="border-amber-200 dark:border-amber-900">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold text-amber-700 dark:text-amber-400">⚙️ Configuração Meta (WhatsApp Business API)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-xs">
+          <div>
+            <p className="font-semibold mb-1">1. URL do Callback (Webhook):</p>
+            <code className="font-mono bg-muted px-2 py-1 rounded break-all block">
+              https://grafica-core-system.replit.app/api/whatsapp
+            </code>
+          </div>
+          <div>
+            <p className="font-semibold mb-1">2. Token de Verificação:</p>
+            <code className="font-mono bg-muted px-2 py-1 rounded">gigai_whatsapp_2026</code>
+          </div>
+          <div>
+            <p className="font-semibold mb-1">3. Secrets necessários:</p>
+            <div className="space-y-1">
+              <code className="font-mono bg-muted px-2 py-1 rounded block">META_WHATSAPP_TOKEN</code>
+              <code className="font-mono bg-muted px-2 py-1 rounded block">META_PHONE_NUMBER_ID</code>
+            </div>
+            <p className="italic mt-1 text-muted-foreground">Configure em: Meta for Developers → WhatsApp → API Setup</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="pb-4" />
+    </div>
+  );
+}
+
+// ─── MAIN PAGE ────────────────────────────────────────────────────────────────
+
 export default function WhatsappPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [tab, setTab] = useState("all");
+  const [sessionTab, setSessionTab] = useState("all");
+  const [mainTab, setMainTab] = useState("conversas");
 
   const { data: sessionsData, isLoading, refetch, isFetching } = useQuery<{ data: WhatsappSession[]; total: number }>({
-    queryKey: ["/api/whatsapp/sessions", tab],
+    queryKey: ["/api/whatsapp/sessions", sessionTab],
     queryFn: async () => {
       const params = new URLSearchParams({ limit: "50" });
-      if (tab !== "all") params.set("status", tab);
+      if (sessionTab !== "all") params.set("status", sessionTab);
       const res = await fetch(`/api/whatsapp/sessions?${params}`);
       return res.json();
     },
@@ -141,134 +407,145 @@ export default function WhatsappPage() {
   const sessions = sessionsData?.data ?? [];
 
   return (
-    <div className="flex h-[calc(100vh-3rem)]">
-      <div className="w-80 flex-shrink-0 border-r flex flex-col">
-        <div className="px-4 py-3 border-b">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <MessageCircle className="w-5 h-5 text-emerald-500" />
-              <h1 className="font-semibold text-sm">WhatsApp Bot</h1>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => refetch()}
-              data-testid="button-refresh-sessions"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`} />
-            </Button>
-          </div>
-          <Tabs value={tab} onValueChange={setTab}>
-            <TabsList className="w-full h-7 text-xs">
-              <TabsTrigger value="all" className="flex-1 text-xs h-6">Todos</TabsTrigger>
-              <TabsTrigger value="active" className="flex-1 text-xs h-6">Ativos</TabsTrigger>
-              <TabsTrigger value="completed" className="flex-1 text-xs h-6">Concluídos</TabsTrigger>
-            </TabsList>
-          </Tabs>
+    <div className="flex flex-col h-[calc(100vh-3rem)]">
+      {/* Top bar with main tabs */}
+      <div className="flex items-center justify-between px-4 py-2 border-b bg-background">
+        <div className="flex items-center gap-2">
+          <MessageCircle className="w-5 h-5 text-emerald-500" />
+          <h1 className="font-semibold text-sm">WhatsApp Bot</h1>
         </div>
-        <div className="flex-1 overflow-y-auto">
-          {isLoading && (
-            <div className="p-4 text-center text-sm text-muted-foreground">Carregando...</div>
-          )}
-          {!isLoading && sessions.length === 0 && (
-            <div className="p-6 text-center">
-              <MessageCircle className="w-10 h-10 text-muted-foreground/30 mx-auto mb-2" />
-              <p className="text-sm text-muted-foreground">Nenhuma conversa encontrada</p>
-              <p className="text-xs text-muted-foreground/60 mt-1">As conversas aparecerão quando clientes enviarem mensagens via WhatsApp</p>
-            </div>
-          )}
-          {sessions.map((session) => {
-            const isSelected = session.id === selectedId;
-            return (
-              <button
-                key={session.id}
-                data-testid={`session-${session.id}`}
-                onClick={() => setSelectedId(session.id)}
-                className={`w-full text-left px-4 py-3 border-b transition-colors hover:bg-muted/50 ${
-                  isSelected ? "bg-primary/5 border-l-2 border-l-primary" : ""
-                }`}
-              >
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-medium text-sm truncate">{formatPhone(session.from)}</span>
-                  <span className="text-[10px] text-muted-foreground ml-2 flex-shrink-0">
-                    {formatDistanceToNow(new Date(session.updatedAt), { locale: ptBR, addSuffix: true })}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <StatusBadge status={session.status} />
-                  <span className="text-xs text-muted-foreground truncate">
-                    {STEP_LABELS[session.step] ?? session.step}
-                  </span>
-                </div>
-                {session.quoteId && (
-                  <div className="mt-1 flex items-center gap-1 text-xs text-primary">
-                    <CheckCircle className="w-3 h-3" />
-                    <span>Orçamento criado</span>
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
-        <div className="px-4 py-2 border-t bg-muted/20">
-          <p className="text-xs text-muted-foreground">{sessionsData?.total ?? 0} conversa(s)</p>
-        </div>
+        <Tabs value={mainTab} onValueChange={setMainTab}>
+          <TabsList className="h-7">
+            <TabsTrigger value="conversas" className="text-xs h-6 px-3" data-testid="tab-conversas">
+              💬 Conversas
+            </TabsTrigger>
+            <TabsTrigger value="config" className="text-xs h-6 px-3" data-testid="tab-config">
+              <Settings className="w-3.5 h-3.5 mr-1" />
+              Configurar Bot
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
-      <div className="flex-1 flex flex-col min-w-0">
-        {!selectedId && (
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
-            <MessageCircle className="w-16 h-16 text-muted-foreground/20 mb-4" />
-            <h2 className="text-lg font-semibold text-muted-foreground">Selecione uma conversa</h2>
-            <p className="text-sm text-muted-foreground/60 mt-1 max-w-sm">
-              Clique em uma conversa à esquerda para visualizar as mensagens trocadas com o bot.
-            </p>
-            <div className="mt-6 p-4 bg-muted/30 rounded-lg text-left max-w-sm">
-              <p className="text-xs font-semibold text-muted-foreground mb-2">🤖 Fluxo do bot:</p>
-              <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-                <li>Boas-vindas + menu de opções</li>
-                <li>Solicita o produto desejado</li>
-                <li>Solicita as medidas (L×A)</li>
-                <li>Solicita a quantidade</li>
-                <li>Solicita nome / empresa</li>
-                <li>Solicita cidade de entrega</li>
-                <li>Confirmação do resumo</li>
-                <li>Cria o orçamento automaticamente ✅</li>
-              </ol>
-            </div>
-            <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-left max-w-sm" data-testid="meta-config-info">
-              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-2">⚙️ Configuração Meta (WhatsApp Business API):</p>
-              <div className="text-xs text-amber-600 dark:text-amber-400/80 space-y-1.5">
-                <div>
-                  <p className="font-semibold mb-0.5">1. URL do Callback (Webhook):</p>
-                  <code className="font-mono bg-amber-100 dark:bg-amber-900/40 px-1 rounded break-all block">
-                    https://grafica-core-system.replit.app/api/whatsapp
-                  </code>
-                </div>
-                <div>
-                  <p className="font-semibold mb-0.5">2. Token de Verificação:</p>
-                  <code className="font-mono bg-amber-100 dark:bg-amber-900/40 px-1 rounded">gigai_whatsapp_2026</code>
-                </div>
-                <div>
-                  <p className="font-semibold mb-0.5">3. Secrets necessários:</p>
-                  <p><code className="font-mono bg-amber-100 dark:bg-amber-900/40 px-1 rounded">META_WHATSAPP_TOKEN</code></p>
-                  <p><code className="font-mono bg-amber-100 dark:bg-amber-900/40 px-1 rounded">META_PHONE_NUMBER_ID</code></p>
-                  <p className="text-[10px] italic mt-0.5">Configure em: Meta for Developers → WhatsApp → API Setup</p>
-                </div>
+      {/* Content */}
+      {mainTab === "config" ? (
+        <BotConfigTab />
+      ) : (
+        <div className="flex flex-1 min-h-0">
+          {/* Session list */}
+          <div className="w-80 flex-shrink-0 border-r flex flex-col">
+            <div className="px-4 py-3 border-b">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-medium text-muted-foreground">Conversas recentes</span>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => refetch()}
+                  data-testid="button-refresh-sessions"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`} />
+                </Button>
               </div>
+              <Tabs value={sessionTab} onValueChange={setSessionTab}>
+                <TabsList className="w-full h-7 text-xs">
+                  <TabsTrigger value="all" className="flex-1 text-xs h-6">Todos</TabsTrigger>
+                  <TabsTrigger value="active" className="flex-1 text-xs h-6">Ativos</TabsTrigger>
+                  <TabsTrigger value="completed" className="flex-1 text-xs h-6">Concluídos</TabsTrigger>
+                </TabsList>
+              </Tabs>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {isLoading && (
+                <div className="p-4 text-center text-sm text-muted-foreground">Carregando...</div>
+              )}
+              {!isLoading && sessions.length === 0 && (
+                <div className="p-6 text-center">
+                  <MessageCircle className="w-10 h-10 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">Nenhuma conversa encontrada</p>
+                  <p className="text-xs text-muted-foreground/60 mt-1">As conversas aparecerão quando clientes enviarem mensagens</p>
+                </div>
+              )}
+              {sessions.map((session) => {
+                const isSelected = session.id === selectedId;
+                return (
+                  <button
+                    key={session.id}
+                    data-testid={`session-${session.id}`}
+                    onClick={() => setSelectedId(session.id)}
+                    className={`w-full text-left px-4 py-3 border-b transition-colors hover:bg-muted/50 ${
+                      isSelected ? "bg-primary/5 border-l-2 border-l-primary" : ""
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-medium text-sm truncate">{formatPhone(session.from)}</span>
+                      <span className="text-[10px] text-muted-foreground ml-2 flex-shrink-0">
+                        {formatDistanceToNow(new Date(session.updatedAt), { locale: ptBR, addSuffix: true })}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={session.status} />
+                      <span className="text-xs text-muted-foreground truncate">
+                        {STEP_LABELS[session.step] ?? session.step}
+                      </span>
+                    </div>
+                    {session.quoteId && (
+                      <div className="mt-1 flex items-center gap-1 text-xs text-primary">
+                        <CheckCircle className="w-3 h-3" />
+                        <span>Orçamento criado</span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="px-4 py-2 border-t bg-muted/20">
+              <p className="text-xs text-muted-foreground">{sessionsData?.total ?? 0} conversa(s)</p>
             </div>
           </div>
-        )}
-        {selectedId && loadingSession && (
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-sm text-muted-foreground">Carregando conversa...</p>
+
+          {/* Conversation panel */}
+          <div className="flex-1 flex flex-col min-w-0">
+            {!selectedId && (
+              <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+                <MessageCircle className="w-16 h-16 text-muted-foreground/20 mb-4" />
+                <h2 className="text-lg font-semibold text-muted-foreground">Selecione uma conversa</h2>
+                <p className="text-sm text-muted-foreground/60 mt-1 max-w-sm">
+                  Clique em uma conversa à esquerda para visualizar as mensagens trocadas com o bot.
+                </p>
+                <div className="mt-6 p-4 bg-muted/30 rounded-lg text-left max-w-sm">
+                  <p className="text-xs font-semibold text-muted-foreground mb-2">🤖 Fluxo do bot:</p>
+                  <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+                    <li>Boas-vindas + aguarda mensagem livre</li>
+                    <li>IA extrai produto, medidas, quantidade</li>
+                    <li>IA solicita dados faltantes naturalmente</li>
+                    <li>Solicita nome / empresa e cidade</li>
+                    <li>Confirmação do resumo (SIM/NÃO)</li>
+                    <li>Cria o orçamento automaticamente ✅</li>
+                    <li>Envia PDF do orçamento pelo WhatsApp</li>
+                  </ol>
+                </div>
+                <button
+                  onClick={() => setMainTab("config")}
+                  className="mt-4 text-xs text-primary hover:underline flex items-center gap-1"
+                  data-testid="button-go-to-config"
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  Ir para Configurar Bot
+                </button>
+              </div>
+            )}
+            {selectedId && loadingSession && (
+              <div className="flex-1 flex items-center justify-center">
+                <p className="text-sm text-muted-foreground">Carregando conversa...</p>
+              </div>
+            )}
+            {selectedId && selectedSession && !loadingSession && (
+              <ConversationPanel session={selectedSession} />
+            )}
           </div>
-        )}
-        {selectedId && selectedSession && !loadingSession && (
-          <ConversationPanel session={selectedSession} />
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
