@@ -1,4 +1,4 @@
-import { DollarSign, Factory, Package, Truck } from "lucide-react";
+import { DollarSign, Factory, Package, Truck, Users } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 
@@ -23,6 +23,7 @@ export const STATUS_LIGHTS: StatusLight[] = [
   { id: "producao",   label: "Produção",   status: "verde", icon: Factory    },
   { id: "estoque",    label: "Estoque",    status: "verde", icon: Package    },
   { id: "veiculos",   label: "Veículos",   status: "verde", icon: Truck      },
+  { id: "equipe",     label: "Equipe",     status: "verde", icon: Users      },
 ];
 
 const STATUS_ORDER: LightStatus[] = ["verde", "amarelo", "vermelho", "critico"];
@@ -67,7 +68,7 @@ export function StatusLightsBar() {
         </Button>
       </PopoverTrigger>
 
-      <PopoverContent align="end" className="w-72 p-0 overflow-hidden">
+      <PopoverContent align="end" className="w-80 p-0 overflow-hidden">
         <div
           className="px-4 pt-3 pb-2 flex items-center justify-between"
           style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)" }}
@@ -84,7 +85,7 @@ export function StatusLightsBar() {
         </div>
 
         <div
-          className="px-4 py-4 grid grid-cols-4 gap-3"
+          className="px-4 py-4 grid grid-cols-5 gap-2"
           style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)" }}
         >
           {lights.map((light) => {
@@ -97,7 +98,7 @@ export function StatusLightsBar() {
                 data-testid={`status-light-${light.id}`}
               >
                 <div
-                  className={`w-12 h-12 rounded-full flex items-center justify-center ring-1 ring-white/10 ${light.status === "critico" ? "animate-pulse" : ""}`}
+                  className={`w-10 h-10 rounded-full flex items-center justify-center ring-1 ring-white/10 ${light.status === "critico" ? "animate-pulse" : ""}`}
                   style={{ backgroundColor: cfg.color, boxShadow: cfg.glow }}
                 >
                   <Icon className="w-5 h-5 text-white" />
