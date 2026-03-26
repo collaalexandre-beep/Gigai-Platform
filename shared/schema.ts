@@ -1159,6 +1159,13 @@ export const waBotConfig = pgTable("wa_bot_config", {
   welcomeMessage: text("welcome_message").notNull().default(""),
   cancelMessage: text("cancel_message").notNull().default(""),
   attendantMessage: text("attendant_message").notNull().default(""),
+  // ── Frota (fluxo de funcionários) ──────────────────────────
+  vehMsgNaoCadastrado: text("veh_msg_nao_cadastrado"),
+  vehMsgNaoAutorizado: text("veh_msg_nao_autorizado"),
+  vehMsgSemVeiculos: text("veh_msg_sem_veiculos"),
+  vehMsgCancelado: text("veh_msg_cancelado"),
+  vehMsgSaidaSucesso: text("veh_msg_saida_sucesso"),
+  vehMsgRetornoSucesso: text("veh_msg_retorno_sucesso"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 

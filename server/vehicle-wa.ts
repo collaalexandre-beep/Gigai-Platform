@@ -186,6 +186,15 @@ function buildAlertasMsgLine(alertasJson: string | null | undefined): string {
 
 // ─── MAIN HANDLER ─────────────────────────────────────────────────────────────
 
+export interface VehMessages {
+  naoCadastrado?: string | null;
+  naoAutorizado?: string | null;
+  semVeiculos?: string | null;
+  cancelado?: string | null;
+  saidaSucesso?: string | null;
+  retornoSucesso?: string | null;
+}
+
 export interface VehicleWaParams {
   from: string;
   rawBody: string;
@@ -194,6 +203,7 @@ export interface VehicleWaParams {
   mediaId?: string;
   session: WhatsappSession;
   token: string;
+  vehMessages?: VehMessages;
   reply: (
     msg: string,
     nextStep?: string,
@@ -205,7 +215,18 @@ export interface VehicleWaParams {
 export async function handleVehicleWaFlow(
   params: VehicleWaParams
 ): Promise<boolean> {
-  const { from, rawBody, msgNorm, msgType, mediaId, session, token, reply, updateSession } = params;
+  const { from, rawBody, msgNorm, msgType, mediaId, session, token, vehMessages = {}, reply, updateSession } = params;
+
+  const MSG_NAO_CADASTRADO = vehMessages.naoCadastrado ||
+    "⛔ Seu número não está vinculado a nenhum funcionário cadastrado no sistema.\n\nSolicite ao responsável que cadastre seu WhatsApp no perfil de vendedor/motorista do ERP.";
+  const MSG_NAO_AUTORIZADO = (nome: string) =>
+    vehMessages.naoAutorizado
+      ? vehMessages.naoAutorizado.replace("{nome}", nome)
+      : `⛔ Olá, *${nome}*! Você não está autorizado a retirar veículos da empresa.\n\nEntre em contato com o responsável para solicitar autorização.`;
+  const MSG_SEM_VEICULOS = vehMessages.semVeiculos ||
+    "😟 Não há veículos disponíveis no momento. Todos estão em manutenção ou inativos. Contate o responsável.";
+  const MSG_CANCELADO = vehMessages.cancelado ||
+    "✅ Registro cancelado. Quando precisar, envie *saída veículo* para recomeçar.";
   const step = session.step;
   const data = (session.data ?? {}) as Record<string, unknown>;
   const phone = from.replace(/\D/g, "");
@@ -222,11 +243,7 @@ export async function handleVehicleWaFlow(
     (msgNorm === "cancelar saida" || msgNorm === "cancelar saída" || msgNorm === "cancelar")
   ) {
     await updateSession({ step: "collecting", data: {} });
-    await reply(
-      "✅ Registro cancelado. Quando precisar, envie *saída veículo* para recomeçar.",
-      "collecting",
-      {}
-    );
+    await reply(MSG_CANCELADO, "collecting", {});
     return true;
   }
 
@@ -234,9 +251,7 @@ export async function handleVehicleWaFlow(
   if (!isVehStep && isReturnCmd) {
     const driver = await storage.getSellerByWhatsappNumber(phone);
     if (!driver) {
-      await reply(
-        "⛔ Seu número não está vinculado a nenhum funcionário cadastrado no sistema.\n\nSolicite ao responsável que cadastre seu WhatsApp no perfil de vendedor/motorista do ERP."
-      );
+      await reply(MSG_NAO_CADASTRADO);
       return true;
     }
 
@@ -266,16 +281,12 @@ export async function handleVehicleWaFlow(
   if (!isVehStep && isExitCmd) {
     const driver = await storage.getSellerByWhatsappNumber(phone);
     if (!driver) {
-      await reply(
-        "⛔ Seu número não está vinculado a nenhum funcionário cadastrado no sistema.\n\nSolicite ao responsável que cadastre seu WhatsApp no perfil de vendedor/motorista do ERP."
-      );
+      await reply(MSG_NAO_CADASTRADO);
       return true;
     }
 
     if (!driver.autorizadoDirigir) {
-      await reply(
-        `⛔ Olá, *${driver.nomeCompleto}*! Você não está autorizado a retirar veículos da empresa.\n\nEntre em contato com o responsável para solicitar autorização.`
-      );
+      await reply(MSG_NAO_AUTORIZADO(driver.nomeCompleto));
       return true;
     }
 
@@ -294,9 +305,7 @@ export async function handleVehicleWaFlow(
 
     const allVehicles = await storage.getVehicles({ status: "ativo" });
     if (!allVehicles.length) {
-      await reply(
-        "😟 Não há veículos disponíveis no momento. Todos estão em manutenção ou inativos. Contate o responsável."
-      );
+      await reply(MSG_SEM_VEICULOS);
       return true;
     }
 
@@ -506,16 +515,19 @@ export async function handleVehicleWaFlow(
       }
 
       const alertasTxt = formatAlerts(data.veh_aiAlerts as string);
-      await reply(
-        `✅ *Saída registrada com sucesso!*\n\n` +
+      const saidaSucessoMsg = vehMessages.saidaSucesso
+        ? vehMessages.saidaSucesso
+            .replace("{veiculo}", String(data.veh_vehicleModelo ?? ""))
+            .replace("{placa}", String(data.veh_vehiclePlaca ?? ""))
+            .replace("{km}", Number(data.veh_aiKm).toLocaleString("pt-BR"))
+            .replace("{combustivel}", FUEL_LABELS[data.veh_aiFuel as string] ?? String(data.veh_aiFuel ?? ""))
+        : `✅ *Saída registrada com sucesso!*\n\n` +
           `🚗 *${data.veh_vehicleModelo}* — Placa: ${data.veh_vehiclePlaca}\n` +
           `📏 KM: ${Number(data.veh_aiKm).toLocaleString("pt-BR")}\n` +
           `⛽ Combustível: ${FUEL_LABELS[data.veh_aiFuel as string] ?? data.veh_aiFuel}\n` +
           `${alertasTxt ? `⚠️ Alertas: ${alertasTxt}\n` : ""}` +
-          `\nAo retornar, envie *retornei*. Boa viagem! 🛣️`,
-        "collecting",
-        {}
-      );
+          `\nAo retornar, envie *retornei*. Boa viagem! 🛣️`;
+      await reply(saidaSucessoMsg, "collecting", {});
       return true;
     }
 
@@ -580,15 +592,18 @@ export async function handleVehicleWaFlow(
       console.error("[VehicleWA] Erro ao salvar km/combustível manual inicial:", err);
     }
 
-    await reply(
-      `✅ *Saída registrada!*\n\n` +
+    const saidaManualMsg = vehMessages.saidaSucesso
+      ? vehMessages.saidaSucesso
+          .replace("{veiculo}", String(data.veh_vehicleModelo ?? ""))
+          .replace("{placa}", String(data.veh_vehiclePlaca ?? ""))
+          .replace("{km}", km.toLocaleString("pt-BR"))
+          .replace("{combustivel}", FUEL_LABELS[fuel])
+      : `✅ *Saída registrada!*\n\n` +
         `🚗 *${data.veh_vehicleModelo}* — Placa: ${data.veh_vehiclePlaca}\n` +
         `📏 KM: ${km.toLocaleString("pt-BR")}\n` +
         `⛽ Combustível: ${FUEL_LABELS[fuel]}\n` +
-        `\nAo retornar, envie *retornei*. Boa viagem! 🛣️`,
-      "collecting",
-      {}
-    );
+        `\nAo retornar, envie *retornei*. Boa viagem! 🛣️`;
+    await reply(saidaManualMsg, "collecting", {});
     return true;
   }
 
@@ -769,17 +784,21 @@ export async function handleVehicleWaFlow(
         ? `\n📏 KM percorridos: ${(kmFinal - Number(data.veh_aiKm)).toLocaleString("pt-BR")} km`
         : "";
 
-      await reply(
-        `✅ *Retorno registrado com sucesso!*\n\n` +
+      const retornoSucessoMsg = vehMessages.retornoSucesso
+        ? vehMessages.retornoSucesso
+            .replace("{veiculo}", String(data.veh_vehicleModelo ?? ""))
+            .replace("{placa}", String(data.veh_vehiclePlaca ?? ""))
+            .replace("{km}", kmFinal ? Number(kmFinal).toLocaleString("pt-BR") : "-")
+            .replace("{combustivel}", fuelFinal ? FUEL_LABELS[fuelFinal] : "-")
+            .replace("{data}", dtRetorno)
+        : `✅ *Retorno registrado com sucesso!*\n\n` +
           `🕐 ${dtRetorno}\n` +
           `${kmFinal ? `📏 KM final: ${Number(kmFinal).toLocaleString("pt-BR")}\n` : ""}` +
           `${fuelFinal ? `⛽ Combustível: ${FUEL_LABELS[fuelFinal]}\n` : ""}` +
           kmPercMsg +
           `${observacoes ? `\n📝 Obs: ${observacoes}\n` : ""}` +
-          `\nObrigado! O uso do veículo foi registrado. 🚗`,
-        "collecting",
-        {}
-      );
+          `\nObrigado! O uso do veículo foi registrado. 🚗`;
+      await reply(retornoSucessoMsg, "collecting", {});
     } catch (err) {
       console.error("[VehicleWA] Erro ao finalizar saída:", err);
       await reply(

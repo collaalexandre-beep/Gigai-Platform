@@ -28,6 +28,12 @@ interface WaBotConfig {
   welcomeMessage: string;
   cancelMessage: string;
   attendantMessage: string;
+  vehMsgNaoCadastrado?: string | null;
+  vehMsgNaoAutorizado?: string | null;
+  vehMsgSemVeiculos?: string | null;
+  vehMsgCancelado?: string | null;
+  vehMsgSaidaSucesso?: string | null;
+  vehMsgRetornoSucesso?: string | null;
   updatedAt?: string;
 }
 
@@ -341,6 +347,129 @@ function BotConfigTab() {
           <p className="text-xs text-muted-foreground">
             {(form.systemPrompt ?? "").length} caracteres
           </p>
+        </CardContent>
+      </Card>
+
+      {/* Frota — mensagens do bot de funcionários */}
+      <Card className="border-blue-200 dark:border-blue-900">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">🚗 Frota — Bot de Funcionários</CardTitle>
+          <CardDescription className="text-xs">
+            Mensagens enviadas no fluxo de saída e retorno de veículos — usado internamente pelos motoristas via WhatsApp.
+            <br />Deixe em branco para usar o texto padrão do sistema.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="vehMsgNaoCadastrado" className="text-xs font-medium">
+              ⛔ Número não cadastrado
+              <span className="text-muted-foreground font-normal ml-1">— funcionário não localizado no sistema</span>
+            </Label>
+            <Textarea
+              id="vehMsgNaoCadastrado"
+              value={form.vehMsgNaoCadastrado ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, vehMsgNaoCadastrado: e.target.value }))}
+              rows={3}
+              className="text-sm font-mono resize-none"
+              placeholder="⛔ Seu número não está vinculado a nenhum funcionário cadastrado..."
+              data-testid="textarea-veh-nao-cadastrado"
+            />
+          </div>
+
+          <Separator />
+
+          <div className="space-y-1.5">
+            <Label htmlFor="vehMsgNaoAutorizado" className="text-xs font-medium">
+              🚫 Não autorizado a dirigir
+              <span className="text-muted-foreground font-normal ml-1">— use <code className="bg-muted px-1 rounded">{"{nome}"}</code> para o nome do funcionário</span>
+            </Label>
+            <Textarea
+              id="vehMsgNaoAutorizado"
+              value={form.vehMsgNaoAutorizado ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, vehMsgNaoAutorizado: e.target.value }))}
+              rows={3}
+              className="text-sm font-mono resize-none"
+              placeholder="⛔ Olá, {nome}! Você não está autorizado a retirar veículos..."
+              data-testid="textarea-veh-nao-autorizado"
+            />
+          </div>
+
+          <Separator />
+
+          <div className="space-y-1.5">
+            <Label htmlFor="vehMsgSemVeiculos" className="text-xs font-medium">
+              😟 Sem veículos disponíveis
+              <span className="text-muted-foreground font-normal ml-1">— todos em manutenção ou inativos</span>
+            </Label>
+            <Textarea
+              id="vehMsgSemVeiculos"
+              value={form.vehMsgSemVeiculos ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, vehMsgSemVeiculos: e.target.value }))}
+              rows={2}
+              className="text-sm font-mono resize-none"
+              placeholder="😟 Não há veículos disponíveis no momento..."
+              data-testid="textarea-veh-sem-veiculos"
+            />
+          </div>
+
+          <Separator />
+
+          <div className="space-y-1.5">
+            <Label htmlFor="vehMsgCancelado" className="text-xs font-medium">
+              ✅ Registro cancelado
+              <span className="text-muted-foreground font-normal ml-1">— ao digitar "cancelar" durante o fluxo</span>
+            </Label>
+            <Textarea
+              id="vehMsgCancelado"
+              value={form.vehMsgCancelado ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, vehMsgCancelado: e.target.value }))}
+              rows={2}
+              className="text-sm font-mono resize-none"
+              placeholder="✅ Registro cancelado. Quando precisar, envie *saída veículo* para recomeçar."
+              data-testid="textarea-veh-cancelado"
+            />
+          </div>
+
+          <Separator />
+
+          <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground space-y-1">
+            <p className="font-semibold text-foreground">📋 Placeholders para mensagens de sucesso:</p>
+            <p><code className="bg-background px-1 rounded">{"{veiculo}"}</code> — Marca e modelo (ex: Ford Ka)</p>
+            <p><code className="bg-background px-1 rounded">{"{placa}"}</code> — Placa do veículo (ex: ABC-1234)</p>
+            <p><code className="bg-background px-1 rounded">{"{km}"}</code> — KM do odômetro</p>
+            <p><code className="bg-background px-1 rounded">{"{combustivel}"}</code> — Nível de combustível (ex: 3/4)</p>
+            <p><code className="bg-background px-1 rounded">{"{data}"}</code> — Data e hora do retorno (apenas na mensagem de retorno)</p>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="vehMsgSaidaSucesso" className="text-xs font-medium">
+              🚗 Saída registrada com sucesso
+            </Label>
+            <Textarea
+              id="vehMsgSaidaSucesso"
+              value={form.vehMsgSaidaSucesso ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, vehMsgSaidaSucesso: e.target.value }))}
+              rows={4}
+              className="text-sm font-mono resize-none"
+              placeholder={"✅ *Saída registrada!*\n\n🚗 *{veiculo}* — Placa: {placa}\n📏 KM: {km}\n⛽ Combustível: {combustivel}\n\nAo retornar, envie *retornei*. Boa viagem! 🛣️"}
+              data-testid="textarea-veh-saida-sucesso"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="vehMsgRetornoSucesso" className="text-xs font-medium">
+              🏠 Retorno registrado com sucesso
+            </Label>
+            <Textarea
+              id="vehMsgRetornoSucesso"
+              value={form.vehMsgRetornoSucesso ?? ""}
+              onChange={(e) => setForm((f) => ({ ...f, vehMsgRetornoSucesso: e.target.value }))}
+              rows={4}
+              className="text-sm font-mono resize-none"
+              placeholder={"✅ *Retorno registrado!*\n\n🕐 {data}\n📏 KM final: {km}\n⛽ Combustível: {combustivel}\n\nObrigado! O uso do veículo foi registrado. 🚗"}
+              data-testid="textarea-veh-retorno-sucesso"
+            />
+          </div>
         </CardContent>
       </Card>
 

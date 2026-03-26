@@ -1511,6 +1511,14 @@ Responda SOMENTE com JSON válido:
       const cfgWelcomeMsg = botCfg?.welcomeMessage || DEFAULT_WELCOME_MSG;
       const cfgCancelMsg = botCfg?.cancelMessage || DEFAULT_CANCEL_MSG;
       const cfgAttendantMsg = botCfg?.attendantMessage || DEFAULT_ATTENDANT_MSG;
+      const cfgVehMessages = {
+        naoCadastrado: botCfg?.vehMsgNaoCadastrado || null,
+        naoAutorizado: botCfg?.vehMsgNaoAutorizado || null,
+        semVeiculos: botCfg?.vehMsgSemVeiculos || null,
+        cancelado: botCfg?.vehMsgCancelado || null,
+        saidaSucesso: botCfg?.vehMsgSaidaSucesso || null,
+        retornoSucesso: botCfg?.vehMsgRetornoSucesso || null,
+      };
 
       for (const entry of body.entry ?? []) {
         for (const change of entry.changes ?? []) {
@@ -1563,6 +1571,7 @@ Responda SOMENTE com JSON válido:
               mediaId,
               session,
               token: getMetaToken(),
+              vehMessages: cfgVehMessages,
               reply,
               updateSession,
             });
@@ -1802,8 +1811,20 @@ Responda SOMENTE com JSON válido:
 
   app.put("/api/whatsapp/config", async (req: Request, res: Response) => {
     try {
-      const { nomeBot, nomeEmpresa, systemPrompt, welcomeMessage, cancelMessage, attendantMessage } = req.body;
-      const cfg = await storage.upsertWaBotConfig({ nomeBot, nomeEmpresa, systemPrompt, welcomeMessage, cancelMessage, attendantMessage });
+      const {
+        nomeBot, nomeEmpresa, systemPrompt, welcomeMessage, cancelMessage, attendantMessage,
+        vehMsgNaoCadastrado, vehMsgNaoAutorizado, vehMsgSemVeiculos,
+        vehMsgCancelado, vehMsgSaidaSucesso, vehMsgRetornoSucesso,
+      } = req.body;
+      const cfg = await storage.upsertWaBotConfig({
+        nomeBot, nomeEmpresa, systemPrompt, welcomeMessage, cancelMessage, attendantMessage,
+        vehMsgNaoCadastrado: vehMsgNaoCadastrado || null,
+        vehMsgNaoAutorizado: vehMsgNaoAutorizado || null,
+        vehMsgSemVeiculos: vehMsgSemVeiculos || null,
+        vehMsgCancelado: vehMsgCancelado || null,
+        vehMsgSaidaSucesso: vehMsgSaidaSucesso || null,
+        vehMsgRetornoSucesso: vehMsgRetornoSucesso || null,
+      });
       res.json(cfg);
     } catch (err) { handleError(res, err); }
   });
