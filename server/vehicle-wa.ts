@@ -779,6 +779,14 @@ export async function handleVehicleWaFlow(
         } : {}),
       } as any);
 
+      // Atualiza km_atual no cadastro do veículo com o km do retorno
+      if (kmFinal != null) {
+        const vehicleId = data.veh_vehicleId as string | undefined;
+        if (vehicleId) {
+          await storage.updateVehicle(vehicleId, { kmAtual: String(kmFinal) });
+        }
+      }
+
       const dtRetorno = new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
       const kmPercMsg = kmFinal && (data.veh_aiKm as number)
         ? `\n📏 KM percorridos: ${(kmFinal - Number(data.veh_aiKm)).toLocaleString("pt-BR")} km`
