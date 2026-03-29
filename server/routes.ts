@@ -1225,6 +1225,7 @@ export async function registerRoutes(
       console.warn("[WhatsApp] META_WHATSAPP_TOKEN ou phone_number_id não configurado — mensagem não enviada.");
       return;
     }
+    console.log("[WhatsApp] Enviando mensagem via Meta API:", { phoneNumberId, to, bodyPreview: body.slice(0, 80) });
     const resp = await fetch(`${META_API_URL}/${phoneNumberId}/messages`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
@@ -1238,7 +1239,16 @@ export async function registerRoutes(
     });
     if (!resp.ok) {
       const err = await resp.text();
-      console.error("[WhatsApp] Erro ao enviar via Meta API:", err);
+      console.error("[WhatsApp] Erro ao enviar via Meta API:", { phoneNumberId, to, status: resp.status, err });
+    } else {
+      let wamid = "(sem wamid)";
+      try {
+        const result = await resp.json() as { messages?: { id: string }[] };
+        wamid = result?.messages?.[0]?.id ?? "(sem wamid)";
+      } catch {
+        // Meta returned non-JSON on success — not critical
+      }
+      console.log("[WhatsApp] Mensagem enviada com sucesso:", { phoneNumberId, to, wamid });
     }
   }
 
@@ -1537,6 +1547,8 @@ Responda SOMENTE com JSON válido:
             const msgNorm = rawBody.toLowerCase().replace(/[^a-z0-9çãáéíóúâêîôûàèìòùü ]/g, "").trim();
             console.log("[WhatsApp] Mensagem recebida", { from, type: msgType, body: rawBody || "(image)" });
 
+            console.log("[WhatsApp] Processando mensagem:", { from, phoneNumberId, step: "início" });
+
             const fromKey = `meta:${from}`;
             let session = await storage.getWhatsappSession(fromKey);
             if (!session) session = await storage.createWhatsappSession(fromKey);
@@ -1563,18 +1575,23 @@ Responda SOMENTE com JSON válido:
             };
 
             // ── VEHICLE FLOW (internal employees) ─────────────────────────────
-            const vehicleHandled = await handleVehicleWaFlow({
-              from,
-              rawBody,
-              msgNorm,
-              msgType,
-              mediaId,
-              session,
-              token: getMetaToken(),
-              vehMessages: cfgVehMessages,
-              reply,
-              updateSession,
-            });
+            let vehicleHandled = false;
+            try {
+              vehicleHandled = await handleVehicleWaFlow({
+                from,
+                rawBody,
+                msgNorm,
+                msgType,
+                mediaId,
+                session,
+                token: getMetaToken(),
+                vehMessages: cfgVehMessages,
+                reply,
+                updateSession,
+              });
+            } catch (vehErr) {
+              console.error("[WhatsApp] Erro em handleVehicleWaFlow:", { from, msgNorm, err: vehErr });
+            }
             if (vehicleHandled) continue;
 
             if (msgNorm === "cancelar" || msgNorm === "sair") {
