@@ -105,6 +105,27 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+      subscribeWabaWebhook();
     },
   );
 })();
+
+async function subscribeWabaWebhook() {
+  const token = process.env.META_WHATSAPP_TOKEN;
+  const wabaId = process.env.META_WABA_ID;
+  if (!token || !wabaId) return;
+  try {
+    const resp = await fetch(`https://graph.facebook.com/v18.0/${wabaId}/subscribed_apps`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await resp.json() as any;
+    if (data.success) {
+      console.log("[WhatsApp] Assinatura WABA renovada com sucesso.");
+    } else {
+      console.warn("[WhatsApp] Falha ao renovar assinatura WABA:", data);
+    }
+  } catch (err) {
+    console.warn("[WhatsApp] Erro ao renovar assinatura WABA:", err);
+  }
+}
