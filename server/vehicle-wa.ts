@@ -73,7 +73,7 @@ export function isVehicleExitCommand(msgNorm: string): boolean {
 }
 
 export function isVehicleReturnCommand(msgNorm: string): boolean {
-  const exact = ["retornei", "voltei", "cheguei"];
+  const exact = ["retornei", "voltei", "cheguei", "devolvi"];
   if (exact.includes(msgNorm)) return true;
   const veiculo =
     msgNorm.includes("veiculo") ||
@@ -154,6 +154,8 @@ function formatVehicleList(list: Vehicle[]): string {
 function parseVehicleSelection(rawBody: string, list: Vehicle[]): Vehicle | null {
   const num = parseInt(rawBody.trim());
   if (!isNaN(num) && num >= 1 && num <= list.length) return list[num - 1];
+  const byInternal = list.find((v) => v.numeroInterno != null && String(v.numeroInterno) === rawBody.trim());
+  if (byInternal) return byInternal;
 
   const plateNorm = rawBody.replace(/[\s\-\.]/g, "").toUpperCase();
   const byPlate = list.find(
@@ -232,8 +234,8 @@ export async function handleVehicleWaFlow(
   const phone = from.replace(/\D/g, "");
 
   const isVehStep = step.startsWith("veh_");
-  const isExitCmd = isVehicleExitCommand(msgNorm);
-  const isReturnCmd = isVehicleReturnCommand(msgNorm);
+  const isExitCmd = isVehicleExitCommand(msgNorm) || msgNorm.includes("retirar carro") || msgNorm.includes("retirar veículo") || msgNorm.includes("retirar veiculo");
+  const isReturnCmd = isVehicleReturnCommand(msgNorm) || msgNorm.includes("retornei") || msgNorm.includes("devolvi");
 
   if (!isVehStep && !isExitCmd && !isReturnCmd) return false;
 
@@ -320,7 +322,7 @@ export async function handleVehicleWaFlow(
     await reply(
       `🚗 Olá, *${driver.nomeCompleto}*! Vou registrar sua saída de veículo.\n\n` +
         `Veículos disponíveis:\n${formatVehicleList(allVehicles)}\n\n` +
-        `Qual veículo você vai utilizar? Envie o *número* da lista ou a *placa*.`,
+        `Envie a *foto do painel* ou digite *retirar carro* + número do veículo.`,
       VEH_STEPS.ESCOLHER_VEICULO,
       { veh_driverId: driver.id, veh_driverName: driver.nomeCompleto, veh_vehicleList: vehicleListData }
     );
@@ -333,7 +335,7 @@ export async function handleVehicleWaFlow(
     const selected = parseVehicleSelection(rawBody, allVehicles);
     if (!selected) {
       await reply(
-        `⚠️ Não reconheci o veículo. Por favor, envie o *número* da lista ou a *placa*:\n\n${formatVehicleList(allVehicles)}`
+        `⚠️ Não reconheci o veículo. Envie o *número interno* do painel, a *placa* ou *retirar carro* + número:\n\n${formatVehicleList(allVehicles)}`
       );
       return true;
     }
@@ -414,7 +416,7 @@ export async function handleVehicleWaFlow(
   if (step === VEH_STEPS.AGUARDANDO_FOTO_SAIDA) {
     if (msgType !== "image" || !mediaId) {
       await reply(
-        `📸 Por favor, envie uma *foto do painel* do veículo para registrar a saída.\n\n_Se preferir cancelar, envie *cancelar*._`
+        `📸 Por favor, envie uma *foto do painel* do veículo para registrar a saída.\n\n_Se preferir, digite *retirar carro* + número do veículo ou envie *cancelar*._`
       );
       return true;
     }
@@ -611,7 +613,7 @@ export async function handleVehicleWaFlow(
   if (step === VEH_STEPS.RETORNO_FOTO) {
     if (msgType !== "image" || !mediaId) {
       await reply(
-        `📸 Por favor, envie a *foto do painel* do veículo para registrar o retorno.\n\n_Se preferir cancelar, envie *cancelar*._`
+        `📸 Por favor, envie a *foto do painel* do veículo para registrar o retorno.\n\n_Se preferir, digite *retornei* + número do veículo ou envie *cancelar*._`
       );
       return true;
     }

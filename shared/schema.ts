@@ -1069,6 +1069,7 @@ export const vehicles = pgTable(
   {
     id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
     placa: text("placa").notNull().unique(),
+    numeroInterno: integer("numero_interno"),
     modelo: text("modelo").notNull(),
     marca: text("marca").notNull(),
     ano: integer("ano"),

@@ -1429,6 +1429,7 @@ export class DatabaseStorage implements IStorage {
         ilike(vehicles.placa, `%${params.search}%`),
         ilike(vehicles.modelo, `%${params.search}%`),
         ilike(vehicles.marca, `%${params.search}%`),
+        ilike(vehicles.numeroInterno, `%${params.search}%`),
       ));
     }
     return db.select().from(vehicles)
