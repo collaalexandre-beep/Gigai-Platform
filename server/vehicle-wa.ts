@@ -330,7 +330,7 @@ export async function handleVehicleWaFlow(params: VehicleWaParams): Promise<bool
         dataHoraRetorno: new Date() as any,
         kmFinal: String(km) as any,
         kmPercorridos: kmPercorridos != null ? String(kmPercorridos) as any : undefined,
-        status: "retornado",
+        status: "finalizada",
       });
       await storage.updateVehicle(vehicleId, { kmAtual: String(km) as any });
     } catch (err) {
