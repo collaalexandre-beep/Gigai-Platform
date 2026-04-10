@@ -297,6 +297,7 @@ export interface IStorage {
   createVehicleExit(data: InsertVehicleExit): Promise<VehicleExit>;
   updateVehicleExit(id: string, data: Partial<InsertVehicleExit>): Promise<VehicleExit | undefined>;
   getOpenVehicleExitByDriver(driverId: string): Promise<(VehicleExit & { vehicle: Vehicle; driver: { id: string; nomeCompleto: string } }) | undefined>;
+  getOpenVehicleExitByVehicle(vehicleId: string): Promise<(VehicleExit & { vehicle: Vehicle; driver: { id: string; nomeCompleto: string } }) | undefined>;
 
   // WaBotConfig
   getWaBotConfig(): Promise<WaBotConfig | undefined>;
@@ -1535,6 +1536,29 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(vehicleExits.driverId, driverId),
+          eq(vehicleExits.status, "em_rota")
+        )
+      )
+      .orderBy(desc(vehicleExits.dataHoraSaida))
+      .limit(1);
+    if (!r) return undefined;
+    return { ...r.exit, vehicle: r.vehicle, driver: { id: r.driverId, nomeCompleto: r.driverName } };
+  }
+
+  async getOpenVehicleExitByVehicle(vehicleId: string): Promise<(VehicleExit & { vehicle: Vehicle; driver: { id: string; nomeCompleto: string } }) | undefined> {
+    const [r] = await db
+      .select({
+        exit: vehicleExits,
+        vehicle: vehicles,
+        driverName: sellers.nomeCompleto,
+        driverId: sellers.id,
+      })
+      .from(vehicleExits)
+      .innerJoin(vehicles, eq(vehicleExits.vehicleId, vehicles.id))
+      .innerJoin(sellers, eq(vehicleExits.driverId, sellers.id))
+      .where(
+        and(
+          eq(vehicleExits.vehicleId, vehicleId),
           eq(vehicleExits.status, "em_rota")
         )
       )

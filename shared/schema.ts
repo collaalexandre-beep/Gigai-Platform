@@ -1079,6 +1079,7 @@ export const vehicles = pgTable(
     consumoMedioKmL: decimal("consumo_medio_km_l", { precision: 6, scale: 2 }),
     status: vehicleStatusEnum("status").notNull().default("ativo"),
     observacoes: text("observacoes"),
+    ocorrenciaAberta: boolean("ocorrencia_aberta").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

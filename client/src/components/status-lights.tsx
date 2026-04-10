@@ -1,6 +1,9 @@
 import { DollarSign, Factory, Package, Truck, Users } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import type { Vehicle } from "@shared/schema";
 
 export type LightStatus = "verde" | "amarelo" | "vermelho" | "critico";
 
@@ -8,6 +11,7 @@ export interface StatusLight {
   id: string;
   label: string;
   status: LightStatus;
+  detail?: string;
   icon: React.ElementType;
 }
 
@@ -17,14 +21,6 @@ export const STATUS_CONFIG: Record<LightStatus, { color: string; glow: string; d
   vermelho: { color: "#ef4444", glow: "0 0 8px 2px rgba(239,68,68,0.85)",  dotClass: "bg-red-500",    label: "Urgente",  textClass: "text-red-400" },
   critico:  { color: "#a855f7", glow: "0 0 10px 3px rgba(168,85,247,0.9)", dotClass: "bg-purple-500", label: "Crítico",  textClass: "text-purple-400" },
 };
-
-export const STATUS_LIGHTS: StatusLight[] = [
-  { id: "financeiro", label: "Financeiro", status: "verde", icon: DollarSign },
-  { id: "producao",   label: "Produção",   status: "verde", icon: Factory    },
-  { id: "estoque",    label: "Estoque",    status: "verde", icon: Package    },
-  { id: "veiculos",   label: "Veículos",   status: "verde", icon: Truck      },
-  { id: "equipe",     label: "Equipe",     status: "verde", icon: Users      },
-];
 
 const STATUS_ORDER: LightStatus[] = ["verde", "amarelo", "vermelho", "critico"];
 
@@ -36,7 +32,29 @@ function worstStatus(lights: StatusLight[]): LightStatus {
 }
 
 export function StatusLightsBar() {
-  const lights = STATUS_LIGHTS;
+  const { data: vehicles = [] } = useQuery<Vehicle[]>({
+    queryKey: ["/api/vehicles"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/vehicles");
+      return res.json();
+    },
+    refetchInterval: 60_000,
+  });
+
+  const ocorrenciasAbertas = vehicles.filter(v => v.ocorrenciaAberta);
+  const veiculoStatus: LightStatus = ocorrenciasAbertas.length > 0 ? "vermelho" : "verde";
+  const veiculoDetail = ocorrenciasAbertas.length > 0
+    ? `${ocorrenciasAbertas.length} ocorrência${ocorrenciasAbertas.length > 1 ? "s" : ""} em aberto`
+    : undefined;
+
+  const lights: StatusLight[] = [
+    { id: "financeiro", label: "Financeiro", status: "verde", icon: DollarSign },
+    { id: "producao",   label: "Produção",   status: "verde", icon: Factory    },
+    { id: "estoque",    label: "Estoque",    status: "verde", icon: Package    },
+    { id: "veiculos",   label: "Veículos",   status: veiculoStatus, detail: veiculoDetail, icon: Truck },
+    { id: "equipe",     label: "Equipe",     status: "verde", icon: Users      },
+  ];
+
   const worst = worstStatus(lights);
   const hasAlert = worst !== "verde";
 
@@ -82,6 +100,9 @@ export function StatusLightsBar() {
           {!hasAlert && (
             <span className="text-[10px] text-green-400 font-medium">Tudo normal</span>
           )}
+          {hasAlert && (
+            <span className="text-[10px] text-red-400 font-medium">Há alertas</span>
+          )}
         </div>
 
         <div
@@ -96,6 +117,7 @@ export function StatusLightsBar() {
                 key={light.id}
                 className="flex flex-col items-center gap-2"
                 data-testid={`status-light-${light.id}`}
+                title={light.detail}
               >
                 <div
                   className={`w-10 h-10 rounded-full flex items-center justify-center ring-1 ring-white/10 ${light.status === "critico" ? "animate-pulse" : ""}`}
@@ -106,6 +128,9 @@ export function StatusLightsBar() {
                 <div className="text-center">
                   <p className="text-[11px] font-semibold text-white leading-tight">{light.label}</p>
                   <p className={`text-[10px] font-medium ${cfg.textClass}`}>{cfg.label}</p>
+                  {light.detail && (
+                    <p className="text-[9px] text-red-300 leading-tight mt-0.5">{light.detail}</p>
+                  )}
                 </div>
               </div>
             );

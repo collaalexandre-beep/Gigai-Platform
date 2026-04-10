@@ -2138,6 +2138,14 @@ Responda SOMENTE com JSON válido:
     } catch (err) { handleError(res, err); }
   });
 
+  app.post("/api/vehicles/:id/resolver-ocorrencia", async (req: Request, res: Response) => {
+    try {
+      const vehicle = await storage.updateVehicle(getParam(req, "id"), { ocorrenciaAberta: false } as any);
+      if (!vehicle) return res.status(404).json({ message: "Veículo não encontrado" });
+      res.json(vehicle);
+    } catch (err) { handleError(res, err); }
+  });
+
   // ─── VEHICLE EXITS ──────────────────────────────────────────────────────────
 
   app.get("/api/vehicle-exits", async (req: Request, res: Response) => {

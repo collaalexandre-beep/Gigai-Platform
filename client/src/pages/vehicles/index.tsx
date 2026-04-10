@@ -4,11 +4,10 @@ import { Link } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Car, Fuel, Settings, AlertTriangle } from "lucide-react";
+import { Plus, Search, Car, Fuel, Settings, AlertTriangle, CheckCircle2 } from "lucide-react";
 import type { Vehicle } from "@shared/schema";
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -18,13 +17,8 @@ const STATUS_LABELS: Record<string, { label: string; color: string }> = {
 };
 
 const FUEL_LABELS: Record<string, string> = {
-  gasolina: "Gasolina",
-  etanol: "Etanol",
-  diesel: "Diesel",
-  flex: "Flex",
-  gnv: "GNV",
-  eletrico: "Elétrico",
-  hibrido: "Híbrido",
+  gasolina: "Gasolina", etanol: "Etanol", diesel: "Diesel",
+  flex: "Flex", gnv: "GNV", eletrico: "Elétrico", hibrido: "Híbrido",
 };
 
 export default function VehiclesPage() {
@@ -43,16 +37,16 @@ export default function VehiclesPage() {
     },
   });
 
-  const updateStatusMut = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      const res = await apiRequest("PATCH", `/api/vehicles/${id}`, { status });
+  const resolverMut = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/vehicles/${id}/resolver-ocorrencia`);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
-      toast({ title: "Status atualizado" });
+      toast({ title: "Ocorrência resolvida", description: "O sinal voltou para verde." });
     },
-    onError: () => toast({ title: "Erro ao atualizar", variant: "destructive" }),
+    onError: () => toast({ title: "Erro ao resolver ocorrência", variant: "destructive" }),
   });
 
   return (
@@ -124,19 +118,52 @@ export default function VehiclesPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {vehicles.map((v) => {
             const statusInfo = STATUS_LABELS[v.status] ?? STATUS_LABELS.ativo;
+            const temOcorrencia = v.ocorrenciaAberta;
             return (
-              <Card key={v.id} className="hover:shadow-md transition-shadow" data-testid={`card-vehicle-${v.id}`}>
+              <Card
+                key={v.id}
+                className={`hover:shadow-md transition-shadow ${temOcorrencia ? "border-red-400 dark:border-red-600 shadow-red-100 dark:shadow-red-950/20" : ""}`}
+                data-testid={`card-vehicle-${v.id}`}
+              >
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <CardTitle className="text-base font-semibold">{v.marca} {v.modelo}</CardTitle>
-                      <p className="text-xs text-muted-foreground mt-0.5">{v.ano} · {v.cor}</p>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {/* Sinal luminoso: verde normal, vermelho com ocorrência */}
+                      <span
+                        className={`flex-shrink-0 w-3 h-3 rounded-full shadow-sm ${temOcorrencia ? "bg-red-500 shadow-red-300" : "bg-green-500 shadow-green-300"}`}
+                        title={temOcorrencia ? "Ocorrência em aberto" : "Sem ocorrências"}
+                        data-testid={`status-light-${v.id}`}
+                      />
+                      <div className="min-w-0">
+                        <CardTitle className="text-base font-semibold truncate">{v.marca} {v.modelo}</CardTitle>
+                        <p className="text-xs text-muted-foreground mt-0.5">{v.ano} · {v.cor}</p>
+                      </div>
                     </div>
-                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusInfo.color}`}>
+                    <span className={`flex-shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${statusInfo.color}`}>
                       {statusInfo.label}
                     </span>
                   </div>
+
+                  {/* Banner de ocorrência */}
+                  {temOcorrencia && (
+                    <div className="flex items-center gap-2 mt-2 px-2 py-1.5 bg-red-50 dark:bg-red-950/30 rounded-md border border-red-200 dark:border-red-800">
+                      <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                      <span className="text-xs text-red-700 dark:text-red-400 font-medium flex-1">Ocorrência em aberto</span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 px-2 text-xs text-red-700 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30"
+                        onClick={() => resolverMut.mutate(v.id)}
+                        disabled={resolverMut.isPending}
+                        data-testid={`button-resolver-ocorrencia-${v.id}`}
+                      >
+                        <CheckCircle2 className="w-3 h-3 mr-1" />
+                        Resolver
+                      </Button>
+                    </div>
+                  )}
                 </CardHeader>
+
                 <CardContent className="space-y-2">
                   <div className="flex items-center gap-4 text-sm">
                     <span className="font-mono font-semibold text-primary bg-primary/10 px-2 py-0.5 rounded">
@@ -169,12 +196,7 @@ export default function VehiclesPage() {
                       </Link>
                     </Button>
                     {v.status !== "inativo" && (
-                      <Button
-                        size="sm"
-                        variant="default"
-                        className="flex-1"
-                        asChild
-                      >
+                      <Button size="sm" variant="default" className="flex-1" asChild>
                         <Link href={`/vehicles/exits/new?vehicleId=${v.id}`} data-testid={`button-exit-vehicle-${v.id}`}>
                           <Car className="w-3.5 h-3.5 mr-1" />
                           Saída
