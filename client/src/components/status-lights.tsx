@@ -38,7 +38,10 @@ export function StatusLightsBar() {
       const res = await apiRequest("GET", "/api/vehicles");
       return res.json();
     },
-    refetchInterval: 60_000,
+    staleTime: 0,
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
 
   const ocorrenciasAbertas = vehicles.filter(v => v.ocorrenciaAberta);
