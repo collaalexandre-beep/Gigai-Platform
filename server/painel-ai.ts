@@ -24,6 +24,7 @@ export interface PainelAnalise {
   confiancaKm: number;
   confiancaCombustivel: number;
   confiancaGeral: number;
+  numeroVeiculo: number | null;
   raw: string;
   sucesso: boolean;
   erro?: string;
@@ -37,7 +38,8 @@ Analise a foto do painel/dashboard do veículo e retorne APENAS um JSON com o se
   "alertas": [<lista de strings com alertas/luzes de aviso visíveis no painel, em português>],
   "confiancaKm": <0 a 100, sua confiança na leitura do km>,
   "confiancaCombustivel": <0 a 100, sua confiança na leitura do combustível>,
-  "confiancaGeral": <0 a 100, confiança geral na análise>
+  "confiancaGeral": <0 a 100, confiança geral na análise>,
+  "numeroVeiculo": <número inteiro se houver adesivo/etiqueta/cartão com número do veículo visível no painel (ex: "1", "2", "CARRO 1", "VEI 2"), ou null se não houver>
 }
 
 REGRAS:
@@ -49,6 +51,7 @@ REGRAS:
   - tres_quartos = ~75% do tanque
   - cheio = tanque cheio ou acima de 7/8
 - Alertas: liste apenas os que você vê com clareza (luz do motor, pressão de pneus, bateria, airbag, ABS, temperatura, óleo, etc.)
+- numeroVeiculo: procure etiquetas, adesivos ou cartões com número de identificação do veículo (pode estar no painel, espelho retrovisor, viseira ou pára-sol). Retorne apenas o número inteiro (ex: 1, 2, 3), ou null se não encontrar.
 - Use confiança alta (>80) apenas quando os valores são claramente legíveis
 - Retorne APENAS o JSON, sem nenhum texto adicional ou markdown`;
 
@@ -70,6 +73,7 @@ export async function analisarPainelVeiculo(
     confiancaKm: 0,
     confiancaCombustivel: 0,
     confiancaGeral: 0,
+    numeroVeiculo: null,
     raw: "",
     sucesso: false,
   };
@@ -124,6 +128,7 @@ export async function analisarPainelVeiculo(
       confiancaKm: Math.min(100, Math.max(0, Number(parsed.confiancaKm ?? 0))),
       confiancaCombustivel: Math.min(100, Math.max(0, Number(parsed.confiancaCombustivel ?? 0))),
       confiancaGeral: Math.min(100, Math.max(0, Number(parsed.confiancaGeral ?? 0))),
+      numeroVeiculo: typeof parsed.numeroVeiculo === "number" ? Math.round(parsed.numeroVeiculo) : null,
       raw,
       sucesso: true,
     };

@@ -43,32 +43,31 @@ export const VEH_STEP_LABELS: Record<string, string> = {
 
 // ─── COMMAND DETECTION ────────────────────────────────────────────────────────
 
+function stripAccents(s: string): string {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
 export function isVehicleExitCommand(msgNorm: string): boolean {
+  const s = stripAccents(msgNorm);
+
   const veiculo =
-    msgNorm.includes("veiculo") ||
-    msgNorm.includes("veículo") ||
-    msgNorm.includes("carro") ||
-    msgNorm.includes("moto") ||
-    msgNorm.includes("caminhao") ||
-    msgNorm.includes("caminhão") ||
-    msgNorm.includes("van") ||
-    msgNorm.includes("utilitario") ||
-    msgNorm.includes("utilitário") ||
-    msgNorm.includes("picape") ||
-    msgNorm.includes("pickup");
+    s.includes("veiculo") || s.includes("carro") || s.includes("moto") ||
+    s.includes("caminhao") || s.includes("van") || s.includes("utilitario") ||
+    s.includes("picape") || s.includes("pickup");
 
   const saidaVerb =
-    msgNorm.includes("saida") ||
-    msgNorm.includes("saída") ||
-    msgNorm.includes("sair") ||    // "vou sair com o carro", "iria sair com um veículo"
-    msgNorm.includes("saindo");    // "estou saindo com o carro"
+    s.includes("saida") || s.includes("sair") || s.includes("saindo");
 
   const outraAcao =
-    (msgNorm.includes("retirar") || msgNorm.includes("retirada") || msgNorm.includes("pegar") || msgNorm.includes("usar")) && veiculo;
+    (s.includes("retirar") || s.includes("retirada") || s.includes("pegar") || s.includes("usar")) && veiculo;
 
   if (saidaVerb && veiculo) return true;
   if (outraAcao) return true;
-  if (msgNorm === "saida" || msgNorm === "saída") return true;
+  if (s === "saida") return true;
+
+  // Atalhos: "carro 1", "moto 2", "uno 1", "strada 2" etc.
+  if (/\b(carro|moto|caminhao|van|pickup|picape|uno|strada|saveiro|kombi|palio|siena|gol|onix|kwid|hb20|tracker|civic|corolla|hilux|ranger|s10|frontier|amarok)\s*\d+\b/.test(s)) return true;
+
   return false;
 }
 
@@ -146,31 +145,58 @@ function formatVehicleList(list: Vehicle[]): string {
   return list
     .map(
       (v, i) =>
-        `${i + 1}. *${v.marca} ${v.modelo}* — Placa: ${v.placa}${v.kmAtual ? ` (${Number(v.kmAtual).toFixed(0)} km)` : ""}`
+        `${v.numeroInterno ?? i + 1}. *${v.marca} ${v.modelo}* — Placa: ${v.placa}${v.kmAtual ? ` (${Number(v.kmAtual).toFixed(0)} km)` : ""}`
     )
     .join("\n");
 }
 
-function parseVehicleSelection(rawBody: string, list: Vehicle[]): Vehicle | null {
-  const num = parseInt(rawBody.trim());
-  if (!isNaN(num) && num >= 1 && num <= list.length) return list[num - 1];
-  const byInternal = list.find((v) => v.numeroInterno != null && String(v.numeroInterno) === rawBody.trim());
-  if (byInternal) return byInternal;
+/**
+ * Tenta identificar um veículo a partir de texto livre.
+ * Aceita: "carro 1", "uno 1", "1", "moto 2", modelo ou marca com ou sem número.
+ */
+function parseVehicleFromMsg(msgNorm: string, list: Vehicle[]): Vehicle | null {
+  const s = stripAccents(msgNorm.trim());
 
+  // Extrai o primeiro número da mensagem
+  const numMatch = s.match(/\b(\d+)\b/);
+  const num = numMatch ? parseInt(numMatch[1]) : null;
+
+  // Tenta por modelo ou marca (com ou sem número)
+  for (const v of list) {
+    const modelo = stripAccents(v.modelo);
+    const marca = stripAccents(v.marca);
+    if (s.includes(modelo) || s.includes(marca)) {
+      if (num != null) {
+        // Se tem número, prefere o veículo com numeroInterno igual
+        if (v.numeroInterno != null && v.numeroInterno === num) return v;
+        // Senão, ainda retorna esse veículo pelo modelo/marca
+        return v;
+      }
+      return v;
+    }
+  }
+
+  // Tenta por número interno do veículo
+  if (num != null) {
+    const byInternal = list.find((v) => v.numeroInterno != null && v.numeroInterno === num);
+    if (byInternal) return byInternal;
+    // Tenta por posição na lista (1-based)
+    if (num >= 1 && num <= list.length) return list[num - 1];
+  }
+
+  return null;
+}
+
+function parseVehicleSelection(rawBody: string, list: Vehicle[]): Vehicle | null {
+  // Tenta por placa primeiro (exata)
   const plateNorm = rawBody.replace(/[\s\-\.]/g, "").toUpperCase();
   const byPlate = list.find(
     (v) => v.placa.replace(/[\s\-\.]/g, "").toUpperCase() === plateNorm
   );
   if (byPlate) return byPlate;
 
-  const lower = rawBody.toLowerCase();
-  return (
-    list.find(
-      (v) =>
-        lower.includes(v.modelo.toLowerCase()) ||
-        lower.includes(v.marca.toLowerCase())
-    ) ?? null
-  );
+  // Tenta por texto livre (modelo, marca, número interno, índice)
+  return parseVehicleFromMsg(rawBody.toLowerCase(), list);
 }
 
 function parseKm(rawBody: string): number | null {
@@ -229,13 +255,110 @@ export async function handleVehicleWaFlow(
     "😟 Não há veículos disponíveis no momento. Todos estão em manutenção ou inativos. Contate o responsável.";
   const MSG_CANCELADO = vehMessages.cancelado ||
     "✅ Registro cancelado. Quando precisar, envie *saída veículo* para recomeçar.";
-  const step = session.step;
-  const data = (session.data ?? {}) as Record<string, unknown>;
+  let step = session.step;
+  let data = (session.data ?? {}) as Record<string, unknown>;
   const phone = from.replace(/\D/g, "");
 
   const isVehStep = step.startsWith("veh_");
-  const isExitCmd = isVehicleExitCommand(msgNorm) || msgNorm.includes("retirar carro") || msgNorm.includes("retirar veículo") || msgNorm.includes("retirar veiculo");
-  const isReturnCmd = isVehicleReturnCommand(msgNorm) || msgNorm.includes("retornei") || msgNorm.includes("devolvi");
+  const isExitCmd = isVehicleExitCommand(msgNorm);
+  const isReturnCmd = isVehicleReturnCommand(msgNorm);
+  const isImage = msgType === "image" && !!mediaId;
+
+  // ── FOTO ENVIADA POR MOTORISTA FORA DO FLUXO DE VEÍCULO ──────────────────
+  // Se o funcionário mandar uma foto diretamente (sem estar num step de veículo),
+  // redireciona automaticamente: retorno se tiver saída aberta, ou pede o veículo se não tiver.
+  if (!isVehStep && isImage) {
+    const driver = await storage.getSellerByWhatsappNumber(phone);
+    if (driver?.autorizadoDirigir) {
+      const openExit = await storage.getOpenVehicleExitByDriver(driver.id);
+      if (openExit) {
+        // Saída em aberto → encaminha para retorno; bot pede para reenviar a foto no estado correto
+        const dtSaida = new Date(openExit.dataHoraSaida).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+        await reply(
+          `🚗 Olá, *${driver.nomeCompleto}*! Identifiquei sua saída em aberto:\n\n` +
+          `*${openExit.vehicle.marca} ${openExit.vehicle.modelo}* — ${openExit.vehicle.placa}\n` +
+          `⏱️ Saída: ${dtSaida}\n\n` +
+          `📸 *Reenvie a foto do painel* para registrar o retorno.`,
+          VEH_STEPS.RETORNO_FOTO,
+          {
+            veh_exitId: openExit.id,
+            veh_vehicleId: openExit.vehicleId,
+            veh_vehiclePlaca: openExit.vehicle.placa,
+            veh_vehicleModelo: `${openExit.vehicle.marca} ${openExit.vehicle.modelo}`,
+            veh_driverId: driver.id,
+            veh_driverName: driver.nomeCompleto,
+          }
+        );
+        return true;
+      }
+      // Sem saída aberta → analisa foto para identificar veículo
+      if (!driver.autorizadoDirigir) {
+        await reply(MSG_NAO_AUTORIZADO(driver.nomeCompleto));
+        return true;
+      }
+      const allVehicles = await storage.getVehicles({ status: "ativo" });
+      if (!allVehicles.length) { await reply(MSG_SEM_VEICULOS); return true; }
+      await reply(`📸 Foto recebida! Analisando o painel para identificar o veículo... 🔍`);
+      const photoUrl = await downloadMetaMedia(mediaId!, token, from);
+      const analise = await analisarPainelVeiculo(photoUrl ?? "");
+      let foundVehicle: Vehicle | null = null;
+      if (analise.numeroVeiculo != null) {
+        foundVehicle = allVehicles.find(v => v.numeroInterno === analise.numeroVeiculo) ?? null;
+      }
+      if (foundVehicle) {
+        // Cria o exit record primeiro para ter o ID disponível
+        let newExitId: string | null = null;
+        try {
+          const newExit = await storage.createVehicleExit({
+            vehicleId: foundVehicle.id, driverId: driver.id,
+            dataHoraSaida: new Date(), kmInicial: null as any,
+            combustivelInicial: null as any, fotoInicialUrl: photoUrl,
+            motivoSaida: "Saída via WhatsApp", status: "em_rota",
+          });
+          newExitId = newExit.id;
+        } catch (err) {
+          console.error("[VehicleWA] Erro ao criar saída via foto direta:", err);
+        }
+        // Veículo identificado pela foto → vai direto para confirmação
+        await reply(
+          `🚗 Olá, *${driver.nomeCompleto}*!\n\n` +
+          `✅ Veículo identificado: *${foundVehicle.marca} ${foundVehicle.modelo}* — Placa: ${foundVehicle.placa}\n\n` +
+          `📏 KM: ${analise.km != null ? analise.km.toLocaleString("pt-BR") : "não lido"}\n` +
+          `⛽ Combustível: ${analise.combustivel ? FUEL_LABELS[analise.combustivel] : "não lido"}\n\n` +
+          `Os dados conferem? Responda *sim* para confirmar ou *não* para corrigir.`,
+          VEH_STEPS.CONFIRMANDO_LEITURA_INICIAL,
+          {
+            veh_exitId: newExitId,
+            veh_driverId: driver.id, veh_driverName: driver.nomeCompleto,
+            veh_vehicleId: foundVehicle.id, veh_vehiclePlaca: foundVehicle.placa,
+            veh_vehicleModelo: `${foundVehicle.marca} ${foundVehicle.modelo}`,
+            veh_orderId: null, veh_motivoSaida: "Saída via WhatsApp", veh_destino: null,
+            veh_fotoInicialUrl: photoUrl,
+            veh_aiKm: analise.km, veh_aiFuel: analise.combustivel,
+            veh_aiAlerts: JSON.stringify(analise.alertas),
+            veh_aiConfKm: analise.confiancaKm, veh_aiConfFuel: analise.confiancaCombustivel,
+            veh_aiRaw: analise.raw,
+          }
+        );
+        return true;
+      }
+      // Não identificou → pede o veículo com dados salvos para quando o usuário responder
+      await reply(
+        `📸 Analisei o painel, mas não consegui identificar o veículo automaticamente.\n\n` +
+        `Veículos disponíveis:\n${formatVehicleList(allVehicles)}\n\n` +
+        `Qual é o número do veículo? (ex: *1*, *carro 1*, *uno*)`,
+        VEH_STEPS.ESCOLHER_VEICULO,
+        {
+          veh_driverId: driver.id, veh_driverName: driver.nomeCompleto,
+          veh_pendingPhotoUrl: photoUrl,
+          veh_pendingKm: analise.km, veh_pendingFuel: analise.combustivel,
+          veh_pendingConfKm: analise.confiancaKm, veh_pendingConfFuel: analise.confiancaCombustivel,
+          veh_pendingAlerts: JSON.stringify(analise.alertas), veh_pendingRaw: analise.raw,
+        }
+      );
+      return true;
+    }
+  }
 
   if (!isVehStep && !isExitCmd && !isReturnCmd) return false;
 
@@ -311,18 +434,36 @@ export async function handleVehicleWaFlow(
       return true;
     }
 
+    // Tenta identificar o veículo na própria mensagem ("carro 1", "uno 1", etc.)
+    const vehicleFromMsg = parseVehicleFromMsg(msgNorm, allVehicles);
+    if (vehicleFromMsg) {
+      // Veículo identificado → pula direto para foto (sem perguntas de OS/motivo/destino)
+      await reply(
+        `🚗 Olá, *${driver.nomeCompleto}*!\n\n` +
+        `Veículo: *${vehicleFromMsg.marca} ${vehicleFromMsg.modelo}* — Placa: ${vehicleFromMsg.placa}\n\n` +
+        `📸 Envie a *foto do painel* para registrar KM e combustível.\n\n` +
+        `_Ou informe manualmente: ex. *41500 metade*_`,
+        VEH_STEPS.AGUARDANDO_FOTO_SAIDA,
+        {
+          veh_driverId: driver.id, veh_driverName: driver.nomeCompleto,
+          veh_vehicleId: vehicleFromMsg.id, veh_vehiclePlaca: vehicleFromMsg.placa,
+          veh_vehicleModelo: `${vehicleFromMsg.marca} ${vehicleFromMsg.modelo}`,
+          veh_orderId: null, veh_motivoSaida: "Saída via WhatsApp", veh_destino: null,
+        }
+      );
+      return true;
+    }
+
+    // Não identificou → mostra lista e pede escolha
     const vehicleListData = allVehicles.map((v) => ({
-      id: v.id,
-      placa: v.placa,
-      modelo: v.modelo,
-      marca: v.marca,
-      kmAtual: v.kmAtual,
+      id: v.id, placa: v.placa, modelo: v.modelo, marca: v.marca,
+      kmAtual: v.kmAtual, numeroInterno: v.numeroInterno,
     }));
 
     await reply(
       `🚗 Olá, *${driver.nomeCompleto}*! Vou registrar sua saída de veículo.\n\n` +
         `Veículos disponíveis:\n${formatVehicleList(allVehicles)}\n\n` +
-        `Envie a *foto do painel* ou digite *retirar carro* + número do veículo.`,
+        `Envie a *foto do painel* ou o *número* do veículo (ex: *1*, *carro 1*, *uno*).`,
       VEH_STEPS.ESCOLHER_VEICULO,
       { veh_driverId: driver.id, veh_driverName: driver.nomeCompleto, veh_vehicleList: vehicleListData }
     );
@@ -332,25 +473,67 @@ export async function handleVehicleWaFlow(
   // ── VEH STEP: ESCOLHER VEÍCULO ────────────────────────────────────────────
   if (step === VEH_STEPS.ESCOLHER_VEICULO) {
     const allVehicles = await storage.getVehicles({ status: "ativo" });
+
+    // Se veio de uma foto analisada com dados pendentes, pula diretamente para confirmação
+    const hasPendingPhoto = !!data.veh_pendingPhotoUrl;
+
     const selected = parseVehicleSelection(rawBody, allVehicles);
     if (!selected) {
       await reply(
-        `⚠️ Não reconheci o veículo. Envie o *número interno* do painel, a *placa* ou *retirar carro* + número:\n\n${formatVehicleList(allVehicles)}`
+        `⚠️ Não reconheci o veículo. Envie o *número* do veículo, a *placa* ou o *modelo*:\n\n${formatVehicleList(allVehicles)}`
       );
       return true;
     }
 
+    if (hasPendingPhoto) {
+      // Foto já foi analisada → usa os dados da análise para confirmação
+      const pendingKm = data.veh_pendingKm as number | null;
+      const pendingFuel = data.veh_pendingFuel as string | null;
+      // Cria exit record ANTES do reply para ter o ID disponível
+      let pendingExitId: string | null = null;
+      try {
+        const pendingExit = await storage.createVehicleExit({
+          vehicleId: selected.id, driverId: data.veh_driverId as string,
+          dataHoraSaida: new Date(), kmInicial: null as any,
+          combustivelInicial: null as any, fotoInicialUrl: data.veh_pendingPhotoUrl as string,
+          motivoSaida: "Saída via WhatsApp", status: "em_rota",
+        });
+        pendingExitId = pendingExit.id;
+      } catch (err) {
+        console.error("[VehicleWA] Erro ao criar saída via foto pendente:", err);
+      }
+      await reply(
+        `✅ Veículo selecionado: *${selected.marca} ${selected.modelo}* — Placa: *${selected.placa}*\n\n` +
+        `📏 KM: ${pendingKm != null ? pendingKm.toLocaleString("pt-BR") : "não lido"}\n` +
+        `⛽ Combustível: ${pendingFuel ? FUEL_LABELS[pendingFuel] : "não lido"}\n\n` +
+        `Os dados conferem? Responda *sim* para confirmar ou *não* para corrigir.`,
+        VEH_STEPS.CONFIRMANDO_LEITURA_INICIAL,
+        {
+          ...data,
+          veh_exitId: pendingExitId,
+          veh_vehicleId: selected.id, veh_vehiclePlaca: selected.placa,
+          veh_vehicleModelo: `${selected.marca} ${selected.modelo}`,
+          veh_orderId: null, veh_motivoSaida: "Saída via WhatsApp", veh_destino: null,
+          veh_fotoInicialUrl: data.veh_pendingPhotoUrl,
+          veh_aiKm: pendingKm, veh_aiFuel: pendingFuel,
+          veh_aiAlerts: data.veh_pendingAlerts, veh_aiConfKm: data.veh_pendingConfKm,
+          veh_aiConfFuel: data.veh_pendingConfFuel, veh_aiRaw: data.veh_pendingRaw,
+        }
+      );
+      return true;
+    }
+
+    // Sem foto pendente → pula OS/motivo/destino e vai direto para foto
     await reply(
       `✅ Veículo selecionado: *${selected.marca} ${selected.modelo}* — Placa: *${selected.placa}*\n\n` +
-        `📋 Você tem uma *Ordem de Serviço (OS)* para esta saída?\n` +
-        `• Envie o *número da OS* (ex: PED-2026-0001)\n` +
-        `• Ou envie *sem OS* se não houver`,
-      VEH_STEPS.AGUARDANDO_OS,
+        `📸 Envie a *foto do painel* para registrar KM e combustível.\n\n` +
+        `_Ou informe manualmente: ex. *41500 metade*_`,
+      VEH_STEPS.AGUARDANDO_FOTO_SAIDA,
       {
         ...data,
-        veh_vehicleId: selected.id,
-        veh_vehiclePlaca: selected.placa,
+        veh_vehicleId: selected.id, veh_vehiclePlaca: selected.placa,
         veh_vehicleModelo: `${selected.marca} ${selected.modelo}`,
+        veh_orderId: null, veh_motivoSaida: "Saída via WhatsApp", veh_destino: null,
       }
     );
     return true;
