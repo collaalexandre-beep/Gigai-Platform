@@ -2193,7 +2193,15 @@ Responda SOMENTE com JSON válido:
   app.patch("/api/vehicle-exits/:id", async (req: Request, res: Response) => {
     try {
       const id = getParam(req, "id");
-      let data = req.body;
+      let data = { ...req.body };
+
+      // Convert timestamp strings to Date objects for Drizzle
+      if (data.dataHoraRetorno && typeof data.dataHoraRetorno === "string") {
+        data.dataHoraRetorno = new Date(data.dataHoraRetorno);
+      }
+      if (data.dataHoraSaida && typeof data.dataHoraSaida === "string") {
+        data.dataHoraSaida = new Date(data.dataHoraSaida);
+      }
 
       // Auto-calculate km percorridos on return
       if (data.kmFinal != null && data.kmInicial != null) {
@@ -2208,10 +2216,16 @@ Responda SOMENTE com JSON válido:
       // Mark as finalizada when returning
       if (data.dataHoraRetorno && !data.status) data.status = "finalizada";
 
-      // Update vehicle km when finalizing
+      // Update vehicle km and occurrence flag when finalizing
       if (data.kmFinal && data.status === "finalizada") {
         const existing = await storage.getVehicleExit(id);
-        if (existing) await storage.updateVehicle(existing.vehicleId, { kmAtual: String(data.kmFinal) });
+        if (existing) {
+          const vehicleUpdate: Record<string, unknown> = { kmAtual: String(data.kmFinal) };
+          if (data.observacoesRetorno && String(data.observacoesRetorno).trim()) {
+            vehicleUpdate.ocorrenciaAberta = true;
+          }
+          await storage.updateVehicle(existing.vehicleId, vehicleUpdate as any);
+        }
       }
 
       const exit = await storage.updateVehicleExit(id, data);
