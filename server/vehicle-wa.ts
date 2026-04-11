@@ -96,6 +96,68 @@ function parseKm(rawBody: string): number | null {
   return isNaN(km) || km <= 0 ? null : km;
 }
 
+// ── Parse KM + OS(s) + Motivo numa única mensagem ─────────────────────────
+// Ex: "41500 OS 1234 e 5678 entrega de pedidos"
+// Ex: "41500" (só KM)
+// Ex: "41500 entrega ao cliente"
+// Ex: "41.500 OS 1234"
+function parseKmAndMotivo(rawBody: string): { km: number | null; motivo: string | null } {
+  let body = rawBody.trim();
+
+  // 1. Extrair OS(s): padrão "os" ou "o.s." + números separados por , / e &
+  const osNumbers: string[] = [];
+  const osRegex = /\bo\.?s\.?s?\s*[:\-]?\s*([\d]+(?:\s*(?:[,\/]|\s+e\s+|\s+&\s+|\s+and\s+)\s*\d+)*)/gi;
+  let osMatch: RegExpExecArray | null;
+  const osSpans: Array<[number, number]> = [];
+  while ((osMatch = osRegex.exec(body)) !== null) {
+    const nums = osMatch[1].match(/\d+/g) ?? [];
+    osNumbers.push(...nums);
+    osSpans.push([osMatch.index, osMatch.index + osMatch[0].length]);
+  }
+  // Remover OS do body (de trás pra frente)
+  let bodyWithoutOs = body;
+  for (let i = osSpans.length - 1; i >= 0; i--) {
+    const [s, e] = osSpans[i];
+    bodyWithoutOs = bodyWithoutOs.slice(0, s) + " " + bodyWithoutOs.slice(e);
+  }
+  bodyWithoutOs = bodyWithoutOs.trim();
+
+  // 2. Extrair KM: maior número no texto restante (KM costuma ser maior que nº de OS)
+  const allNums = bodyWithoutOs.match(/[\d\.]+/g) ?? [];
+  if (!allNums.length && osNumbers.length === 0) return { km: null, motivo: null };
+  if (!allNums.length) return { km: null, motivo: null };
+
+  let kmStr = "";
+  let kmVal = -1;
+  for (const n of allNums) {
+    const v = parseInt(n.replace(/\./g, ""), 10); // aceita 41.500
+    if (!isNaN(v) && v > kmVal) { kmVal = v; kmStr = n; }
+  }
+  if (kmVal < 10) return { km: null, motivo: null };
+
+  // 3. Motivo = tudo que sobra depois de tirar o KM
+  const bodyWithoutKm = bodyWithoutOs
+    .replace(new RegExp(kmStr.replace(/\./g, "\\."), ""), "")
+    .replace(/^\s*[,.\-:]+\s*/, "")
+    .replace(/\s*[,.\-:]+\s*$/, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  const motivoParts: string[] = [];
+  if (osNumbers.length > 0) motivoParts.push(`OS ${osNumbers.join(", ")}`);
+  if (bodyWithoutKm) motivoParts.push(bodyWithoutKm);
+
+  return { km: kmVal, motivo: motivoParts.length > 0 ? motivoParts.join(" — ") : null };
+}
+
+const PROMPT_KM_SAIDA =
+  `📏 Informe o *KM atual*, a(s) *OS* e/ou o *motivo da saída* — tudo numa única mensagem:\n\n` +
+  `_Exemplos:_\n` +
+  `• _41500 OS 1234_\n` +
+  `• _41500 OS 1234 e 5678 entrega de pedidos_\n` +
+  `• _41500 entrega ao cliente_\n` +
+  `• _41500_ _(só o KM, se preferir)_`;
+
 function isNao(msgNorm: string): boolean {
   return ["nao", "não", "n", "nope", "sem obs", "sem observacao", "sem observações", "sem observacoes", "nada", "ok", "tudo bem", "tudo certo", "tudo ok"].includes(msgNorm);
 }
@@ -210,7 +272,7 @@ export async function handleVehicleWaFlow(params: VehicleWaParams): Promise<bool
       await reply(
         `🚗 Olá, *${driver.nomeCompleto}*!\n\n` +
         `Veículo: *${vehicleFromMsg.marca} ${vehicleFromMsg.modelo}* — Placa: ${vehicleFromMsg.placa}\n\n` +
-        `📏 Informe o *KM atual* do veículo:`,
+        PROMPT_KM_SAIDA,
         VEH_STEPS.AGUARDANDO_KM,
         { veh_driverId: driver.id, veh_driverName: driver.nomeCompleto, veh_vehicleId: vehicleFromMsg.id, veh_vehiclePlaca: vehicleFromMsg.placa, veh_vehicleModelo: `${vehicleFromMsg.marca} ${vehicleFromMsg.modelo}` }
       );
@@ -236,7 +298,7 @@ export async function handleVehicleWaFlow(params: VehicleWaParams): Promise<bool
       return true;
     }
     await reply(
-      `✅ *${selected.marca} ${selected.modelo}* — ${selected.placa}\n\n📏 Informe o *KM atual* do veículo:`,
+      `✅ *${selected.marca} ${selected.modelo}* — ${selected.placa}\n\n` + PROMPT_KM_SAIDA,
       VEH_STEPS.AGUARDANDO_KM,
       { ...data, veh_vehicleId: selected.id, veh_vehiclePlaca: selected.placa, veh_vehicleModelo: `${selected.marca} ${selected.modelo}` }
     );
@@ -245,9 +307,12 @@ export async function handleVehicleWaFlow(params: VehicleWaParams): Promise<bool
 
   // ── STEP: AGUARDANDO KM (saída) ──────────────────────────────────────────
   if (step === VEH_STEPS.AGUARDANDO_KM) {
-    const km = parseKm(rawBody);
+    const { km, motivo } = parseKmAndMotivo(rawBody);
     if (km === null) {
-      await reply(`⚠️ Não entendi. Informe apenas o número do KM atual (ex: *41500*):`)
+      await reply(
+        `⚠️ Não encontrei o KM na mensagem. Informe o KM atual (e opcionalmente a OS e motivo):\n\n` +
+        `Ex: _41500 OS 1234 entrega_  ou  _41500_`
+      );
       return true;
     }
 
@@ -262,6 +327,7 @@ export async function handleVehicleWaFlow(params: VehicleWaParams): Promise<bool
         driverId,
         dataHoraSaida: new Date(),
         kmInicial: km as any,
+        motivoSaida: motivo ?? null,
         combustivelInicial: null as any,
         status: "em_rota",
       });
@@ -280,8 +346,9 @@ export async function handleVehicleWaFlow(params: VehicleWaParams): Promise<bool
           .replace("{combustivel}", "")
       : `✅ *Saída registrada!*\n\n` +
         `🚗 *${vehicleModelo}* — ${vehiclePlaca}\n` +
-        `📏 KM: *${km.toLocaleString("pt-BR")}*\n\n` +
-        `Ao retornar, envie *retornei*. Boa viagem! 🛣️`;
+        `📏 KM: *${km.toLocaleString("pt-BR")}*\n` +
+        (motivo ? `📋 ${motivo}\n` : "") +
+        `\nAo retornar, envie *retornei*. Boa viagem! 🛣️`;
     await reply(saidaMsg, "collecting", {});
     return true;
   }
