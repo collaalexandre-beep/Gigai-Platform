@@ -89,12 +89,17 @@ import {
   vehicleMaintenanceItems,
   vehicleMaintenanceHistory,
   vehicleIssueReports,
+  vehicleMaintenanceTemplates,
+  vehicleMaintenanceImportLogs,
   type VehicleMaintenanceItem,
   type InsertVehicleMaintenanceItem,
   type VehicleMaintenanceHistory,
   type InsertVehicleMaintenanceHistory,
   type VehicleIssueReport,
   type InsertVehicleIssueReport,
+  type VehicleMaintenanceTemplate,
+  type InsertVehicleMaintenanceTemplate,
+  type VehicleMaintenanceImportLog,
 } from "@shared/schema";
 import { addDays } from "date-fns";
 
@@ -327,6 +332,15 @@ export interface IStorage {
 
   // Maintenance Summary (for status lights)
   getMaintenanceSummary(): Promise<{ hasVermelho: boolean; hasAmarelo: boolean; countVermelho: number; countAmarelo: number }>;
+
+  // Maintenance Templates
+  getMaintenanceTemplates(params?: { approvalStatus?: string }): Promise<VehicleMaintenanceTemplate[]>;
+  getMaintenanceTemplate(id: string): Promise<VehicleMaintenanceTemplate | undefined>;
+  createMaintenanceTemplate(data: InsertVehicleMaintenanceTemplate): Promise<VehicleMaintenanceTemplate>;
+  updateMaintenanceTemplate(id: string, data: Partial<InsertVehicleMaintenanceTemplate>): Promise<VehicleMaintenanceTemplate | undefined>;
+
+  // Import Logs
+  getImportLogs(vehicleId: string): Promise<VehicleMaintenanceImportLog[]>;
 
   // WaBotConfig
   getWaBotConfig(): Promise<WaBotConfig | undefined>;
@@ -1746,6 +1760,47 @@ export class DatabaseStorage implements IStorage {
       countVermelho,
       countAmarelo,
     };
+  }
+
+  // ─── MAINTENANCE TEMPLATES ──────────────────────────────────────────────────
+
+  async getMaintenanceTemplates(params?: { approvalStatus?: string }): Promise<VehicleMaintenanceTemplate[]> {
+    const conditions: any[] = [];
+    if (params?.approvalStatus) conditions.push(eq(vehicleMaintenanceTemplates.approvalStatus, params.approvalStatus as any));
+    return db
+      .select()
+      .from(vehicleMaintenanceTemplates)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(vehicleMaintenanceTemplates.createdAt));
+  }
+
+  async getMaintenanceTemplate(id: string): Promise<VehicleMaintenanceTemplate | undefined> {
+    const [tmpl] = await db.select().from(vehicleMaintenanceTemplates).where(eq(vehicleMaintenanceTemplates.id, id));
+    return tmpl;
+  }
+
+  async createMaintenanceTemplate(data: InsertVehicleMaintenanceTemplate): Promise<VehicleMaintenanceTemplate> {
+    const [tmpl] = await db.insert(vehicleMaintenanceTemplates).values(data as any).returning();
+    return tmpl;
+  }
+
+  async updateMaintenanceTemplate(id: string, data: Partial<InsertVehicleMaintenanceTemplate>): Promise<VehicleMaintenanceTemplate | undefined> {
+    const [tmpl] = await db
+      .update(vehicleMaintenanceTemplates)
+      .set({ ...data, updatedAt: new Date() } as any)
+      .where(eq(vehicleMaintenanceTemplates.id, id))
+      .returning();
+    return tmpl;
+  }
+
+  // ─── IMPORT LOGS ────────────────────────────────────────────────────────────
+
+  async getImportLogs(vehicleId: string): Promise<VehicleMaintenanceImportLog[]> {
+    return db
+      .select()
+      .from(vehicleMaintenanceImportLogs)
+      .where(eq(vehicleMaintenanceImportLogs.vehicleId, vehicleId))
+      .orderBy(desc(vehicleMaintenanceImportLogs.createdAt));
   }
 
   // ─── WA BOT CONFIG ──────────────────────────────────────────────────────────

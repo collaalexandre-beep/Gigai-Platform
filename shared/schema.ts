@@ -1253,6 +1253,81 @@ export const insertVehicleIssueReportSchema = createInsertSchema(vehicleIssueRep
 export type InsertVehicleIssueReport = z.infer<typeof insertVehicleIssueReportSchema>;
 export type VehicleIssueReport = typeof vehicleIssueReports.$inferSelect;
 
+// ─── VEHICLE MAINTENANCE TEMPLATES ───────────────────────────────────────────
+
+export const templateApprovalStatusEnum = pgEnum("template_approval_status", [
+  "rascunho",
+  "aprovado",
+  "rejeitado",
+]);
+
+/**
+ * Planos de manutenção homologados (por marca/modelo/ano).
+ * Os itens ficam em formato JSONB para simplificar a estrutura.
+ * Ao aprovar + aplicar, os itens são copiados para vehicle_maintenance_items.
+ */
+export const vehicleMaintenanceTemplates = pgTable(
+  "vehicle_maintenance_templates",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    brand: text("brand").notNull(),
+    model: text("model").notNull(),
+    yearStart: integer("year_start"),
+    yearEnd: integer("year_end"),
+    version: text("version"),
+    engine: text("engine"),
+    fuel: text("fuel"),
+    severeUse: boolean("severe_use").default(false),
+    /** Itens do plano em JSON: Array<{ nome, periodicidadeKm, periodicidadeMeses, observacoes }> */
+    items: text("items").notNull().default("[]"),
+    sourceType: text("source_type").notNull().default("ia_gerado"),
+    sourceUrl: text("source_url"),
+    sourceTitle: text("source_title"),
+    sourceFileUrl: text("source_file_url"),
+    sourceNotes: text("source_notes"),
+    approvalStatus: templateApprovalStatusEnum("approval_status").notNull().default("rascunho"),
+    approvedBy: text("approved_by"),
+    approvedAt: timestamp("approved_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_vmaint_tmpl_brand").on(t.brand, t.model),
+    index("idx_vmaint_tmpl_status").on(t.approvalStatus),
+  ]
+);
+
+export const insertVehicleMaintenanceTemplateSchema = createInsertSchema(vehicleMaintenanceTemplates).omit({
+  id: true, createdAt: true, updatedAt: true,
+}).extend({
+  approvedAt: z.union([z.date(), z.string().transform((s) => new Date(s))]).optional().nullable(),
+});
+export type InsertVehicleMaintenanceTemplate = z.infer<typeof insertVehicleMaintenanceTemplateSchema>;
+export type VehicleMaintenanceTemplate = typeof vehicleMaintenanceTemplates.$inferSelect;
+
+/** Log de cada tentativa de busca/importação de plano para um veículo */
+export const vehicleMaintenanceImportLogs = pgTable(
+  "vehicle_maintenance_import_logs",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    vehicleId: varchar("vehicle_id").notNull().references(() => vehicles.id, { onDelete: "cascade" }),
+    searchQuery: text("search_query").notNull(),
+    sourceUrl: text("source_url"),
+    sourceType: text("source_type"),
+    resultStatus: text("result_status").notNull().default("ok"),
+    templateId: varchar("template_id").references(() => vehicleMaintenanceTemplates.id, { onDelete: "set null" }),
+    rawResult: text("raw_result"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("idx_vmaint_importlog_vehicle").on(t.vehicleId)]
+);
+
+export const insertVehicleMaintenanceImportLogSchema = createInsertSchema(vehicleMaintenanceImportLogs).omit({
+  id: true, createdAt: true,
+});
+export type InsertVehicleMaintenanceImportLog = z.infer<typeof insertVehicleMaintenanceImportLogSchema>;
+export type VehicleMaintenanceImportLog = typeof vehicleMaintenanceImportLogs.$inferSelect;
+
 // ─── WHATSAPP BOT CONFIG ──────────────────────────────────────────────────────
 
 export const waBotConfig = pgTable("wa_bot_config", {

@@ -2495,5 +2495,122 @@ Responda SOMENTE com JSON válido:
     } catch (err) { handleError(res, err); }
   });
 
+  // ─── MAINTENANCE TEMPLATE RESOLVER ──────────────────────────────────────────
+
+  // Importar o resolver (lazy para não atrasar startup)
+  const {
+    resolveMaintenancePlan,
+    applyTemplateToVehicle,
+    importTemplateFromManualText,
+    createDraftTemplate,
+  } = await import("./maintenance-resolver");
+
+  /** Buscar / gerar plano de manutenção para um veículo via IA */
+  app.post("/api/vehicles/:id/search-maintenance-plan", async (req, res) => {
+    try {
+      const vehicle = await storage.getVehicle(req.params.id);
+      if (!vehicle) return res.status(404).json({ message: "Veículo não encontrado" });
+
+      const result = await resolveMaintenancePlan(vehicle);
+      return res.json(result);
+    } catch (err) { handleError(res, err); }
+  });
+
+  /** Gerar plano a partir de texto colado manualmente */
+  app.post("/api/vehicles/:id/search-maintenance-plan/manual", async (req, res) => {
+    try {
+      const { text } = req.body;
+      if (!text) return res.status(400).json({ message: "text é obrigatório" });
+
+      const vehicle = await storage.getVehicle(req.params.id);
+      if (!vehicle) return res.status(404).json({ message: "Veículo não encontrado" });
+
+      const { items, rawResult } = await importTemplateFromManualText(vehicle, text);
+
+      const template = await createDraftTemplate({
+        vehicle,
+        items,
+        sourceType: "manual",
+        sourceTitle: `Plano manual — ${vehicle.marca} ${vehicle.modelo}`,
+        sourceNotes: "Criado a partir de texto colado pelo usuário",
+        rawResult,
+      });
+
+      return res.json({
+        found: true,
+        template,
+        items,
+        sourceType: "manual",
+        sourceTitle: template.sourceTitle,
+        searchQuery: `${vehicle.marca} ${vehicle.modelo}`,
+      });
+    } catch (err) { handleError(res, err); }
+  });
+
+  /** Listar todos os templates (opcionalmente filtrados) */
+  app.get("/api/maintenance-templates", async (req, res) => {
+    try {
+      const { status } = req.query;
+      const templates = await storage.getMaintenanceTemplates(
+        status ? { approvalStatus: String(status) } : undefined
+      );
+      return res.json(templates);
+    } catch (err) { handleError(res, err); }
+  });
+
+  /** Obter um template específico */
+  app.get("/api/maintenance-templates/:id", async (req, res) => {
+    try {
+      const tmpl = await storage.getMaintenanceTemplate(req.params.id);
+      if (!tmpl) return res.status(404).json({ message: "Template não encontrado" });
+      return res.json(tmpl);
+    } catch (err) { handleError(res, err); }
+  });
+
+  /** Atualizar template (editar itens, aprovar, rejeitar) */
+  app.patch("/api/maintenance-templates/:id", async (req, res) => {
+    try {
+      const data = req.body;
+      // Se approvingStatus='aprovado', registrar quando
+      if (data.approvalStatus === "aprovado" && !data.approvedAt) {
+        data.approvedAt = new Date();
+      }
+      // items pode vir como array ou string
+      if (Array.isArray(data.items)) {
+        data.items = JSON.stringify(data.items);
+      }
+      const tmpl = await storage.updateMaintenanceTemplate(req.params.id, data);
+      if (!tmpl) return res.status(404).json({ message: "Template não encontrado" });
+      return res.json(tmpl);
+    } catch (err) { handleError(res, err); }
+  });
+
+  /** Aplicar template aprovado ao veículo — copia itens para vehicle_maintenance_items */
+  app.post("/api/vehicles/:vehicleId/apply-template/:templateId", async (req, res) => {
+    try {
+      const { vehicleId, templateId } = req.params;
+      const vehicle = await storage.getVehicle(vehicleId);
+      if (!vehicle) return res.status(404).json({ message: "Veículo não encontrado" });
+
+      const template = await storage.getMaintenanceTemplate(templateId);
+      if (!template) return res.status(404).json({ message: "Template não encontrado" });
+
+      if (template.approvalStatus !== "aprovado") {
+        return res.status(400).json({ message: "Apenas templates aprovados podem ser aplicados" });
+      }
+
+      const result = await applyTemplateToVehicle(template, vehicleId);
+      return res.json({ success: true, ...result });
+    } catch (err) { handleError(res, err); }
+  });
+
+  /** Histórico de buscas/importações de um veículo */
+  app.get("/api/vehicles/:id/maintenance-import-logs", async (req, res) => {
+    try {
+      const logs = await storage.getImportLogs(req.params.id);
+      return res.json(logs);
+    } catch (err) { handleError(res, err); }
+  });
+
   return httpServer;
 }

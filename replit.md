@@ -2,6 +2,12 @@
 
 Sistema de gestão empresarial para gráfica comercial, construído com React + Express + PostgreSQL.
 
+## Módulos Principais
+- ERP/CRM gráfica: clientes, vendedores, produtos, orçamentos, pedidos
+- Módulo de Veículos: frota, saídas, manutenção preventiva, ocorrências
+- **Resolver de Plano de Manutenção**: IA gera planos por veículo, fluxo rascunho→aprovado→aplicado
+- WhatsApp bot (Meta API) para atendimento e controle de frota interno
+
 ## Stack
 
 - **Frontend**: React 18, Wouter (routing), TanStack Query v5, Shadcn/ui, Tailwind CSS

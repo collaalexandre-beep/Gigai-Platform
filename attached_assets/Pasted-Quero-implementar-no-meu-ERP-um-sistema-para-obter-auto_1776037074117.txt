@@ -1,0 +1,105 @@
+Quero implementar no meu ERP um sistema para obter automaticamente a tabela de manutenção adequada para cada veículo já cadastrado.
+
+IMPORTANTE:
+- o cadastro de veículos já existe
+- não recriar a tabela de veículos
+- o sistema deve usar os dados já existentes do veículo: marca, modelo, ano, versão, motor e combustível
+- não confiar automaticamente em qualquer site da internet
+- priorizar fonte oficial da montadora
+- salvar a fonte usada
+- permitir aprovação manual antes de ativar o plano no veículo
+
+OBJETIVO
+Quando um veículo for cadastrado ou editado, o sistema deve tentar localizar um plano de manutenção compatível e aplicá-lo ao veículo.
+
+ORDEM DE PRIORIDADE DAS FONTES
+1. plano homologado já existente no banco
+2. manual oficial da montadora
+3. página oficial de serviços/revisões da montadora
+4. fonte externa validada manualmente
+
+ESTRUTURA NECESSÁRIA
+
+1) Criar tabela de planos base:
+vehicle_maintenance_templates
+Campos:
+- id
+- brand
+- model
+- year_start
+- year_end
+- version nullable
+- engine nullable
+- fuel nullable
+- severe_use nullable
+- source_type
+- source_url
+- source_title nullable
+- source_file_url nullable
+- source_notes nullable
+- approval_status (draft, approved, rejected)
+- approved_by nullable
+- approved_at nullable
+- created_at
+- updated_at
+
+2) Criar tabela de logs de importação:
+vehicle_maintenance_import_logs
+Campos:
+- id
+- vehicle_id
+- search_query
+- source_url nullable
+- source_type nullable
+- result_status
+- raw_result nullable
+- created_at
+
+3) Criar serviço:
+MaintenanceTemplateResolver
+
+Funções:
+- findCompatibleTemplate(vehicle)
+- searchOfficialSource(vehicle)
+- importTemplateFromSource(source, vehicle)
+- parseMaintenanceIntervals(rawContent)
+- createDraftTemplate(data)
+- applyTemplateToVehicle(template, vehicle)
+
+4) Regras
+- primeiro procurar plano homologado no banco
+- se encontrar, aplicar ao veículo
+- se não encontrar, montar busca com marca + modelo + ano + versão + motor
+- tentar localizar fonte oficial
+- salvar link e conteúdo bruto da busca
+- criar template em status draft
+- não ativar automaticamente sem aprovação administrativa
+- permitir que o administrador revise, edite e aprove o plano
+
+5) Interface
+Na tela do veículo, criar botão:
+“Buscar plano de manutenção”
+
+Ao clicar:
+- mostrar loading
+- mostrar resultado encontrado
+- mostrar fonte
+- permitir:
+  - aprovar e aplicar
+  - editar antes de aplicar
+  - rejeitar
+
+6) Aplicação do plano
+Ao aplicar o template:
+- copiar os itens para vehicle_maintenance_items
+- não alterar histórico já existente
+- recalcular próximas manutenções
+- recalcular dots e alertas
+
+7) Requisitos importantes
+- usar a arquitetura já existente do projeto
+- mostrar claramente os arquivos criados e alterados
+- não quebrar telas atuais
+- criar código organizado e reutilizável
+- comentar a parte crítica da resolução e importação
+- caso não haja scraping implementado ainda, deixar preparado um modo manual com colagem de texto ou upload de pdf/link para gerar o template

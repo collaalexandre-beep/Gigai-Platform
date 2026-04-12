@@ -17,6 +17,7 @@ import type {
   VehicleIssueReport,
   VehicleExit,
   Seller,
+  VehicleMaintenanceTemplate,
 } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -50,7 +51,9 @@ import {
 import {
   AlertTriangle,
   ArrowLeft,
+  Bot,
   Car,
+  CheckCheck,
   CheckCircle2,
   Clock,
   Edit,
@@ -58,11 +61,14 @@ import {
   LayoutDashboard,
   Loader2,
   Plus,
+  Search,
   Settings,
   Trash2,
   Wrench,
   FileText,
   AlertCircle,
+  XCircle,
+  TextCursorInput,
 } from "lucide-react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -138,6 +144,443 @@ const issueFormSchema = z.object({
   gravidade: z.enum(["baixa", "media", "alta"]),
 });
 type IssueFormValues = z.infer<typeof issueFormSchema>;
+
+// ─── Tipos do Resolver ───────────────────────────────────────────────────────
+
+interface ResolverItem {
+  nome: string;
+  periodicidadeKm: number | null;
+  periodicidadeMeses: number | null;
+  observacoes?: string;
+}
+
+interface ResolverResult {
+  found: boolean;
+  template: VehicleMaintenanceTemplate | null;
+  items: ResolverItem[];
+  sourceType: string;
+  sourceTitle: string;
+  searchQuery: string;
+  error?: string;
+}
+
+const SOURCE_LABELS: Record<string, string> = {
+  banco_homologado: "Plano homologado",
+  ia_gerado: "Gerado por IA",
+  manual: "Inserido manualmente",
+};
+
+// ─── Componente: Dialog do Resolver de Plano de Manutenção ───────────────────
+
+function MaintenancePlanResolverDialog({
+  vehicleId,
+  onApplied,
+}: {
+  vehicleId: string;
+  onApplied: () => void;
+}) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<
+    "initial" | "searching" | "result" | "editing" | "manual_input" | "manual_searching"
+  >("initial");
+  const [result, setResult] = useState<ResolverResult | null>(null);
+  const [editableItems, setEditableItems] = useState<ResolverItem[]>([]);
+  const [manualText, setManualText] = useState("");
+
+  function resetDialog() {
+    setStep("initial");
+    setResult(null);
+    setEditableItems([]);
+    setManualText("");
+  }
+
+  function handleOpenChange(o: boolean) {
+    setOpen(o);
+    if (!o) resetDialog();
+  }
+
+  // Buscar automaticamente (IA)
+  const searchMut = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/vehicles/${vehicleId}/search-maintenance-plan`);
+      return res.json() as Promise<ResolverResult>;
+    },
+    onSuccess: (data) => {
+      setResult(data);
+      setEditableItems(data.items);
+      setStep("result");
+    },
+    onError: () => {
+      toast({ title: "Erro na busca", description: "Não foi possível contatar a IA.", variant: "destructive" });
+      setStep("initial");
+    },
+  });
+
+  // Buscar a partir de texto colado
+  const manualSearchMut = useMutation({
+    mutationFn: async (text: string) => {
+      const res = await apiRequest("POST", `/api/vehicles/${vehicleId}/search-maintenance-plan/manual`, { text });
+      return res.json() as Promise<ResolverResult>;
+    },
+    onSuccess: (data) => {
+      setResult(data);
+      setEditableItems(data.items);
+      setStep("result");
+    },
+    onError: () => {
+      toast({ title: "Erro ao processar texto", variant: "destructive" });
+      setStep("manual_input");
+    },
+  });
+
+  // Aprovar template (sem editar)
+  const approveMut = useMutation({
+    mutationFn: async (templateId: string) => {
+      const res = await apiRequest("PATCH", `/api/maintenance-templates/${templateId}`, {
+        approvalStatus: "aprovado",
+      });
+      return res.json();
+    },
+  });
+
+  // Salvar itens editados no template
+  const saveEditsMut = useMutation({
+    mutationFn: async ({ templateId, items }: { templateId: string; items: ResolverItem[] }) => {
+      const res = await apiRequest("PATCH", `/api/maintenance-templates/${templateId}`, {
+        items,
+        approvalStatus: "aprovado",
+      });
+      return res.json();
+    },
+  });
+
+  // Aplicar template ao veículo
+  const applyMut = useMutation({
+    mutationFn: async (templateId: string) => {
+      const res = await apiRequest("POST", `/api/vehicles/${vehicleId}/apply-template/${templateId}`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/vehicles", vehicleId, "maintenance-items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/maintenance/summary"] });
+      toast({
+        title: "Plano aplicado com sucesso",
+        description: `${data.created} item(s) adicionado(s). ${data.skipped} já existia(m).`,
+      });
+      setOpen(false);
+      onApplied();
+    },
+    onError: () => toast({ title: "Erro ao aplicar plano", variant: "destructive" }),
+  });
+
+  // Rejeitar template
+  const rejectMut = useMutation({
+    mutationFn: async (templateId: string) => {
+      const res = await apiRequest("PATCH", `/api/maintenance-templates/${templateId}`, {
+        approvalStatus: "rejeitado",
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Plano rejeitado", description: "O rascunho foi marcado como rejeitado." });
+      setOpen(false);
+    },
+  });
+
+  async function handleApproveAndApply() {
+    if (!result?.template?.id) return;
+    await approveMut.mutateAsync(result.template.id);
+    applyMut.mutate(result.template.id);
+  }
+
+  async function handleSaveEditsAndApply() {
+    if (!result?.template?.id) return;
+    await saveEditsMut.mutateAsync({ templateId: result.template.id, items: editableItems });
+    applyMut.mutate(result.template.id);
+  }
+
+  function updateEditableItem(idx: number, field: keyof ResolverItem, value: string | number | null) {
+    setEditableItems((prev) => prev.map((it, i) => i === idx ? { ...it, [field]: value } : it));
+  }
+
+  function removeEditableItem(idx: number) {
+    setEditableItems((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  const isPendingAny =
+    searchMut.isPending ||
+    manualSearchMut.isPending ||
+    approveMut.isPending ||
+    saveEditsMut.isPending ||
+    applyMut.isPending ||
+    rejectMut.isPending;
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" data-testid="button-search-maintenance-plan">
+          <Bot className="w-3.5 h-3.5 mr-1.5" />
+          Buscar plano por IA
+        </Button>
+      </DialogTrigger>
+
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Bot className="w-5 h-5 text-primary" />
+            Resolver plano de manutenção
+          </DialogTitle>
+        </DialogHeader>
+
+        {/* ── STEP: initial ── */}
+        {step === "initial" && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              O sistema irá buscar ou gerar um plano de manutenção adequado para este veículo
+              com base em marca, modelo, ano e combustível. O plano será criado como{" "}
+              <strong>rascunho</strong> — você revisa antes de ativar.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                className="rounded-lg border-2 border-primary/30 hover:border-primary/70 p-4 text-left transition-colors"
+                onClick={() => { setStep("searching"); searchMut.mutate(); }}
+                data-testid="button-resolver-auto"
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  <Bot className="w-5 h-5 text-primary" />
+                  <span className="font-medium text-sm">Buscar automaticamente</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  A IA gera um plano completo baseado nos dados do veículo cadastrado.
+                </p>
+              </button>
+              <button
+                className="rounded-lg border-2 border-muted hover:border-primary/40 p-4 text-left transition-colors"
+                onClick={() => setStep("manual_input")}
+                data-testid="button-resolver-manual"
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  <TextCursorInput className="w-5 h-5 text-muted-foreground" />
+                  <span className="font-medium text-sm">Inserir manualmente</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Cole o texto do manual ou tabela de revisões. A IA extrai os intervalos.
+                </p>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP: searching ── */}
+        {(step === "searching" || step === "manual_searching") && (
+          <div className="flex flex-col items-center justify-center py-12 gap-4">
+            <Loader2 className="w-10 h-10 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">
+              {step === "manual_searching"
+                ? "Processando texto com IA..."
+                : "Consultando banco de dados e IA..."}
+            </p>
+          </div>
+        )}
+
+        {/* ── STEP: manual_input ── */}
+        {step === "manual_input" && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Cole o texto do manual do proprietário, tabela de revisões ou qualquer fonte que
+              contenha os intervalos de manutenção.
+            </p>
+            <Textarea
+              value={manualText}
+              onChange={(e) => setManualText(e.target.value)}
+              rows={8}
+              placeholder="Cole aqui o texto do manual de manutenção..."
+              data-testid="textarea-manual-text"
+            />
+            <div className="flex gap-2">
+              <Button
+                onClick={() => {
+                  if (!manualText.trim()) {
+                    toast({ title: "Cole o texto antes de continuar", variant: "destructive" });
+                    return;
+                  }
+                  setStep("manual_searching");
+                  manualSearchMut.mutate(manualText);
+                }}
+                disabled={isPendingAny}
+                data-testid="button-resolver-manual-submit"
+              >
+                <Search className="w-3.5 h-3.5 mr-1.5" />
+                Processar texto
+              </Button>
+              <Button variant="outline" onClick={() => setStep("initial")}>Voltar</Button>
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP: result ── */}
+        {step === "result" && result && (
+          <div className="space-y-4">
+            {/* Fonte */}
+            <div className="rounded-md bg-muted/50 p-3 text-sm space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">Fonte:</span>
+                <span className="text-muted-foreground">{result.sourceTitle}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-medium">Tipo:</span>
+                <Badge variant="outline" className="text-xs">
+                  {SOURCE_LABELS[result.sourceType] ?? result.sourceType}
+                </Badge>
+              </div>
+              {result.template?.approvalStatus === "rascunho" && (
+                <p className="text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1 mt-1">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  Rascunho — não está ativo até ser aprovado
+                </p>
+              )}
+              {result.template?.approvalStatus === "aprovado" && (
+                <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1 mt-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Plano homologado aprovado
+                </p>
+              )}
+            </div>
+
+            {/* Tabela de itens */}
+            <div>
+              <p className="text-sm font-medium mb-2">{result.items.length} item(s) encontrado(s):</p>
+              <div className="rounded-md border overflow-hidden">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      <th className="text-left p-2 font-medium">Item</th>
+                      <th className="text-center p-2 font-medium w-24">A cada (km)</th>
+                      <th className="text-center p-2 font-medium w-24">A cada (meses)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.items.map((it, idx) => (
+                      <tr key={idx} className="border-t">
+                        <td className="p-2">{it.nome}</td>
+                        <td className="p-2 text-center text-muted-foreground">
+                          {it.periodicidadeKm ? Number(it.periodicidadeKm).toLocaleString("pt-BR") : "—"}
+                        </td>
+                        <td className="p-2 text-center text-muted-foreground">
+                          {it.periodicidadeMeses ?? "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {result.error && (
+              <p className="text-sm text-red-600 dark:text-red-400 flex items-center gap-1">
+                <AlertCircle className="w-4 h-4" />
+                Erro: {result.error}
+              </p>
+            )}
+
+            {/* Ações */}
+            <div className="flex flex-wrap gap-2 pt-1">
+              <Button
+                onClick={handleApproveAndApply}
+                disabled={isPendingAny || result.items.length === 0}
+                data-testid="button-resolver-approve-apply"
+              >
+                {(approveMut.isPending || applyMut.isPending) && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
+                <CheckCheck className="w-3.5 h-3.5 mr-1.5" />
+                Aprovar e aplicar
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setStep("editing")}
+                disabled={isPendingAny}
+                data-testid="button-resolver-edit"
+              >
+                <Edit className="w-3.5 h-3.5 mr-1.5" />
+                Editar antes de aplicar
+              </Button>
+              {result.template && (
+                <Button
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => result.template && rejectMut.mutate(result.template.id)}
+                  disabled={isPendingAny}
+                  data-testid="button-resolver-reject"
+                >
+                  {rejectMut.isPending && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
+                  <XCircle className="w-3.5 h-3.5 mr-1.5" />
+                  Rejeitar
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP: editing ── */}
+        {step === "editing" && (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Revise os itens abaixo. Ajuste intervalos, remova itens não aplicáveis e clique em
+              <strong> Salvar e aplicar</strong> quando estiver pronto.
+            </p>
+            <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+              {editableItems.map((it, idx) => (
+                <div key={idx} className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center p-2 rounded border text-xs">
+                  <Input
+                    value={it.nome}
+                    onChange={(e) => updateEditableItem(idx, "nome", e.target.value)}
+                    className="h-7 text-xs"
+                    placeholder="Nome do item"
+                  />
+                  <Input
+                    value={it.periodicidadeKm ?? ""}
+                    onChange={(e) => updateEditableItem(idx, "periodicidadeKm", e.target.value ? Number(e.target.value) : null)}
+                    className="h-7 text-xs w-24"
+                    placeholder="KM"
+                    type="number"
+                  />
+                  <Input
+                    value={it.periodicidadeMeses ?? ""}
+                    onChange={(e) => updateEditableItem(idx, "periodicidadeMeses", e.target.value ? Number(e.target.value) : null)}
+                    className="h-7 text-xs w-20"
+                    placeholder="Meses"
+                    type="number"
+                  />
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 text-destructive hover:text-destructive"
+                    onClick={() => removeEditableItem(idx)}
+                    title="Remover item"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 pt-1">
+              <Button
+                onClick={handleSaveEditsAndApply}
+                disabled={isPendingAny || editableItems.length === 0}
+                data-testid="button-resolver-save-edits"
+              >
+                {(saveEditsMut.isPending || applyMut.isPending) && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
+                <CheckCheck className="w-3.5 h-3.5 mr-1.5" />
+                Salvar e aplicar
+              </Button>
+              <Button variant="outline" onClick={() => setStep("result")}>Voltar</Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 // ─── Componente da aba: Manutenção ────────────────────────────────────────────
 
@@ -317,6 +760,10 @@ function AbaManutencao({ vehicleId, kmAtual }: { vehicleId: string; kmAtual: num
 
       {/* Ações */}
       <div className="flex gap-2 flex-wrap">
+        <MaintenancePlanResolverDialog
+          vehicleId={vehicleId}
+          onApplied={() => {}}
+        />
         <Button
           size="sm"
           variant="outline"
