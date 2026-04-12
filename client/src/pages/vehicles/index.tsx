@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Search, Car, Fuel, Settings, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Plus, Search, Car, Fuel, Settings, AlertTriangle, CheckCircle2, Eye, Wrench } from "lucide-react";
 import type { Vehicle } from "@shared/schema";
 
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
@@ -188,11 +188,16 @@ export default function VehiclesPage() {
                     </p>
                   )}
 
-                  <div className="flex gap-2 pt-1">
+                  <div className="flex gap-1.5 pt-1">
                     <Button size="sm" variant="outline" asChild className="flex-1">
+                      <Link href={`/vehicles/${v.id}`} data-testid={`button-view-vehicle-${v.id}`}>
+                        <Eye className="w-3.5 h-3.5 mr-1" />
+                        Ver
+                      </Link>
+                    </Button>
+                    <Button size="sm" variant="ghost" asChild className="px-2">
                       <Link href={`/vehicles/${v.id}/edit`} data-testid={`button-edit-vehicle-${v.id}`}>
-                        <Settings className="w-3.5 h-3.5 mr-1" />
-                        Editar
+                        <Settings className="w-3.5 h-3.5" />
                       </Link>
                     </Button>
                     {v.status !== "inativo" && (

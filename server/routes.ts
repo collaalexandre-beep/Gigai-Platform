@@ -30,7 +30,11 @@ import {
   insertQuoteRuleSchema,
   insertVehicleSchema,
   insertVehicleExitSchema,
+  insertVehicleMaintenanceItemSchema,
+  insertVehicleMaintenanceHistorySchema,
+  insertVehicleIssueReportSchema,
 } from "@shared/schema";
+import { calcMaintenanceItemStatus } from "./storage";
 import { generateProductSuggestion, suggestQuoteItem, generateSpecialQuote, adjustSpecialQuote, extractFromAdjustment } from "./ai";
 import { handleVehicleWaFlow, isVehicleExitCommand, isVehicleReturnCommand, VEH_STEP_LABELS } from "./vehicle-wa";
 import path from "path";
@@ -2114,6 +2118,47 @@ Responda SOMENTE com JSON válido:
     } catch (err) { handleError(res, err); }
   });
 
+  /** Dashboard de frota — deve ficar ANTES de /api/vehicles/:id para não colidir */
+  app.get("/api/vehicles/dashboard", async (_req: Request, res: Response) => {
+    try {
+      const [allVehicles, openIssues] = await Promise.all([
+        storage.getVehicles(),
+        storage.getIssueReports({ status: "aberto" }),
+      ]);
+
+      const vehiclesWithStatus = await Promise.all(
+        allVehicles.map(async (v) => {
+          const items = await storage.getMaintenanceItems(v.id);
+          const kmAtual = v.kmAtual ? Number(v.kmAtual) : null;
+          const statuses = items.map((i) => calcMaintenanceItemStatus(i, kmAtual));
+          const hasVermelho = statuses.includes("vermelho");
+          const hasAmarelo = statuses.includes("amarelo");
+          const hasOcorrencia = v.ocorrenciaAberta || openIssues.some((o) => o.vehicleId === v.id);
+          return {
+            ...v,
+            manutencaoStatus: hasVermelho ? "vermelho" : hasAmarelo ? "amarelo" : "verde",
+            hasOcorrencia,
+            countItens: items.length,
+            countVermelho: statuses.filter((s) => s === "vermelho").length,
+            countAmarelo: statuses.filter((s) => s === "amarelo").length,
+          };
+        })
+      );
+
+      res.json({
+        total: allVehicles.length,
+        ativos: allVehicles.filter((v) => v.status === "ativo").length,
+        comManutencaoVencida: vehiclesWithStatus.filter((v) => v.manutencaoStatus === "vermelho").length,
+        comManutencaoProxima: vehiclesWithStatus.filter((v) => v.manutencaoStatus === "amarelo").length,
+        comOcorrencia: vehiclesWithStatus.filter((v) => v.hasOcorrencia).length,
+        veiculos: vehiclesWithStatus.sort((a, b) => {
+          const order = { vermelho: 0, amarelo: 1, verde: 2 };
+          return order[a.manutencaoStatus as keyof typeof order] - order[b.manutencaoStatus as keyof typeof order];
+        }),
+      });
+    } catch (err) { handleError(res, err); }
+  });
+
   app.get("/api/vehicles/:id", async (req: Request, res: Response) => {
     try {
       const vehicle = await storage.getVehicle(getParam(req, "id"));
@@ -2231,6 +2276,222 @@ Responda SOMENTE com JSON válido:
       const exit = await storage.updateVehicleExit(id, data);
       if (!exit) return res.status(404).json({ message: "Saída não encontrada" });
       res.json(exit);
+    } catch (err) { handleError(res, err); }
+  });
+
+  // ─── VEHICLE MAINTENANCE ITEMS ──────────────────────────────────────────────
+
+  /** GET /api/vehicles/:id/maintenance-items — lista itens com status calculado */
+  app.get("/api/vehicles/:id/maintenance-items", async (req: Request, res: Response) => {
+    try {
+      const vehicleId = getParam(req, "id");
+      const vehicle = await storage.getVehicle(vehicleId);
+      if (!vehicle) return res.status(404).json({ message: "Veículo não encontrado" });
+      const items = await storage.getMaintenanceItems(vehicleId);
+      const kmAtual = vehicle.kmAtual ? Number(vehicle.kmAtual) : null;
+      const itemsWithStatus = items.map((item) => ({
+        ...item,
+        statusCalculado: calcMaintenanceItemStatus(item, kmAtual),
+      }));
+      res.json(itemsWithStatus);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.post("/api/vehicles/:id/maintenance-items", async (req: Request, res: Response) => {
+    try {
+      const vehicleId = getParam(req, "id");
+      const vehicle = await storage.getVehicle(vehicleId);
+      if (!vehicle) return res.status(404).json({ message: "Veículo não encontrado" });
+      const body = insertVehicleMaintenanceItemSchema.parse({ ...req.body, vehicleId });
+      const item = await storage.createMaintenanceItem(body);
+      res.status(201).json(item);
+    } catch (err) { handleError(res, err); }
+  });
+
+  /** Importar plano base (cria itens padrão para o veículo) */
+  app.post("/api/vehicles/:id/maintenance-items/import-base", async (req: Request, res: Response) => {
+    try {
+      const vehicleId = getParam(req, "id");
+      const vehicle = await storage.getVehicle(vehicleId);
+      if (!vehicle) return res.status(404).json({ message: "Veículo não encontrado" });
+
+      const basePlan = [
+        { nome: "Troca de óleo do motor",     periodicidadeKm: "10000", periodicidadeMeses: 12 },
+        { nome: "Filtro de óleo",             periodicidadeKm: "10000", periodicidadeMeses: 12 },
+        { nome: "Filtro de ar",               periodicidadeKm: "20000", periodicidadeMeses: 24 },
+        { nome: "Filtro de combustível",      periodicidadeKm: "30000", periodicidadeMeses: 24 },
+        { nome: "Pastilhas de freio",         periodicidadeKm: "30000", periodicidadeMeses: null },
+        { nome: "Discos de freio",            periodicidadeKm: "60000", periodicidadeMeses: null },
+        { nome: "Correia dentada",            periodicidadeKm: "60000", periodicidadeMeses: 48 },
+        { nome: "Pneus",                      periodicidadeKm: "40000", periodicidadeMeses: 48 },
+        { nome: "Alinhamento e balanceamento",periodicidadeKm: "10000", periodicidadeMeses: 12 },
+        { nome: "Bateria",                    periodicidadeKm: null,    periodicidadeMeses: 36 },
+        { nome: "Fluido de freio",            periodicidadeKm: "40000", periodicidadeMeses: 24 },
+        { nome: "Fluido de arrefecimento",    periodicidadeKm: "40000", periodicidadeMeses: 24 },
+        { nome: "Suspensão",                  periodicidadeKm: "50000", periodicidadeMeses: null },
+        { nome: "Revisão geral",              periodicidadeKm: "20000", periodicidadeMeses: 12 },
+      ];
+
+      const existing = await storage.getMaintenanceItems(vehicleId);
+      const existingNames = new Set(existing.map((i) => i.nome.toLowerCase()));
+      const toCreate = basePlan.filter((p) => !existingNames.has(p.nome.toLowerCase()));
+
+      const created = await Promise.all(
+        toCreate.map((p) =>
+          storage.createMaintenanceItem({
+            vehicleId,
+            nome: p.nome,
+            periodicidadeKm: p.periodicidadeKm ?? null,
+            periodicidadeMeses: p.periodicidadeMeses ?? null,
+            alertaAmareloKm: "1000",
+            alertaAmareloDias: 30,
+            fonteTabela: "Plano base interno",
+          } as any)
+        )
+      );
+      res.status(201).json({ created: created.length, skipped: toCreate.length - created.length });
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.patch("/api/maintenance-items/:id", async (req: Request, res: Response) => {
+    try {
+      const id = getParam(req, "id");
+      const body = req.body;
+      // Convert date strings to Date objects
+      if (body.ultimaManutencaoData && typeof body.ultimaManutencaoData === "string")
+        body.ultimaManutencaoData = new Date(body.ultimaManutencaoData);
+      if (body.proximaManutencaoData && typeof body.proximaManutencaoData === "string")
+        body.proximaManutencaoData = new Date(body.proximaManutencaoData);
+      const item = await storage.updateMaintenanceItem(id, body);
+      if (!item) return res.status(404).json({ message: "Item não encontrado" });
+      res.json(item);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.delete("/api/maintenance-items/:id", async (req: Request, res: Response) => {
+    try {
+      await storage.deleteMaintenanceItem(getParam(req, "id"));
+      res.status(204).send();
+    } catch (err) { handleError(res, err); }
+  });
+
+  // ─── VEHICLE MAINTENANCE HISTORY ────────────────────────────────────────────
+
+  app.get("/api/vehicles/:id/maintenance-history", async (req: Request, res: Response) => {
+    try {
+      const vehicleId = getParam(req, "id");
+      const { itemId } = req.query as Record<string, string>;
+      const history = await storage.getMaintenanceHistory({ vehicleId, itemId });
+      res.json(history);
+    } catch (err) { handleError(res, err); }
+  });
+
+  /** Registrar manutenção realizada — atualiza o item pai automaticamente */
+  app.post("/api/vehicles/:id/maintenance-history", async (req: Request, res: Response) => {
+    try {
+      const vehicleId = getParam(req, "id");
+      const vehicle = await storage.getVehicle(vehicleId);
+      if (!vehicle) return res.status(404).json({ message: "Veículo não encontrado" });
+
+      const body = insertVehicleMaintenanceHistorySchema.parse({ ...req.body, vehicleId });
+      const entry = await storage.createMaintenanceHistory(body);
+
+      // Atualizar o item de manutenção pai se fornecido
+      if (body.itemId) {
+        const item = await storage.getMaintenanceItem(body.itemId);
+        if (item) {
+          const dataRealizada = new Date(body.data);
+          const kmRealizado = body.kmNoMomento ? Number(body.kmNoMomento) : null;
+
+          const updates: Record<string, unknown> = {
+            ultimaManutencaoData: dataRealizada,
+          };
+          if (kmRealizado !== null) updates.ultimaManutencaoKm = String(kmRealizado);
+
+          // Recalcular próxima manutenção por data
+          if (item.periodicidadeMeses) {
+            const proxData = new Date(dataRealizada);
+            proxData.setMonth(proxData.getMonth() + item.periodicidadeMeses);
+            updates.proximaManutencaoData = proxData;
+          }
+          // Recalcular próxima manutenção por KM
+          if (item.periodicidadeKm && kmRealizado !== null) {
+            updates.proximaManutencaoKm = String(kmRealizado + Number(item.periodicidadeKm));
+          }
+
+          await storage.updateMaintenanceItem(body.itemId, updates as any);
+        }
+      }
+
+      // Atualizar KM atual do veículo se informado
+      if (body.kmNoMomento) {
+        await storage.updateVehicle(vehicleId, { kmAtual: String(body.kmNoMomento) } as any);
+      }
+
+      res.status(201).json(entry);
+    } catch (err) { handleError(res, err); }
+  });
+
+  // ─── VEHICLE ISSUE REPORTS ──────────────────────────────────────────────────
+
+  app.get("/api/vehicles/:id/issue-reports", async (req: Request, res: Response) => {
+    try {
+      const vehicleId = getParam(req, "id");
+      const { status } = req.query as Record<string, string>;
+      const reports = await storage.getIssueReports({ vehicleId, status });
+      res.json(reports);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.post("/api/vehicles/:id/issue-reports", async (req: Request, res: Response) => {
+    try {
+      const vehicleId = getParam(req, "id");
+      const vehicle = await storage.getVehicle(vehicleId);
+      if (!vehicle) return res.status(404).json({ message: "Veículo não encontrado" });
+      const body = insertVehicleIssueReportSchema.parse({ ...req.body, vehicleId });
+      const report = await storage.createIssueReport(body);
+      // Marca ocorrência aberta no veículo
+      await storage.updateVehicle(vehicleId, { ocorrenciaAberta: true } as any);
+      res.status(201).json(report);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.patch("/api/issue-reports/:id", async (req: Request, res: Response) => {
+    try {
+      const id = getParam(req, "id");
+      const data = { ...req.body };
+      if (data.dataResolucao && typeof data.dataResolucao === "string")
+        data.dataResolucao = new Date(data.dataResolucao);
+
+      const report = await storage.updateIssueReport(id, data);
+      if (!report) return res.status(404).json({ message: "Ocorrência não encontrada" });
+
+      // Se resolvido, verificar se há outras ocorrências abertas no veículo
+      if (data.status === "resolvido") {
+        const openOnes = await storage.getIssueReports({ vehicleId: report.vehicleId, status: "aberto" });
+        const inAnalysis = await storage.getIssueReports({ vehicleId: report.vehicleId, status: "em_analise" });
+        if (openOnes.length === 0 && inAnalysis.length === 0) {
+          await storage.updateVehicle(report.vehicleId, { ocorrenciaAberta: false } as any);
+        }
+      }
+
+      res.json(report);
+    } catch (err) { handleError(res, err); }
+  });
+
+  // ─── MAINTENANCE SUMMARY (status lights) ───────────────────────────────────
+
+  app.get("/api/maintenance/summary", async (_req: Request, res: Response) => {
+    try {
+      const summary = await storage.getMaintenanceSummary();
+      // Also check open occurrences
+      const openIssues = await storage.getIssueReports({ status: "aberto" });
+      const analysisIssues = await storage.getIssueReports({ status: "em_analise" });
+      res.json({
+        ...summary,
+        hasOpenIssues: openIssues.length > 0 || analysisIssues.length > 0,
+        countOpenIssues: openIssues.length + analysisIssues.length,
+      });
     } catch (err) { handleError(res, err); }
   });
 

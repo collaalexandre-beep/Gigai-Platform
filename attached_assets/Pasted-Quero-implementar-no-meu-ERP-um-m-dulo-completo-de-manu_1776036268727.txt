@@ -1,0 +1,246 @@
+Quero implementar no meu ERP um módulo completo de manutenção de veículos.
+
+IMPORTANTE:
+- O cadastro de veículos já existe e deve ser reaproveitado.
+- NÃO recrie o módulo de veículos do zero.
+- Apenas acrescente as novas tabelas, regras, telas e integrações necessárias.
+- Preserve o padrão visual atual do ERP.
+- A solução deve ser organizada, escalável e pronta para expansão futura.
+
+OBJETIVO DO MÓDULO
+Cada veículo deve ter um plano de manutenção preventiva com controle por data e/ou quilometragem.
+Também deve haver um sistema de ocorrências relatadas pelos funcionários.
+O ERP deve exibir sinais visuais (dots) no canto superior direito para avisos de manutenção e problemas relatados.
+
+REGRAS DE NEGÓCIO
+
+1) PLANO DE MANUTENÇÃO
+Cada veículo deve possuir uma tabela de manutenção com itens como:
+- troca de óleo do motor
+- filtro de óleo
+- filtro de ar
+- filtro de combustível
+- pastilhas de freio
+- discos de freio
+- correia dentada
+- pneus
+- alinhamento e balanceamento
+- bateria
+- fluido de freio
+- fluido de arrefecimento
+- suspensão
+- embreagem
+- revisão geral
+
+Cada item pode ter:
+- periodicidade em quilômetros
+- periodicidade em meses
+- ou ambos
+
+Regra:
+- a manutenção vence pelo que ocorrer primeiro: data ou km
+
+Campos por item:
+- nome do item
+- periodicidade_km (nullable)
+- periodicidade_meses (nullable)
+- alerta_amarelo_km
+- alerta_amarelo_dias
+- ultima_manutencao_data
+- ultima_manutencao_km
+- proxima_manutencao_data
+- proxima_manutencao_km
+- status (verde, amarelo, vermelho)
+- observacoes
+- fonte_da_tabela
+- link_fonte
+
+2) REGRA DE CORES
+Manutenção:
+- verde = dentro do prazo
+- amarelo = próximo do vencimento
+- vermelho = vencido
+
+Ocorrências relatadas:
+- verde = sem ocorrências abertas
+- vermelho = existe ocorrência aberta relatada pelo funcionário
+
+Se houver manutenção vencida OU ocorrência aberta, o veículo deve ficar em destaque no dashboard.
+
+3) LÓGICA DOS ALERTAS
+Por padrão:
+- amarelo por data quando faltar 30 dias
+- amarelo por km quando faltar 1000 km
+- vermelho quando passar da data ou da km
+
+Esses valores devem ser configuráveis por item.
+
+4) OCORRÊNCIAS DOS FUNCIONÁRIOS
+Criar sistema de relatos de problemas no veículo.
+Campos:
+- veículo
+- funcionário
+- data/hora
+- categoria do problema
+- gravidade (baixa, média, alta)
+- descrição
+- fotos/anexos
+- status (aberto, em análise, resolvido)
+- resposta da administração
+- data de resolução
+
+Quando existir uma ocorrência aberta:
+- o dot do veículo deve ficar vermelho
+- o ERP deve mostrar aviso visual para a administração
+
+5) FONTE DA TABELA DE MANUTENÇÃO
+Criar estrutura para armazenar a fonte da manutenção:
+- manual do fabricante
+- site oficial
+- pdf/manual enviado
+- fonte interna validada
+
+Não precisa implementar scraping avançado agora.
+Mas deixar o sistema preparado para:
+- salvar fonte
+- salvar link
+- salvar observação da origem
+- importar tabela manualmente
+
+6) TELAS NECESSÁRIAS
+
+A) Tela de manutenção do veículo
+Dentro do detalhe de cada veículo, criar aba:
+- “Manutenção”
+
+Essa aba deve mostrar:
+- resumo do status
+- km atual
+- próxima manutenção crítica
+- lista de itens de manutenção
+- cor/status de cada item
+- botão para registrar manutenção realizada
+- botão para adicionar item manualmente
+- botão para importar plano base
+
+B) Tela de ocorrências
+Criar aba:
+- “Ocorrências”
+
+Mostrar:
+- lista de relatos
+- filtros por status, gravidade e data
+- botão para abrir nova ocorrência
+- botão para marcar como resolvida
+
+C) Dashboard de frota/manutenção
+Criar painel com:
+- total de veículos
+- veículos com manutenção vencida
+- veículos com manutenção próxima
+- veículos com ocorrência aberta
+- veículos indisponíveis
+
+Criar também lista de prioridades:
+- mais urgente primeiro
+- vencidos primeiro
+- depois amarelos
+- depois relatos críticos
+
+7) DOTS NO TOPO DIREITO
+No topo direito do ERP, criar dots de aviso:
+- dot de manutenção
+- dot de ocorrências
+
+Comportamento:
+- verde = normal
+- amarelo = manutenção próxima
+- vermelho = manutenção vencida
+- vermelho também para ocorrência aberta
+
+Ao clicar no dot, abrir modal ou painel lateral com:
+- veículos afetados
+- motivo do alerta
+- link para abrir o veículo diretamente
+
+8) REGISTRO DE MANUTENÇÃO REALIZADA
+Ao registrar uma manutenção realizada, o sistema deve:
+- salvar histórico
+- atualizar ultima_manutencao_data
+- atualizar ultima_manutencao_km
+- recalcular proxima_manutencao_data
+- recalcular proxima_manutencao_km
+- recalcular status do item
+- recalcular alertas gerais do veículo
+
+Campos do histórico:
+- veículo
+- item
+- data
+- km
+- descrição do serviço
+- oficina/fornecedor
+- custo
+- observações
+- anexos
+
+9) ESTRUTURA DE DADOS
+Criar as tabelas necessárias, sem quebrar a estrutura atual:
+- vehicle_maintenance_items
+- vehicle_maintenance_history
+- vehicle_issue_reports
+- vehicle_maintenance_templates (opcional, para planos base por modelo)
+
+Relacionar tudo com a tabela existente de veículos.
+
+10) IMPORTAÇÃO DE PLANO BASE
+Criar suporte para plano base por:
+- marca
+- modelo
+- ano
+- versão/motor
+
+Esse plano base deve poder ser copiado para um veículo.
+
+11) FILTROS E BUSCAS
+Permitir filtros por:
+- placa
+- modelo
+- status da manutenção
+- status da ocorrência
+- gravidade
+- vencidos
+- próximos do vencimento
+
+12) PRIORIDADES DE IMPLEMENTAÇÃO
+Implemente primeiro:
+1. banco de dados
+2. cálculo de status
+3. tela do veículo com aba manutenção
+4. ocorrências
+5. dashboard
+6. dots do topo direito
+7. histórico
+8. plano base
+
+13) REQUISITOS TÉCNICOS
+- usar a stack já existente do ERP
+- seguir o padrão atual de rotas, componentes e banco
+- evitar código duplicado
+- criar funções utilitárias para cálculo de status
+- comentar partes importantes do código
+- entregar telas funcionais e integradas
+- não inventar dados mockados fixos sem necessidade
+- se precisar usar seed, separar bem
+- garantir que a cor dos alerts seja recalculada automaticamente
+
+14) QUERO QUE VOCÊ FAÇA AGORA
+- analisar a estrutura atual do projeto
+- localizar a tabela/modelo já existente de veículos
+- criar as migrations/modelos necessários
+- criar a lógica de cálculo dos status
+- criar as abas “Manutenção” e “Ocorrências” dentro do detalhe do veículo
+- criar o dashboard resumido
+- criar os dots no topo direito com atualização automática
+- mostrar claramente quais arquivos foram criados e alterados
+- no final, resumir o que foi implementado e o que ainda ficou pendente

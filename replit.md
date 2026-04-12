@@ -135,6 +135,15 @@ shared/
 - Controle de Veículos: cadastro da frota, registro de saídas/retornos, rastreabilidade por motorista
 - Regras de negócio: bloqueia veículo inativo, avisa sobre motorista não autorizado, exige motivo sem OS
 - Motoristas vinculados ao cadastro de Vendedores (campos: autorizadoDirigir, cnhCategoria, cnhValidade)
+- Módulo de Manutenção: plano de manutenção por veículo, cálculo automático de status (verde/amarelo/vermelho)
+  - Itens por veículo com periodicidade por km e/ou meses, alertas configuráveis
+  - Registro de manutenção realizada recalcula automaticamente próxima manutenção
+  - Histórico completo de manutenções com oficina, custo e descrição
+  - "Importar plano base" cria 14 itens padrão (troca de óleo, filtros, pneus, etc.)
+  - Ocorrências relatadas: gravidade (baixa/média/alta), status (aberto/em análise/resolvido)
+  - Página de detalhe do veículo com 3 abas: Visão Geral, Manutenção, Ocorrências
+  - Status lights no topo direito exibem amarelo/vermelho conforme manutenções e ocorrências
+  - Dashboard de frota: `GET /api/vehicles/dashboard`
 
 ## Sidebar (grupos de navegação)
 

@@ -86,6 +86,15 @@ import {
   waBotConfig,
   type WaBotConfig,
   type InsertWaBotConfig,
+  vehicleMaintenanceItems,
+  vehicleMaintenanceHistory,
+  vehicleIssueReports,
+  type VehicleMaintenanceItem,
+  type InsertVehicleMaintenanceItem,
+  type VehicleMaintenanceHistory,
+  type InsertVehicleMaintenanceHistory,
+  type VehicleIssueReport,
+  type InsertVehicleIssueReport,
 } from "@shared/schema";
 import { addDays } from "date-fns";
 
@@ -299,9 +308,63 @@ export interface IStorage {
   getOpenVehicleExitByDriver(driverId: string): Promise<(VehicleExit & { vehicle: Vehicle; driver: { id: string; nomeCompleto: string } }) | undefined>;
   getOpenVehicleExitByVehicle(vehicleId: string): Promise<(VehicleExit & { vehicle: Vehicle; driver: { id: string; nomeCompleto: string } }) | undefined>;
 
+  // Maintenance Items
+  getMaintenanceItems(vehicleId: string): Promise<VehicleMaintenanceItem[]>;
+  getMaintenanceItem(id: string): Promise<VehicleMaintenanceItem | undefined>;
+  createMaintenanceItem(data: InsertVehicleMaintenanceItem): Promise<VehicleMaintenanceItem>;
+  updateMaintenanceItem(id: string, data: Partial<InsertVehicleMaintenanceItem>): Promise<VehicleMaintenanceItem | undefined>;
+  deleteMaintenanceItem(id: string): Promise<void>;
+
+  // Maintenance History
+  getMaintenanceHistory(params: { vehicleId?: string; itemId?: string }): Promise<VehicleMaintenanceHistory[]>;
+  createMaintenanceHistory(data: InsertVehicleMaintenanceHistory): Promise<VehicleMaintenanceHistory>;
+
+  // Issue Reports
+  getIssueReports(params?: { vehicleId?: string; status?: string }): Promise<(VehicleIssueReport & { reporterName?: string | null })[]>;
+  getIssueReport(id: string): Promise<VehicleIssueReport | undefined>;
+  createIssueReport(data: InsertVehicleIssueReport): Promise<VehicleIssueReport>;
+  updateIssueReport(id: string, data: Partial<InsertVehicleIssueReport>): Promise<VehicleIssueReport | undefined>;
+
+  // Maintenance Summary (for status lights)
+  getMaintenanceSummary(): Promise<{ hasVermelho: boolean; hasAmarelo: boolean; countVermelho: number; countAmarelo: number }>;
+
   // WaBotConfig
   getWaBotConfig(): Promise<WaBotConfig | undefined>;
   upsertWaBotConfig(data: Partial<InsertWaBotConfig>): Promise<WaBotConfig>;
+}
+
+// ─── MAINTENANCE STATUS UTILITY ───────────────────────────────────────────────
+
+/**
+ * Calcula o status de cor de um item de manutenção com base nos campos de
+ * próxima manutenção e no KM atual do veículo.
+ * Vermelho = vencido | Amarelo = próximo do vencimento | Verde = OK
+ */
+export function calcMaintenanceItemStatus(
+  item: VehicleMaintenanceItem,
+  kmAtual: number | null
+): "verde" | "amarelo" | "vermelho" {
+  const now = Date.now();
+  let worst: "verde" | "amarelo" | "vermelho" = "verde";
+
+  // Verificação por KM
+  if (item.proximaManutencaoKm !== null && item.proximaManutencaoKm !== undefined && kmAtual !== null) {
+    const kmRestante = Number(item.proximaManutencaoKm) - kmAtual;
+    const alerta = Number(item.alertaAmareloKm ?? 1000);
+    if (kmRestante <= 0) return "vermelho";
+    if (kmRestante <= alerta) worst = "amarelo";
+  }
+
+  // Verificação por data
+  if (item.proximaManutencaoData) {
+    const ms = new Date(item.proximaManutencaoData).getTime() - now;
+    const dias = Math.floor(ms / 86400000);
+    const alerta = item.alertaAmareloDias ?? 30;
+    if (dias <= 0) return "vermelho";
+    if (dias <= alerta) worst = "amarelo";
+  }
+
+  return worst;
 }
 
 // ─── DATABASE STORAGE ─────────────────────────────────────────────────────────
@@ -1566,6 +1629,123 @@ export class DatabaseStorage implements IStorage {
       .limit(1);
     if (!r) return undefined;
     return { ...r.exit, vehicle: r.vehicle, driver: { id: r.driverId, nomeCompleto: r.driverName } };
+  }
+
+  // ─── VEHICLE MAINTENANCE ITEMS ──────────────────────────────────────────────
+
+  async getMaintenanceItems(vehicleId: string): Promise<VehicleMaintenanceItem[]> {
+    return db
+      .select()
+      .from(vehicleMaintenanceItems)
+      .where(eq(vehicleMaintenanceItems.vehicleId, vehicleId))
+      .orderBy(asc(vehicleMaintenanceItems.nome));
+  }
+
+  async getMaintenanceItem(id: string): Promise<VehicleMaintenanceItem | undefined> {
+    const [item] = await db.select().from(vehicleMaintenanceItems).where(eq(vehicleMaintenanceItems.id, id));
+    return item;
+  }
+
+  async createMaintenanceItem(data: InsertVehicleMaintenanceItem): Promise<VehicleMaintenanceItem> {
+    const [item] = await db.insert(vehicleMaintenanceItems).values(data as any).returning();
+    return item;
+  }
+
+  async updateMaintenanceItem(id: string, data: Partial<InsertVehicleMaintenanceItem>): Promise<VehicleMaintenanceItem | undefined> {
+    const [item] = await db
+      .update(vehicleMaintenanceItems)
+      .set({ ...data, updatedAt: new Date() } as any)
+      .where(eq(vehicleMaintenanceItems.id, id))
+      .returning();
+    return item;
+  }
+
+  async deleteMaintenanceItem(id: string): Promise<void> {
+    await db.delete(vehicleMaintenanceItems).where(eq(vehicleMaintenanceItems.id, id));
+  }
+
+  // ─── VEHICLE MAINTENANCE HISTORY ────────────────────────────────────────────
+
+  async getMaintenanceHistory(params: { vehicleId?: string; itemId?: string }): Promise<VehicleMaintenanceHistory[]> {
+    const conditions: any[] = [];
+    if (params.vehicleId) conditions.push(eq(vehicleMaintenanceHistory.vehicleId, params.vehicleId));
+    if (params.itemId) conditions.push(eq(vehicleMaintenanceHistory.itemId, params.itemId));
+    return db
+      .select()
+      .from(vehicleMaintenanceHistory)
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(vehicleMaintenanceHistory.data));
+  }
+
+  async createMaintenanceHistory(data: InsertVehicleMaintenanceHistory): Promise<VehicleMaintenanceHistory> {
+    const [entry] = await db.insert(vehicleMaintenanceHistory).values(data as any).returning();
+    return entry;
+  }
+
+  // ─── VEHICLE ISSUE REPORTS ──────────────────────────────────────────────────
+
+  async getIssueReports(params?: { vehicleId?: string; status?: string }): Promise<(VehicleIssueReport & { reporterName?: string | null })[]> {
+    const conditions: any[] = [];
+    if (params?.vehicleId) conditions.push(eq(vehicleIssueReports.vehicleId, params.vehicleId));
+    if (params?.status) conditions.push(eq(vehicleIssueReports.status, params.status as any));
+
+    const rows = await db
+      .select({ issue: vehicleIssueReports, reporterName: sellers.nomeCompleto })
+      .from(vehicleIssueReports)
+      .leftJoin(sellers, eq(vehicleIssueReports.reportadoPor, sellers.id))
+      .where(conditions.length ? and(...conditions) : undefined)
+      .orderBy(desc(vehicleIssueReports.dataHora));
+
+    return rows.map((r) => ({ ...r.issue, reporterName: r.reporterName }));
+  }
+
+  async getIssueReport(id: string): Promise<VehicleIssueReport | undefined> {
+    const [row] = await db.select().from(vehicleIssueReports).where(eq(vehicleIssueReports.id, id));
+    return row;
+  }
+
+  async createIssueReport(data: InsertVehicleIssueReport): Promise<VehicleIssueReport> {
+    const [row] = await db.insert(vehicleIssueReports).values(data as any).returning();
+    return row;
+  }
+
+  async updateIssueReport(id: string, data: Partial<InsertVehicleIssueReport>): Promise<VehicleIssueReport | undefined> {
+    const [row] = await db
+      .update(vehicleIssueReports)
+      .set({ ...data, updatedAt: new Date() } as any)
+      .where(eq(vehicleIssueReports.id, id))
+      .returning();
+    return row;
+  }
+
+  // ─── MAINTENANCE SUMMARY (para status lights) ───────────────────────────────
+
+  /**
+   * Calcula o resumo de manutenção de todos os veículos para o painel de status.
+   * Status é calculado dinamicamente: vermelho = vencido, amarelo = próximo do vencimento.
+   */
+  async getMaintenanceSummary(): Promise<{ hasVermelho: boolean; hasAmarelo: boolean; countVermelho: number; countAmarelo: number }> {
+    const now = Date.now();
+    const allItems = await db
+      .select({ item: vehicleMaintenanceItems, kmAtual: vehicles.kmAtual })
+      .from(vehicleMaintenanceItems)
+      .innerJoin(vehicles, eq(vehicleMaintenanceItems.vehicleId, vehicles.id));
+
+    let countVermelho = 0;
+    let countAmarelo = 0;
+
+    for (const { item, kmAtual } of allItems) {
+      const status = calcMaintenanceItemStatus(item, kmAtual ? Number(kmAtual) : null);
+      if (status === "vermelho") countVermelho++;
+      else if (status === "amarelo") countAmarelo++;
+    }
+
+    return {
+      hasVermelho: countVermelho > 0,
+      hasAmarelo: countAmarelo > 0,
+      countVermelho,
+      countAmarelo,
+    };
   }
 
   // ─── WA BOT CONFIG ──────────────────────────────────────────────────────────

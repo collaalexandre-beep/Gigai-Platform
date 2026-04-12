@@ -37,6 +37,7 @@ import CompanyFormPage from "@/pages/companies/form";
 import WhatsappPage from "@/pages/whatsapp/index";
 import VehiclesPage from "@/pages/vehicles/index";
 import VehicleFormPage from "@/pages/vehicles/form";
+import VehicleDetailPage from "@/pages/vehicles/detail";
 import VehicleExitsPage from "@/pages/vehicles/exits/index";
 import VehicleExitFormPage from "@/pages/vehicles/exits/form";
 import VehicleExitDetailPage from "@/pages/vehicles/exits/detail";
@@ -92,6 +93,7 @@ function AppRouter() {
       <Route path="/vehicles/exits/:id" component={VehicleExitDetailPage} />
       <Route path="/vehicles/new" component={VehicleFormPage} />
       <Route path="/vehicles/:id/edit" component={VehicleFormPage} />
+      <Route path="/vehicles/:id" component={VehicleDetailPage} />
       <Route component={NotFound} />
     </Switch>
   );

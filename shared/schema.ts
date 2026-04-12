@@ -1151,6 +1151,108 @@ export const insertVehicleExitSchema = createInsertSchema(vehicleExits).omit({
 export type InsertVehicleExit = z.infer<typeof insertVehicleExitSchema>;
 export type VehicleExit = typeof vehicleExits.$inferSelect;
 
+// ─── VEHICLE MAINTENANCE ─────────────────────────────────────────────────────
+
+export const issueGravityEnum = pgEnum("issue_gravity", ["baixa", "media", "alta"]);
+export const issueStatusEnum = pgEnum("issue_status", ["aberto", "em_analise", "resolvido"]);
+
+/** Itens do plano de manutenção por veículo */
+export const vehicleMaintenanceItems = pgTable(
+  "vehicle_maintenance_items",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    vehicleId: varchar("vehicle_id").notNull().references(() => vehicles.id, { onDelete: "cascade" }),
+    nome: text("nome").notNull(),
+    periodicidadeKm: decimal("periodicidade_km", { precision: 10, scale: 0 }),
+    periodicidadeMeses: integer("periodicidade_meses"),
+    /** km antes de vencer para disparar amarelo (default 1000) */
+    alertaAmareloKm: decimal("alerta_amarelo_km", { precision: 10, scale: 0 }).default("1000"),
+    /** dias antes de vencer para disparar amarelo (default 30) */
+    alertaAmareloDias: integer("alerta_amarelo_dias").default(30),
+    ultimaManutencaoData: timestamp("ultima_manutencao_data"),
+    ultimaManutencaoKm: decimal("ultima_manutencao_km", { precision: 12, scale: 1 }),
+    proximaManutencaoData: timestamp("proxima_manutencao_data"),
+    proximaManutencaoKm: decimal("proxima_manutencao_km", { precision: 12, scale: 1 }),
+    observacoes: text("observacoes"),
+    fonteTabela: text("fonte_tabela"),
+    linkFonte: text("link_fonte"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [index("idx_vmaint_vehicle").on(t.vehicleId)]
+);
+
+export const insertVehicleMaintenanceItemSchema = createInsertSchema(vehicleMaintenanceItems).omit({
+  id: true, createdAt: true, updatedAt: true,
+}).extend({
+  ultimaManutencaoData: z.union([z.date(), z.string().transform((s) => new Date(s))]).optional().nullable(),
+  proximaManutencaoData: z.union([z.date(), z.string().transform((s) => new Date(s))]).optional().nullable(),
+});
+export type InsertVehicleMaintenanceItem = z.infer<typeof insertVehicleMaintenanceItemSchema>;
+export type VehicleMaintenanceItem = typeof vehicleMaintenanceItems.$inferSelect;
+
+/** Histórico de manutenções realizadas */
+export const vehicleMaintenanceHistory = pgTable(
+  "vehicle_maintenance_history",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    vehicleId: varchar("vehicle_id").notNull().references(() => vehicles.id, { onDelete: "cascade" }),
+    itemId: varchar("item_id").references(() => vehicleMaintenanceItems.id, { onDelete: "set null" }),
+    nomeItem: text("nome_item").notNull(),
+    data: timestamp("data").notNull(),
+    kmNoMomento: decimal("km_no_momento", { precision: 12, scale: 1 }),
+    descricaoServico: text("descricao_servico"),
+    oficina: text("oficina"),
+    custo: decimal("custo", { precision: 10, scale: 2 }),
+    observacoes: text("observacoes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_vmaint_hist_vehicle").on(t.vehicleId),
+    index("idx_vmaint_hist_item").on(t.itemId),
+  ]
+);
+
+export const insertVehicleMaintenanceHistorySchema = createInsertSchema(vehicleMaintenanceHistory).omit({
+  id: true, createdAt: true,
+}).extend({
+  data: z.union([z.date(), z.string().transform((s) => new Date(s))]),
+});
+export type InsertVehicleMaintenanceHistory = z.infer<typeof insertVehicleMaintenanceHistorySchema>;
+export type VehicleMaintenanceHistory = typeof vehicleMaintenanceHistory.$inferSelect;
+
+/** Ocorrências / relatos de problemas pelos funcionários */
+export const vehicleIssueReports = pgTable(
+  "vehicle_issue_reports",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    vehicleId: varchar("vehicle_id").notNull().references(() => vehicles.id, { onDelete: "cascade" }),
+    reportadoPor: varchar("reportado_por").references(() => sellers.id, { onDelete: "set null" }),
+    dataHora: timestamp("data_hora").notNull().defaultNow(),
+    categoria: text("categoria"),
+    gravidade: issueGravityEnum("gravidade").notNull().default("media"),
+    descricao: text("descricao").notNull(),
+    status: issueStatusEnum("status").notNull().default("aberto"),
+    respostaAdmin: text("resposta_admin"),
+    dataResolucao: timestamp("data_resolucao"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_vissue_vehicle").on(t.vehicleId),
+    index("idx_vissue_status").on(t.status),
+  ]
+);
+
+export const insertVehicleIssueReportSchema = createInsertSchema(vehicleIssueReports).omit({
+  id: true, createdAt: true, updatedAt: true,
+}).extend({
+  dataHora: z.union([z.date(), z.string().transform((s) => new Date(s))]).optional(),
+  dataResolucao: z.union([z.date(), z.string().transform((s) => new Date(s))]).optional().nullable(),
+});
+export type InsertVehicleIssueReport = z.infer<typeof insertVehicleIssueReportSchema>;
+export type VehicleIssueReport = typeof vehicleIssueReports.$inferSelect;
+
 // ─── WHATSAPP BOT CONFIG ──────────────────────────────────────────────────────
 
 export const waBotConfig = pgTable("wa_bot_config", {

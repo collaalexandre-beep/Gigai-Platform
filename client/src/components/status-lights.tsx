@@ -3,6 +3,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { Link } from "wouter";
 import type { Vehicle } from "@shared/schema";
 
 export type LightStatus = "verde" | "amarelo" | "vermelho" | "critico";
@@ -13,6 +14,7 @@ export interface StatusLight {
   status: LightStatus;
   detail?: string;
   icon: React.ElementType;
+  href?: string;
 }
 
 export const STATUS_CONFIG: Record<LightStatus, { color: string; glow: string; dotClass: string; label: string; textClass: string }> = {
@@ -31,6 +33,15 @@ function worstStatus(lights: StatusLight[]): LightStatus {
   );
 }
 
+interface MaintenanceSummary {
+  hasVermelho: boolean;
+  hasAmarelo: boolean;
+  countVermelho: number;
+  countAmarelo: number;
+  hasOpenIssues: boolean;
+  countOpenIssues: number;
+}
+
 export function StatusLightsBar() {
   const { data: vehicles = [] } = useQuery<Vehicle[]>({
     queryKey: ["/api/vehicles"],
@@ -44,18 +55,51 @@ export function StatusLightsBar() {
     refetchOnMount: true,
   });
 
+  const { data: maintSummary } = useQuery<MaintenanceSummary>({
+    queryKey: ["/api/maintenance/summary"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/maintenance/summary");
+      return res.json();
+    },
+    staleTime: 0,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
+
   const ocorrenciasAbertas = vehicles.filter(v => v.ocorrenciaAberta);
-  const veiculoStatus: LightStatus = ocorrenciasAbertas.length > 0 ? "vermelho" : "verde";
-  const veiculoDetail = ocorrenciasAbertas.length > 0
-    ? `${ocorrenciasAbertas.length} ocorrência${ocorrenciasAbertas.length > 1 ? "s" : ""} em aberto`
-    : undefined;
+  const hasOcorrencia = ocorrenciasAbertas.length > 0 || (maintSummary?.hasOpenIssues ?? false);
+  const hasManutVermelho = maintSummary?.hasVermelho ?? false;
+  const hasManutAmarelo = maintSummary?.hasAmarelo ?? false;
+
+  let veiculoStatus: LightStatus = "verde";
+  if (hasOcorrencia || hasManutVermelho) veiculoStatus = "vermelho";
+  else if (hasManutAmarelo) veiculoStatus = "amarelo";
+
+  const veiculoDetailParts: string[] = [];
+  if (ocorrenciasAbertas.length > 0 || (maintSummary?.countOpenIssues ?? 0) > 0) {
+    const total = Math.max(ocorrenciasAbertas.length, maintSummary?.countOpenIssues ?? 0);
+    veiculoDetailParts.push(`${total} ocorrência${total > 1 ? "s" : ""} em aberto`);
+  }
+  if (hasManutVermelho && (maintSummary?.countVermelho ?? 0) > 0) {
+    veiculoDetailParts.push(`${maintSummary!.countVermelho} manutenção${maintSummary!.countVermelho > 1 ? "ções" : ""} vencida${maintSummary!.countVermelho > 1 ? "s" : ""}`);
+  }
+  if (hasManutAmarelo && !hasManutVermelho && (maintSummary?.countAmarelo ?? 0) > 0) {
+    veiculoDetailParts.push(`${maintSummary!.countAmarelo} manutenção${maintSummary!.countAmarelo > 1 ? "ções" : ""} próxima${maintSummary!.countAmarelo > 1 ? "s" : ""} do vencimento`);
+  }
 
   const lights: StatusLight[] = [
     { id: "financeiro", label: "Financeiro", status: "verde", icon: DollarSign },
     { id: "producao",   label: "Produção",   status: "verde", icon: Factory    },
     { id: "estoque",    label: "Estoque",    status: "verde", icon: Package    },
-    { id: "veiculos",   label: "Veículos",   status: veiculoStatus, detail: veiculoDetail, icon: Truck },
-    { id: "equipe",     label: "Equipe",     status: "verde", icon: Users      },
+    {
+      id: "veiculos",
+      label: "Veículos",
+      status: veiculoStatus,
+      detail: veiculoDetailParts.join(" · "),
+      icon: Truck,
+      href: "/vehicles",
+    },
+    { id: "equipe", label: "Equipe", status: "verde", icon: Users },
   ];
 
   const worst = worstStatus(lights);
@@ -115,10 +159,9 @@ export function StatusLightsBar() {
           {lights.map((light) => {
             const cfg = STATUS_CONFIG[light.status];
             const Icon = light.icon;
-            return (
+            const inner = (
               <div
-                key={light.id}
-                className="flex flex-col items-center gap-2"
+                className={`flex flex-col items-center gap-2 ${light.href ? "cursor-pointer hover:opacity-80 transition-opacity" : ""}`}
                 data-testid={`status-light-${light.id}`}
                 title={light.detail}
               >
@@ -132,10 +175,15 @@ export function StatusLightsBar() {
                   <p className="text-[11px] font-semibold text-white leading-tight">{light.label}</p>
                   <p className={`text-[10px] font-medium ${cfg.textClass}`}>{cfg.label}</p>
                   {light.detail && (
-                    <p className="text-[9px] text-red-300 leading-tight mt-0.5">{light.detail}</p>
+                    <p className="text-[9px] text-red-300 leading-tight mt-0.5 max-w-[60px] break-words">{light.detail}</p>
                   )}
                 </div>
               </div>
+            );
+            return light.href ? (
+              <Link key={light.id} href={light.href}>{inner}</Link>
+            ) : (
+              <div key={light.id}>{inner}</div>
             );
           })}
         </div>
