@@ -2218,6 +2218,21 @@ Responda SOMENTE com JSON válido:
       if (!vehicle) return res.status(404).json({ message: "Veículo não encontrado" });
       if (vehicle.status === "inativo") return res.status(400).json({ message: "Veículo inativo não pode sair" });
 
+      // Validate orderId FK — if provided but not a valid UUID or not found, nullify to avoid FK violation
+      if (body.orderId) {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.orderId);
+        if (!isUuid) {
+          (body as any).orderId = null;
+        } else {
+          try {
+            const order = await storage.getOrder(body.orderId);
+            if (!order) (body as any).orderId = null;
+          } catch {
+            (body as any).orderId = null;
+          }
+        }
+      }
+
       const driver = await storage.getSeller(body.driverId);
       if (driver && !driver.autorizadoDirigir) {
         // Return a warning but still allow (with flag)

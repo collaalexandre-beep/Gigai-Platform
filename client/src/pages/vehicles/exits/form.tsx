@@ -24,13 +24,9 @@ const formSchema = z.object({
   kmInicial: z.string().min(1, "KM inicial obrigatório"),
   combustivelInicial: z.enum(["vazio", "quarto", "metade", "tres_quartos", "cheio"]),
   fotoInicialUrl: z.string().optional(),
-  orderId: z.string().optional(),
-  motivoSaida: z.string().optional(),
+  motivoSaida: z.string().min(1, "Informe o motivo da saída"),
   destino: z.string().optional(),
-}).refine(
-  (d) => d.orderId || d.motivoSaida,
-  { message: "Informe o motivo da saída ou vincule uma OS", path: ["motivoSaida"] }
-);
+});
 
 type FormData = z.infer<typeof formSchema>;
 
@@ -77,7 +73,6 @@ export default function VehicleExitFormPage() {
       kmInicial: "",
       combustivelInicial: "metade",
       fotoInicialUrl: "",
-      orderId: "",
       motivoSaida: "",
       destino: "",
     },
@@ -99,8 +94,6 @@ export default function VehicleExitFormPage() {
       const payload = {
         ...data,
         dataHoraSaida: new Date(data.dataHoraSaida).toISOString(),
-        orderId: data.orderId || undefined,
-        motivoSaida: data.motivoSaida || undefined,
         fotoInicialUrl: data.fotoInicialUrl || undefined,
       };
       const res = await apiRequest("POST", "/api/vehicle-exits", payload);
@@ -253,21 +246,11 @@ export default function VehicleExitFormPage() {
           </Card>
 
           <Card>
-            <CardHeader><CardTitle className="text-base">Vínculo com OS / Motivo</CardTitle></CardHeader>
+            <CardHeader><CardTitle className="text-base">Motivo da saída</CardTitle></CardHeader>
             <CardContent className="space-y-4">
-              <FormField control={form.control} name="orderId" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Número da OS (opcional)</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Ex: OS-2024-001" data-testid="input-order-id" {...field} />
-                  </FormControl>
-                  <FormDescription>Informe a OS ou preencha o motivo abaixo</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )} />
               <FormField control={form.control} name="motivoSaida" render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Motivo da saída</FormLabel>
+                  <FormLabel>Motivo da saída <span className="text-destructive">*</span></FormLabel>
                   <FormControl>
                     <Textarea
                       placeholder="Ex: Entrega de banner para cliente, visita comercial, coleta de material..."
