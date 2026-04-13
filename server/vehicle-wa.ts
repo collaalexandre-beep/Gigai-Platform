@@ -429,6 +429,14 @@ export async function handleVehicleWaFlow(params: VehicleWaParams): Promise<bool
       try {
         await storage.updateVehicleExit(exitId, { observacoesRetorno: obsText } as any);
         await storage.updateVehicle(vehicleId, { ocorrenciaAberta: true } as any);
+        // Criar registro em vehicle_issue_reports para que apareça na aba Ocorrências
+        await storage.createIssueReport({
+          vehicleId,
+          descricao: `[WhatsApp] Observação de retorno: ${obsText}`,
+          gravidade: "media",
+          status: "aberto",
+          dataHora: new Date(),
+        } as any);
       } catch (err) {
         console.error("[VehicleWA] Erro ao salvar observação:", err);
       }

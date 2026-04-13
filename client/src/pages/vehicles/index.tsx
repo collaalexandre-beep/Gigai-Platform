@@ -10,6 +10,18 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Search, Car, Fuel, Settings, AlertTriangle, CheckCircle2, Eye, Wrench } from "lucide-react";
 import type { Vehicle } from "@shared/schema";
 
+// ─── Tipos ───────────────────────────────────────────────────────────────────
+
+interface VehicleDashboard extends Vehicle {
+  manutencaoStatus: "verde" | "amarelo" | "vermelho";
+  hasOcorrencia: boolean;
+  countItens: number;
+  countVermelho: number;
+  countAmarelo: number;
+}
+
+// ─── Constantes ──────────────────────────────────────────────────────────────
+
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   ativo: { label: "Ativo", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" },
   manutencao: { label: "Manutenção", color: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400" },
@@ -21,20 +33,42 @@ const FUEL_LABELS: Record<string, string> = {
   flex: "Flex", gnv: "GNV", eletrico: "Elétrico", hibrido: "Híbrido",
 };
 
+const MANUT_STATUS = {
+  verde:    { dot: "bg-green-500 shadow-green-300",   label: "OK" },
+  amarelo:  { dot: "bg-yellow-400 shadow-yellow-200", label: "Manutenção próxima" },
+  vermelho: { dot: "bg-red-500 shadow-red-300",       label: "Manutenção vencida" },
+};
+
+// ─── Componente ──────────────────────────────────────────────────────────────
+
 export default function VehiclesPage() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("todos");
 
-  const { data: vehicles = [], isLoading } = useQuery<Vehicle[]>({
-    queryKey: ["/api/vehicles", { search, status: statusFilter !== "todos" ? statusFilter : undefined }],
+  // Usa o endpoint de dashboard para obter status de manutenção por veículo
+  const { data: allVehicles = [], isLoading } = useQuery<VehicleDashboard[]>({
+    queryKey: ["/api/vehicles/dashboard"],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (search) params.set("search", search);
-      if (statusFilter !== "todos") params.set("status", statusFilter);
-      const res = await apiRequest("GET", `/api/vehicles?${params}`);
+      const res = await apiRequest("GET", "/api/vehicles/dashboard");
       return res.json();
     },
+    refetchInterval: 60000,
+  });
+
+  // Filtro client-side (busca e status)
+  const vehicles = allVehicles.filter((v) => {
+    if (statusFilter !== "todos" && v.status !== statusFilter) return false;
+    if (search) {
+      const s = search.toLowerCase();
+      return (
+        v.marca.toLowerCase().includes(s) ||
+        v.modelo.toLowerCase().includes(s) ||
+        v.placa.toLowerCase().includes(s) ||
+        (v.numeroInterno ?? "").toLowerCase().includes(s)
+      );
+    }
+    return true;
   });
 
   const resolverMut = useMutation({
@@ -43,7 +77,7 @@ export default function VehiclesPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/vehicles"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/vehicles/dashboard"] });
       toast({ title: "Ocorrência resolvida", description: "O sinal voltou para verde." });
     },
     onError: () => toast({ title: "Erro ao resolver ocorrência", variant: "destructive" }),
@@ -58,33 +92,34 @@ export default function VehiclesPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" asChild>
-            <Link href="/vehicles/exits">
+            <Link href="/vehicles/exits" data-testid="link-exits">
               <Car className="w-4 h-4 mr-2" />
               Saídas
             </Link>
           </Button>
           <Button asChild>
-            <Link href="/vehicles/new" data-testid="button-new-vehicle">
+            <Link href="/vehicles/new" data-testid="link-new-vehicle">
               <Plus className="w-4 h-4 mr-2" />
-              Novo Veículo
+              Novo veículo
             </Link>
           </Button>
         </div>
       </div>
 
-      <div className="flex gap-3">
-        <div className="relative flex-1 max-w-sm">
+      {/* Filtros */}
+      <div className="flex gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Placa, modelo ou marca..."
             className="pl-9"
+            placeholder="Buscar por marca, modelo, placa..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            data-testid="input-search-vehicles"
+            data-testid="input-search-vehicle"
           />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[160px]" data-testid="select-status-filter">
+          <SelectTrigger className="w-44" data-testid="select-vehicle-status">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -118,20 +153,40 @@ export default function VehiclesPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {vehicles.map((v) => {
             const statusInfo = STATUS_LABELS[v.status] ?? STATUS_LABELS.ativo;
-            const temOcorrencia = v.ocorrenciaAberta;
+            const temOcorrencia = v.hasOcorrencia;
+            const manutStatus = v.manutencaoStatus ?? "verde";
+            const manutInfo = MANUT_STATUS[manutStatus];
+
+            // Cor da borda do card: vermelho se tem ocorrência, amarelo se manutenção próxima/vencida
+            const borderCls = temOcorrencia
+              ? "border-red-400 dark:border-red-600 shadow-red-100 dark:shadow-red-950/20"
+              : manutStatus === "vermelho"
+              ? "border-red-300 dark:border-red-700"
+              : manutStatus === "amarelo"
+              ? "border-yellow-300 dark:border-yellow-700"
+              : "";
+
             return (
               <Card
                 key={v.id}
-                className={`hover:shadow-md transition-shadow ${temOcorrencia ? "border-red-400 dark:border-red-600 shadow-red-100 dark:shadow-red-950/20" : ""}`}
+                className={`hover:shadow-md transition-shadow ${borderCls}`}
                 data-testid={`card-vehicle-${v.id}`}
               >
                 <CardHeader className="pb-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      {/* Sinal luminoso: verde normal, vermelho com ocorrência */}
+                      {/* Dot composto: vermelho se ocorrência, senão reflete manutenção */}
                       <span
-                        className={`flex-shrink-0 w-3 h-3 rounded-full shadow-sm ${temOcorrencia ? "bg-red-500 shadow-red-300" : "bg-green-500 shadow-green-300"}`}
-                        title={temOcorrencia ? "Ocorrência em aberto" : "Sem ocorrências"}
+                        className={`flex-shrink-0 w-3 h-3 rounded-full shadow-sm ${
+                          temOcorrencia ? "bg-red-500 shadow-red-300" : manutInfo.dot
+                        }`}
+                        title={
+                          temOcorrencia
+                            ? "Ocorrência em aberto"
+                            : manutStatus === "verde"
+                            ? "Sem alertas"
+                            : manutInfo.label
+                        }
                         data-testid={`status-light-${v.id}`}
                       />
                       <div className="min-w-0">
@@ -144,7 +199,7 @@ export default function VehiclesPage() {
                     </span>
                   </div>
 
-                  {/* Banner de ocorrência */}
+                  {/* Banner de ocorrência aberta */}
                   {temOcorrencia && (
                     <div className="flex items-center gap-2 mt-2 px-2 py-1.5 bg-red-50 dark:bg-red-950/30 rounded-md border border-red-200 dark:border-red-800">
                       <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
@@ -160,6 +215,26 @@ export default function VehiclesPage() {
                         <CheckCircle2 className="w-3 h-3 mr-1" />
                         Resolver
                       </Button>
+                    </div>
+                  )}
+
+                  {/* Banner de manutenção vencida */}
+                  {!temOcorrencia && manutStatus === "vermelho" && (
+                    <div className="flex items-center gap-1.5 mt-2 px-2 py-1.5 bg-red-50 dark:bg-red-950/30 rounded-md border border-red-200 dark:border-red-800">
+                      <Wrench className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                      <span className="text-xs text-red-700 dark:text-red-400 font-medium">
+                        {v.countVermelho} item(s) de manutenção vencido(s)
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Banner de manutenção próxima */}
+                  {!temOcorrencia && manutStatus === "amarelo" && (
+                    <div className="flex items-center gap-1.5 mt-2 px-2 py-1.5 bg-yellow-50 dark:bg-yellow-950/30 rounded-md border border-yellow-200 dark:border-yellow-800">
+                      <Wrench className="w-3.5 h-3.5 text-yellow-500 flex-shrink-0" />
+                      <span className="text-xs text-yellow-700 dark:text-yellow-400 font-medium">
+                        {v.countAmarelo} item(s) de manutenção próximo(s)
+                      </span>
                     </div>
                   )}
                 </CardHeader>
@@ -185,6 +260,20 @@ export default function VehiclesPage() {
                   {v.consumoMedioKmL && (
                     <p className="text-sm text-muted-foreground">
                       Consumo: <span className="font-medium text-foreground">{v.consumoMedioKmL} km/l</span>
+                    </p>
+                  )}
+
+                  {/* Resumo de itens de manutenção */}
+                  {v.countItens > 0 && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Wrench className="w-3 h-3" />
+                      {v.countItens} item(s) no plano
+                      {v.countVermelho > 0 && (
+                        <span className="ml-1 text-red-600 dark:text-red-400 font-medium">· {v.countVermelho} vencido(s)</span>
+                      )}
+                      {v.countAmarelo > 0 && v.countVermelho === 0 && (
+                        <span className="ml-1 text-yellow-600 dark:text-yellow-400 font-medium">· {v.countAmarelo} próximo(s)</span>
+                      )}
                     </p>
                   )}
 
