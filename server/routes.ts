@@ -2266,8 +2266,17 @@ Responda SOMENTE com JSON válido:
         const existing = await storage.getVehicleExit(id);
         if (existing) {
           const vehicleUpdate: Record<string, unknown> = { kmAtual: String(data.kmFinal) };
-          if (data.observacoesRetorno && String(data.observacoesRetorno).trim()) {
+          const obsText = data.observacoesRetorno ? String(data.observacoesRetorno).trim() : "";
+          if (obsText) {
             vehicleUpdate.ocorrenciaAberta = true;
+            // Criar registro em vehicle_issue_reports para que apareça na aba Ocorrências
+            await storage.createIssueReport({
+              vehicleId: existing.vehicleId,
+              descricao: `[Retorno] ${obsText}`,
+              gravidade: "media",
+              status: "aberto",
+              dataHora: new Date(),
+            } as any);
           }
           await storage.updateVehicle(existing.vehicleId, vehicleUpdate as any);
         }
