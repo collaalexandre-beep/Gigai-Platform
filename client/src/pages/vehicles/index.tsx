@@ -51,7 +51,9 @@ export default function VehiclesPage() {
     queryKey: ["/api/vehicles/dashboard"],
     queryFn: async () => {
       const res = await apiRequest("GET", "/api/vehicles/dashboard");
-      return res.json();
+      const data = await res.json();
+      // O endpoint retorna { total, veiculos: [...] } — extraímos o array
+      return Array.isArray(data) ? data : (data.veiculos ?? []);
     },
     refetchInterval: 60000,
   });
