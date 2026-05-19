@@ -86,6 +86,9 @@ import {
   waBotConfig,
   type WaBotConfig,
   type InsertWaBotConfig,
+  purchaseRequests,
+  type PurchaseRequest,
+  type InsertPurchaseRequest,
   vehicleMaintenanceItems,
   vehicleMaintenanceHistory,
   vehicleIssueReports,
@@ -345,6 +348,11 @@ export interface IStorage {
   // WaBotConfig
   getWaBotConfig(): Promise<WaBotConfig | undefined>;
   upsertWaBotConfig(data: Partial<InsertWaBotConfig>): Promise<WaBotConfig>;
+
+  // Purchase Requests
+  createPurchaseRequest(data: InsertPurchaseRequest): Promise<PurchaseRequest>;
+  getPurchaseRequests(filters?: { status?: string }): Promise<PurchaseRequest[]>;
+  updatePurchaseRequest(id: string, data: Partial<PurchaseRequest>): Promise<PurchaseRequest>;
 }
 
 // ─── MAINTENANCE STATUS UTILITY ───────────────────────────────────────────────
@@ -1807,6 +1815,23 @@ export class DatabaseStorage implements IStorage {
 
   async getWaBotConfig(): Promise<WaBotConfig | undefined> {
     const [row] = await db.select().from(waBotConfig).where(eq(waBotConfig.id, "default")).limit(1);
+    return row;
+  }
+
+  async createPurchaseRequest(data: InsertPurchaseRequest): Promise<PurchaseRequest> {
+    const [row] = await db.insert(purchaseRequests).values(data).returning();
+    return row;
+  }
+
+  async getPurchaseRequests(filters?: { status?: string }): Promise<PurchaseRequest[]> {
+    if (filters?.status) {
+      return db.select().from(purchaseRequests).where(eq(purchaseRequests.status, filters.status)).orderBy(desc(purchaseRequests.createdAt));
+    }
+    return db.select().from(purchaseRequests).orderBy(desc(purchaseRequests.createdAt));
+  }
+
+  async updatePurchaseRequest(id: string, data: Partial<PurchaseRequest>): Promise<PurchaseRequest> {
+    const [row] = await db.update(purchaseRequests).set(data as any).where(eq(purchaseRequests.id, id)).returning();
     return row;
   }
 

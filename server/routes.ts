@@ -3,8 +3,10 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { lookupCnpj, validateCnpj } from "./cnpj";
 import { z } from "zod";
-import OpenAI from "openai";
 import PDFDocument from "pdfkit";
+import { routeMessage } from "./services/agentRouter";
+import { sendMetaMessage, getMetaToken, getMetaPhoneId } from "./services/metaWhatsapp";
+import { DEFAULT_SYSTEM_PROMPT, DEFAULT_WELCOME_MSG, DEFAULT_CANCEL_MSG, DEFAULT_ATTENDANT_MSG } from "./agents/commercialAgent";
 import {
   insertClientSchema,
   insertContactSchema,
@@ -36,7 +38,7 @@ import {
 } from "@shared/schema";
 import { calcMaintenanceItemStatus } from "./storage";
 import { generateProductSuggestion, suggestQuoteItem, generateSpecialQuote, adjustSpecialQuote, extractFromAdjustment } from "./ai";
-import { handleVehicleWaFlow, isVehicleExitCommand, isVehicleReturnCommand, VEH_STEP_LABELS } from "./vehicle-wa";
+import { VEH_STEP_LABELS } from "./vehicle-wa";
 import path from "path";
 import fs from "fs";
 import multer from "multer";
@@ -1210,171 +1212,13 @@ export async function registerRoutes(
     }
   });
 
-  // ─── WHATSAPP BOT (Meta WhatsApp Business API) ────────────────────────────────
+  // ─── WHATSAPP BOT (Multi-Agent Architecture) ─────────────────────────────────
 
   const META_VERIFY_TOKEN = process.env.META_VERIFY_TOKEN ?? "gigai_whatsapp_2026";
-  const META_API_URL = "https://graph.facebook.com/v18.0";
 
-  const getMetaToken = () => process.env.META_WHATSAPP_TOKEN ?? "";
-  const getMetaPhoneId = () => process.env.META_PHONE_NUMBER_ID ?? "";
-
-  const openaiBot = new OpenAI({
-    apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-    baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-  });
-
-  async function sendMetaMessage(phoneNumberId: string, to: string, body: string): Promise<void> {
-    const token = getMetaToken();
-    if (!token || !phoneNumberId) {
-      console.warn("[WhatsApp] META_WHATSAPP_TOKEN ou phone_number_id não configurado — mensagem não enviada.");
-      return;
-    }
-    console.log("[WhatsApp] Enviando mensagem via Meta API:", { phoneNumberId, to, bodyPreview: body.slice(0, 80) });
-    const resp = await fetch(`${META_API_URL}/${phoneNumberId}/messages`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to,
-        type: "text",
-        text: { preview_url: false, body },
-      }),
-    });
-    if (!resp.ok) {
-      const err = await resp.text();
-      console.error("[WhatsApp] Erro ao enviar via Meta API:", { phoneNumberId, to, status: resp.status, err });
-    } else {
-      let wamid = "(sem wamid)";
-      try {
-        const result = await resp.json() as { messages?: { id: string }[] };
-        wamid = result?.messages?.[0]?.id ?? "(sem wamid)";
-      } catch {
-        // Meta returned non-JSON on success — not critical
-      }
-      console.log("[WhatsApp] Mensagem enviada com sucesso:", { phoneNumberId, to, wamid });
-    }
-  }
-
-  async function sendMetaDocument(phoneNumberId: string, to: string, documentUrl: string, filename: string, caption?: string): Promise<void> {
-    const token = getMetaToken();
-    if (!token || !phoneNumberId) return;
-    const resp = await fetch(`${META_API_URL}/${phoneNumberId}/messages`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        recipient_type: "individual",
-        to,
-        type: "document",
-        document: { link: documentUrl, filename, ...(caption ? { caption } : {}) },
-      }),
-    });
-    if (!resp.ok) {
-      const err = await resp.text();
-      console.error("[WhatsApp] Erro ao enviar documento via Meta API:", err);
-    }
-  }
-
-  // ── DEFAULT BOT CONFIG ────────────────────────────────────────────────────
-  const DEFAULT_SYSTEM_PROMPT = `Você é o assistente virtual da Gráfica+, uma gráfica profissional brasileira. Converse de forma natural, amigável e direta em português brasileiro.
-
-Informações JÁ coletadas para o orçamento: {DADOS_COLETADOS}
-
-Sua tarefa: entender o que o cliente quer e extrair dados para um orçamento de impressão.
-
-Campos a coletar:
-- produto: nome do produto (banner, faixa, adesivo vinil, placa PVC, lona, cartão de visita, folder, etc.)
-- largura: largura em metros (número decimal, ex: 3.0)
-- altura: altura em metros (número decimal, ex: 1.0)
-- quantidade: número inteiro de peças
-- nomeCliente: nome completo ou razão social
-- cidade: cidade de entrega
-
-REGRAS:
-1. Se o cliente informar TUDO em uma mensagem (ex: "quero 100 adesivos 5x5cm para Porto Alegre, empresa ABC"), extraia tudo de uma vez e marque complete=true com resumo para confirmação.
-2. Se faltar alguma informação, pergunte de forma natural apenas pelo que está faltando.
-3. Converta cm para metros automaticamente (ex: 5cm = 0.05m, 50cm = 0.5m).
-4. Se o cliente perguntar sobre status de pedido, retorne intent="status".
-5. Se pedir atendente humano, retorne intent="atendente".
-6. Não altere campos já coletados (mantenha os valores existentes).
-7. Quando complete=true, o reply deve ser um resumo amigável pedindo confirmação (SIM/NÃO).
-
-Responda SOMENTE com JSON válido:
-{
-  "produto": string | null,
-  "largura": number | null,
-  "altura": number | null,
-  "quantidade": number | null,
-  "nomeCliente": string | null,
-  "cidade": string | null,
-  "reply": string,
-  "complete": boolean,
-  "intent": "orcamento" | "status" | "atendente" | "outro"
-}`;
-
-  const DEFAULT_WELCOME_MSG = `Olá! 👋 Sou a assistente virtual da *Gráfica+*.\n\nComo posso te ajudar? Me diga o que você precisa — pode escrever normalmente, como:\n\n_"Quero um banner de 3x1m, 50 unidades"_\n_"Preciso de 100 adesivos 10x10cm para minha empresa"_\n_"Qual o status do meu pedido ORC-2026-0001?"_`;
-  const DEFAULT_CANCEL_MSG = `Tudo bem! Recomeçamos do zero. 😊\n\nComo posso ajudar? Me diga o que você precisa!`;
-  const DEFAULT_ATTENDANT_MSG = `Entendido! 🙋 Em breve um atendente entrará em contato com você.\n\nSe precisar de algo mais, é só dizer!`;
-
-  interface QuoteData {
-    produto?: string | null;
-    largura?: number | null;
-    altura?: number | null;
-    quantidade?: number | null;
-    nomeCliente?: string | null;
-    cidade?: string | null;
-  }
-
-  interface AiExtractResult extends QuoteData {
-    reply: string;
-    complete: boolean;
-    intent?: "orcamento" | "status" | "atendente" | "outro";
-  }
-
-  async function extractQuoteInfoWithAI(userMessage: string, collected: QuoteData, systemPromptTemplate: string): Promise<AiExtractResult> {
-    const collected_summary = Object.entries(collected)
-      .filter(([, v]) => v != null && v !== undefined)
-      .map(([k, v]) => `${k}=${v}`)
-      .join(", ") || "nenhuma";
-
-    const systemPrompt = systemPromptTemplate.replace("{DADOS_COLETADOS}", collected_summary);
-
-    try {
-      const resp = await openaiBot.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage },
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.3,
-        max_tokens: 500,
-      });
-
-      const result = JSON.parse(resp.choices[0].message.content ?? "{}") as AiExtractResult;
-
-      return {
-        produto: result.produto ?? collected.produto ?? null,
-        largura: result.largura ?? collected.largura ?? null,
-        altura: result.altura ?? collected.altura ?? null,
-        quantidade: result.quantidade ?? collected.quantidade ?? null,
-        nomeCliente: result.nomeCliente ?? collected.nomeCliente ?? null,
-        cidade: result.cidade ?? collected.cidade ?? null,
-        reply: result.reply ?? "Desculpe, não entendi. Pode repetir?",
-        complete: result.complete === true,
-        intent: result.intent ?? "orcamento",
-      };
-    } catch (e) {
-      console.error("[WhatsApp] Erro na extração via IA:", e);
-      return {
-        ...collected,
-        reply: "Não entendi bem. Pode me dizer o que você precisa? 😊",
-        complete: false,
-        intent: "outro",
-      };
-    }
-  }
+  // sendMetaMessage, getMetaToken, getMetaPhoneId → importadas de ./services/metaWhatsapp
+  // DEFAULT_SYSTEM_PROMPT, DEFAULT_WELCOME_MSG, etc. → importadas de ./agents/commercialAgent
+  // routeMessage → importada de ./services/agentRouter
 
   // ─── PDF GENERATION ENDPOINT ─────────────────────────────────────────────────
   app.get("/api/quotes/:id/pdf", async (req: Request, res: Response) => {
@@ -1513,7 +1357,7 @@ Responda SOMENTE com JSON válido:
     });
   });
 
-  // ─── WEBHOOK MESSAGE HANDLER ─────────────────────────────────────────────────
+  // ─── WEBHOOK MESSAGE HANDLER (Multi-Agent Architecture) ─────────────────────
   app.post("/api/whatsapp", async (req: Request, res: Response) => {
     res.sendStatus(200);
     try {
@@ -1521,17 +1365,19 @@ Responda SOMENTE com JSON válido:
       if (body.object !== "whatsapp_business_account") return;
 
       const botCfg = await storage.getWaBotConfig();
-      const cfgSystemPrompt = botCfg?.systemPrompt || DEFAULT_SYSTEM_PROMPT;
-      const cfgWelcomeMsg = botCfg?.welcomeMessage || DEFAULT_WELCOME_MSG;
-      const cfgCancelMsg = botCfg?.cancelMessage || DEFAULT_CANCEL_MSG;
-      const cfgAttendantMsg = botCfg?.attendantMessage || DEFAULT_ATTENDANT_MSG;
-      const cfgVehMessages = {
-        naoCadastrado: botCfg?.vehMsgNaoCadastrado || null,
-        naoAutorizado: botCfg?.vehMsgNaoAutorizado || null,
-        semVeiculos: botCfg?.vehMsgSemVeiculos || null,
-        cancelado: botCfg?.vehMsgCancelado || null,
-        saidaSucesso: botCfg?.vehMsgSaidaSucesso || null,
-        retornoSucesso: botCfg?.vehMsgRetornoSucesso || null,
+      const botConfig = {
+        systemPrompt:  botCfg?.systemPrompt        || DEFAULT_SYSTEM_PROMPT,
+        welcomeMsg:    botCfg?.welcomeMessage       || DEFAULT_WELCOME_MSG,
+        cancelMsg:     botCfg?.cancelMessage        || DEFAULT_CANCEL_MSG,
+        attendantMsg:  botCfg?.attendantMessage     || DEFAULT_ATTENDANT_MSG,
+        vehMessages: {
+          naoCadastrado:  botCfg?.vehMsgNaoCadastrado  || null,
+          naoAutorizado:  botCfg?.vehMsgNaoAutorizado  || null,
+          semVeiculos:    botCfg?.vehMsgSemVeiculos    || null,
+          cancelado:      botCfg?.vehMsgCancelado      || null,
+          saidaSucesso:   botCfg?.vehMsgSaidaSucesso   || null,
+          retornoSucesso: botCfg?.vehMsgRetornoSucesso || null,
+        },
       };
 
       for (const entry of body.entry ?? []) {
@@ -1551,8 +1397,6 @@ Responda SOMENTE com JSON válido:
             const msgNorm = rawBody.toLowerCase().replace(/[^a-z0-9çãáéíóúâêîôûàèìòùü ]/g, "").trim();
             console.log("[WhatsApp] Mensagem recebida", { from, type: msgType, body: rawBody || "(image)" });
 
-            console.log("[WhatsApp] Processando mensagem:", { from, phoneNumberId, step: "início" });
-
             const fromKey = `meta:${from}`;
             let session = await storage.getWhatsappSession(fromKey);
             if (!session) session = await storage.createWhatsappSession(fromKey);
@@ -1568,6 +1412,7 @@ Responda SOMENTE com JSON válido:
               if (nextStep !== undefined || extraData) {
                 const newData = { ...(session!.data as Record<string, unknown>), ...extraData };
                 await storage.updateWhatsappSession(session!.id, { step: nextStep ?? session!.step, data: newData });
+                session = { ...session!, step: nextStep ?? session!.step, data: newData };
               }
               await storage.addWhatsappMessage(session!.id, "outbound", replyMsg, botNumber, fromKey);
               await sendMetaMessage(phoneNumberId, from, replyMsg);
@@ -1578,212 +1423,10 @@ Responda SOMENTE com JSON válido:
               session = { ...session!, ...data };
             };
 
-            // ── VEHICLE FLOW (internal employees) ─────────────────────────────
-            let vehicleHandled = false;
-            try {
-              vehicleHandled = await handleVehicleWaFlow({
-                from,
-                rawBody,
-                msgNorm,
-                msgType,
-                mediaId,
-                session,
-                token: getMetaToken(),
-                vehMessages: cfgVehMessages,
-                reply,
-                updateSession,
-              });
-            } catch (vehErr) {
-              console.error("[WhatsApp] Erro em handleVehicleWaFlow:", { from, msgNorm, err: vehErr });
-            }
-            if (vehicleHandled) continue;
-
-            if (msgNorm === "cancelar" || msgNorm === "sair") {
-              await storage.updateWhatsappSession(session.id, { step: "collecting", data: {} });
-              await reply(cfgCancelMsg, "collecting");
-              continue;
-            }
-
-            if (msgNorm === "menu" || msgNorm === "inicio" || msgNorm === "início" || msgNorm === "oi" || msgNorm === "ola" || msgNorm === "olá") {
-              if (session.step === "done" || session.step === "menu") {
-                await storage.updateWhatsappSession(session.id, { step: "collecting", data: {} });
-              }
-              await reply(cfgWelcomeMsg, "collecting");
-              continue;
-            }
-
-            const step = session.step;
-            const data = (session.data ?? {}) as QuoteData;
-
-            // ── STATUS QUERY ──────────────────────────────────────────────────
-            if (step === "status_query" || (step === "collecting" && (msgNorm.includes("status") || rawBody.toUpperCase().match(/^(ORC|PED)-\d{4}-\d{4}$/)))) {
-              const numUpper = rawBody.trim().toUpperCase();
-              if (numUpper.startsWith("ORC-") || numUpper.startsWith("PED-")) {
-                const { data: qs } = await storage.getQuotes({ limit: 500 });
-                const fq = qs.find((q) => q.numero === numUpper);
-                if (fq) {
-                  const sm: Record<string, string> = { rascunho: "📝 Em análise", enviado: "📤 Enviado", aprovado: "✅ Aprovado", reprovado: "❌ Reprovado", cancelado: "🚫 Cancelado" };
-                  await reply(`*${fq.numero}*\nStatus: ${sm[fq.status] ?? fq.status}\nValor: R$ ${Number(fq.valorTotal || 0).toFixed(2).replace(".", ",")}\n\nPrecisa de mais alguma coisa?`, "collecting", {});
-                  continue;
-                }
-                const { data: os } = await storage.getOrders({ limit: 500 });
-                const fo = os.find((o) => o.numero === numUpper);
-                if (fo) {
-                  const sm: Record<string, string> = { aguardando_producao: "⏳ Aguardando Produção", em_producao: "🏭 Em Produção", finalizado: "✅ Finalizado", entregue: "📦 Entregue", cancelado: "🚫 Cancelado" };
-                  await reply(`*${fo.numero}*\nStatus: ${sm[fo.status] ?? fo.status}\nValor: R$ ${Number(fo.valorTotal || 0).toFixed(2).replace(".", ",")}\n\nPrecisa de mais alguma coisa?`, "collecting", {});
-                  continue;
-                }
-                await reply(`Não encontrei o número *${numUpper}*. Verifique e tente novamente.`, "status_query");
-                continue;
-              }
-            }
-
-            // ── CONFIRMAR ORÇAMENTO ───────────────────────────────────────────
-            if (step === "confirmar") {
-              if (msgNorm === "sim" || msgNorm === "s" || msgNorm === "yes" || msgNorm === "confirmo" || msgNorm === "ok" || msgNorm === "pode") {
-                const d = data as QuoteData;
-                const phone = from.replace(/\D/g, "");
-                try {
-                  let clientId: string;
-                  const { data: fc } = await storage.getClients({ search: phone, limit: 5 });
-                  const existing = fc.find((c) => (c.telefone ?? "").replace(/\D/g, "").includes(phone));
-                  if (existing) {
-                    clientId = existing.id;
-                  } else {
-                    const nc = await storage.createClient({
-                      tipoPessoa: "fisica",
-                      razaoSocial: d.nomeCliente ?? "Cliente WhatsApp",
-                      telefone: `+${phone}`,
-                      status: "prospect",
-                      origemLead: "whatsapp",
-                    } as any);
-                    clientId = nc.id;
-                  }
-                  const today = new Date().toISOString().split("T")[0];
-                  const validUntil = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
-                  const quote = await storage.createQuote({
-                    clientId,
-                    data: today,
-                    validade: validUntil,
-                    status: "rascunho",
-                    desconto: "0",
-                    impostos: "0",
-                    observacoes: `Orçamento via WhatsApp - Cidade: ${d.cidade ?? ""}`,
-                  } as any);
-                  const larg = d.largura ?? 0;
-                  const alt = d.altura ?? 0;
-                  const qtd = d.quantidade ?? 1;
-
-                  let quoteItemData: Record<string, unknown> = {
-                    quoteId: quote.id,
-                    descricao: d.produto ?? "Produto",
-                    largura: String(larg),
-                    altura: String(alt),
-                    area: (larg * alt).toFixed(4),
-                    quantidade: String(qtd),
-                    unidade: larg > 0 && alt > 0 ? "m²" : "un",
-                    custoCalculado: "0",
-                    precoUnitario: "0",
-                    precoTotal: "0",
-                    ordem: 0,
-                  };
-
-                  try {
-                    const { data: prods } = await storage.getProducts({ limit: 100 });
-                    const prompt = `${d.produto} ${larg}x${alt}m quantidade ${qtd} cidade ${d.cidade}`;
-                    const suggestion = await suggestQuoteItem(prompt, prods.map((p) => ({
-                      id: p.id,
-                      nome: p.nome,
-                      categoria: p.categoria ?? "",
-                      tipoCalculo: p.tipoCalculo,
-                      unidadeVenda: p.unidadeVenda,
-                    })));
-                    quoteItemData = {
-                      quoteId: quote.id,
-                      productId: suggestion.productId ?? null,
-                      descricao: suggestion.descricao || d.produto || "Produto",
-                      largura: suggestion.largura != null ? String(suggestion.largura) : String(larg),
-                      altura: suggestion.altura != null ? String(suggestion.altura) : String(alt),
-                      area: suggestion.area != null ? String(suggestion.area) : (larg * alt).toFixed(4),
-                      quantidade: String(suggestion.quantidade || qtd),
-                      unidade: suggestion.unidade || "un",
-                      custoCalculado: "0",
-                      precoUnitario: String(suggestion.precoUnitario ?? 0),
-                      precoTotal: String(suggestion.precoTotal ?? 0),
-                      observacoes: suggestion.observacoes ?? null,
-                      ordem: 0,
-                    };
-                    await storage.updateQuote(quote.id, { valorTotal: String(suggestion.precoTotal ?? 0) });
-                  } catch (aiErr) {
-                    console.warn("[WhatsApp] Erro ao calcular preço com IA, usando zero:", aiErr);
-                  }
-
-                  await storage.setQuoteItems(quote.id, [quoteItemData as any]);
-                  await storage.updateWhatsappSession(session!.id, { step: "done", status: "completed", clientId, quoteId: quote.id });
-
-                  const precoTotal = Number(quoteItemData.precoTotal ?? 0);
-                  const precoStr = precoTotal > 0
-                    ? `\n💰 *Valor estimado: R$ ${precoTotal.toFixed(2).replace(".", ",")}*\n`
-                    : "\n_(O valor será calculado pela nossa equipe)_\n";
-                  await reply(`✅ *Orçamento ${quote.numero} criado!*\n${precoStr}\nEstamos enviando uma cópia do seu orçamento agora... 👇`);
-
-                  const prodUrl = process.env.REPLIT_DOMAINS
-                    ? `https://${process.env.REPLIT_DOMAINS.split(",")[0].trim()}`
-                    : "https://grafica-core-system.replit.app";
-                  const pdfUrl = `${prodUrl}/api/quotes/${quote.id}/pdf`;
-                  await sendMetaDocument(phoneNumberId, from, pdfUrl, `${quote.numero}.pdf`, `Orçamento ${quote.numero} - Gráfica+`);
-
-                  await reply(`Obrigado por escolher a *Gráfica+*! 🖨️\n\nPrecisa de mais alguma coisa? É só me dizer!`, "collecting", {});
-                } catch (e) {
-                  console.error("[WhatsApp] Erro ao criar orçamento:", e);
-                  await reply(`Ocorreu um erro. Por favor, tente novamente.`, "collecting");
-                }
-                continue;
-              }
-
-              if (msgNorm === "nao" || msgNorm === "não" || msgNorm === "n" || msgNorm === "no" || msgNorm === "errado" || msgNorm === "incorreto") {
-                await storage.updateWhatsappSession(session.id, { step: "collecting", data: {}, status: "abandoned" });
-                session = await storage.createWhatsappSession(fromKey);
-                await reply(`Tudo bem! Vamos recomeçar. 😊\n\nMe diga o que você precisa:`, "collecting");
-                continue;
-              }
-
-              await reply(`Por favor, responda *SIM* para confirmar ou *NÃO* para recomeçar.`);
-              continue;
-            }
-
-            // ── COLLECTING (IA-DRIVEN) ────────────────────────────────────────
-            if (step === "done") {
-              await storage.updateWhatsappSession(session.id, { step: "collecting", data: {} });
-              session = await storage.createWhatsappSession(fromKey);
-            }
-
-            const aiResult = await extractQuoteInfoWithAI(rawBody, data, cfgSystemPrompt);
-
-            if (aiResult.intent === "atendente") {
-              await reply(cfgAttendantMsg, "collecting", {});
-              continue;
-            }
-
-            if (aiResult.intent === "status") {
-              await reply(`Me informe o número do orçamento ou pedido:\n_(ex: ORC-2026-0001 ou PED-2026-0001)_`, "status_query");
-              continue;
-            }
-
-            const newData: QuoteData = {
-              produto: aiResult.produto,
-              largura: aiResult.largura,
-              altura: aiResult.altura,
-              quantidade: aiResult.quantidade,
-              nomeCliente: aiResult.nomeCliente,
-              cidade: aiResult.cidade,
-            };
-
-            if (aiResult.complete) {
-              await reply(aiResult.reply, "confirmar", newData as Record<string, unknown>);
-            } else {
-              await reply(aiResult.reply, "collecting", newData as Record<string, unknown>);
-            }
+            await routeMessage({
+              from, fromKey, rawBody, msgNorm, msgType, mediaId,
+              phoneNumberId, botNumber, session, botConfig, reply, updateSession,
+            });
           }
         }
       }
@@ -1813,6 +1456,24 @@ Responda SOMENTE com JSON válido:
     } catch (err) {
       handleError(res, err);
     }
+  });
+
+  // ─── PURCHASE REQUESTS ───────────────────────────────────────────────────────
+  app.get("/api/purchase-requests", async (req: Request, res: Response) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const rows = await storage.getPurchaseRequests(status ? { status } : undefined);
+      res.json(rows);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.patch("/api/purchase-requests/:id/status", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body as { status: string };
+      const row = await storage.updatePurchaseRequest(id, { status } as any);
+      res.json(row);
+    } catch (err) { handleError(res, err); }
   });
 
   app.get("/api/whatsapp/config", async (_req: Request, res: Response) => {

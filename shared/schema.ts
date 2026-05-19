@@ -1352,6 +1352,27 @@ export const insertWaBotConfigSchema = createInsertSchema(waBotConfig).omit({ up
 export type InsertWaBotConfig = z.infer<typeof insertWaBotConfigSchema>;
 export type WaBotConfig = typeof waBotConfig.$inferSelect;
 
+// ─── SOLICITAÇÕES DE COMPRA ───────────────────────────────────────────────────
+
+export const purchaseRequests = pgTable("purchase_requests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  solicitanteNome: text("solicitante_nome"),
+  solicitanteTelefone: text("solicitante_telefone"),
+  material: text("material").notNull(),
+  quantidade: text("quantidade"),
+  unidade: text("unidade"),
+  urgencia: text("urgencia").default("normal"),
+  osRelacionada: text("os_relacionada"),
+  observacao: text("observacao"),
+  fornecedorSugerido: text("fornecedor_sugerido"),
+  status: text("status").default("pendente"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertPurchaseRequestSchema = createInsertSchema(purchaseRequests).omit({ id: true, createdAt: true });
+export type InsertPurchaseRequest = z.infer<typeof insertPurchaseRequestSchema>;
+export type PurchaseRequest = typeof purchaseRequests.$inferSelect;
+
 // ─── DASHBOARD STATS (view types) ────────────────────────────────────────────
 
 export interface DashboardStats {
