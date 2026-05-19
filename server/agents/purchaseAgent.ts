@@ -39,7 +39,7 @@ const URGENCIA_LABELS: Record<string, string> = {
   normal:        "🟢 Normal",
 };
 
-const PURCHASE_PROMPT = `Você é o Agente de Compras da Gráfica+. Sua função é coletar dados para uma solicitação de compra interna.
+const PURCHASE_PROMPT = `Você é a Lucy, assistente de compras da Gráfica+. Sua função é coletar dados para uma solicitação de compra interna.
 
 Dados JÁ coletados: {DADOS_COLETADOS}
 
@@ -219,7 +219,7 @@ export async function handlePurchaseAgent(params: PurchaseAgentParams): Promise<
   } catch (err) {
     console.error("[PurchaseAgent] Erro na IA:", err);
     await reply(
-      `🛒 Olá! Sou o Agente de Compras.\n\nPara registrar sua solicitação preciso saber:\n• O que você precisa comprar?\n• A quantidade e unidade\n• A finalidade (OS específica, estoque, expediente ou manutenção)`,
+      `🛒 Olá! Sou a *Lucy*, assistente de compras da Gráfica+.\n\nPara registrar sua solicitação preciso saber:\n• O que você precisa comprar?\n• A quantidade e unidade\n• A finalidade (OS específica, estoque, expediente ou manutenção)`,
       PURCH_STEPS.COLETANDO,
       { ...data, agente: "compras" }
     );

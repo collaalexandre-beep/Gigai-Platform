@@ -27,6 +27,8 @@ EXEMPLOS:
 - "vou sair com o carro" → frota
 - "retornei com a S10" → frota
 - "preciso de tinta para a OS 1234" → compras
+- "lucy, preciso de cola" → compras
+- "solicitar material" → compras
 - "me manda o boleto" → financeiro
 - "oi, tudo bem?" → humano
 
