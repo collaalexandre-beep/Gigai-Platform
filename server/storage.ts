@@ -352,7 +352,6 @@ export interface IStorage {
   // Purchase Requests
   createPurchaseRequest(data: InsertPurchaseRequest): Promise<PurchaseRequest>;
   getPurchaseRequests(filters?: { status?: string }): Promise<PurchaseRequest[]>;
-  getPurchaseRequestsPending(): Promise<PurchaseRequest[]>;
   updatePurchaseRequest(id: string, data: Partial<PurchaseRequest>): Promise<PurchaseRequest>;
 }
 
@@ -1829,13 +1828,6 @@ export class DatabaseStorage implements IStorage {
       return db.select().from(purchaseRequests).where(eq(purchaseRequests.status, filters.status)).orderBy(desc(purchaseRequests.createdAt));
     }
     return db.select().from(purchaseRequests).orderBy(desc(purchaseRequests.createdAt));
-  }
-
-  async getPurchaseRequestsPending(): Promise<PurchaseRequest[]> {
-    const { inArray } = await import("drizzle-orm");
-    return db.select().from(purchaseRequests)
-      .where(inArray(purchaseRequests.status, ["aguardando_informacoes", "aguardando_aprovacao", "aprovado", "em_cotacao"]))
-      .orderBy(desc(purchaseRequests.createdAt));
   }
 
   async updatePurchaseRequest(id: string, data: Partial<PurchaseRequest>): Promise<PurchaseRequest> {

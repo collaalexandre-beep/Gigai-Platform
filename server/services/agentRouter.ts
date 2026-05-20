@@ -103,23 +103,6 @@ export async function routeMessage(params: RouterParams): Promise<void> {
   }
 
   // ── 4. DETECÇÃO RÁPIDA POR PALAVRAS-CHAVE (sem IA) ───────────────────────
-
-  // "Lucy" = atalho direto para o Agente de Compras
-  if (msgNorm === "lucy" || msgNorm.startsWith("lucy ") || msgNorm.startsWith("lucy,")) {
-    const rawSemLucy = rawBody.replace(/^lucy[,\s]*/i, "").trim();
-    const normSemLucy = msgNorm.replace(/^lucy[,\s]*/, "").trim();
-    const sessaoComAgente = { ...session, data: { ...data, agente: "compras" } };
-    await storage.updateWhatsappSession(session.id, { data: sessaoComAgente.data });
-    await handlePurchaseAgent({
-      from,
-      rawBody:  rawSemLucy  || rawBody,
-      msgNorm:  normSemLucy || msgNorm,
-      session:  sessaoComAgente,
-      reply,
-    });
-    return;
-  }
-
   if (isVehicleExitCommand(msgNorm) || isVehicleReturnCommand(msgNorm)) {
     await runFleetAgent(params);
     return;

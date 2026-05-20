@@ -8,7 +8,6 @@ import {
   date,
   decimal,
   integer,
-  serial,
   pgEnum,
   index,
   jsonb,
@@ -1355,38 +1354,22 @@ export type WaBotConfig = typeof waBotConfig.$inferSelect;
 
 // ─── SOLICITAÇÕES DE COMPRA ───────────────────────────────────────────────────
 
-export const PURCHASE_STATUS = [
-  "aguardando_informacoes",
-  "aguardando_aprovacao",
-  "aprovado",
-  "em_cotacao",
-  "comprado",
-  "aguardando_entrega",
-  "recebido",
-  "cancelado",
-] as const;
-
-export const PURCHASE_TIPO = ["os", "estoque", "expediente", "manutencao"] as const;
-export const PURCHASE_URGENCIA = ["normal", "urgente", "muito_urgente"] as const;
-
 export const purchaseRequests = pgTable("purchase_requests", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  codigo: serial("codigo"),
   solicitanteNome: text("solicitante_nome"),
   solicitanteTelefone: text("solicitante_telefone"),
   material: text("material").notNull(),
   quantidade: text("quantidade"),
   unidade: text("unidade"),
-  osId: text("os_id"),
-  tipoCompra: text("tipo_compra"),
   urgencia: text("urgencia").default("normal"),
+  osRelacionada: text("os_relacionada"),
   observacao: text("observacao"),
-  status: text("status").default("aguardando_aprovacao"),
+  fornecedorSugerido: text("fornecedor_sugerido"),
+  status: text("status").default("pendente"),
   createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow().$onUpdate(() => new Date()),
 });
 
-export const insertPurchaseRequestSchema = createInsertSchema(purchaseRequests).omit({ id: true, codigo: true, createdAt: true, updatedAt: true });
+export const insertPurchaseRequestSchema = createInsertSchema(purchaseRequests).omit({ id: true, createdAt: true });
 export type InsertPurchaseRequest = z.infer<typeof insertPurchaseRequestSchema>;
 export type PurchaseRequest = typeof purchaseRequests.$inferSelect;
 
