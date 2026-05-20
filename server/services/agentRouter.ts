@@ -66,7 +66,7 @@ export async function routeMessage(params: RouterParams): Promise<void> {
   }
 
   // Lucy (Compras/Estoque): step lucy_*
-  if (step.startsWith("lucy_")) {
+  if (step.startsWith("lucy_") || step === "lucy_aguardando") {
     await handleLucyAgent({ from, rawBody, msgNorm, session, reply });
     return;
   }

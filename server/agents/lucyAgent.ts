@@ -3,20 +3,15 @@ import type { Seller, WhatsappSession } from "@shared/schema";
 
 // ─── NORMALIZAÇÃO DE TELEFONE ─────────────────────────────────────────────────
 
-/**
- * Remove todos os caracteres não-numéricos e o prefixo DDI 55 do Brasil,
- * retornando apenas DDD + número (10-11 dígitos).
- */
 export function normalizarTelefone(telefone: string): string {
   let digits = telefone.replace(/\D/g, "");
-  // Remove DDI 55 se o número tiver 12-13 dígitos (55 + DDD + número)
   if ((digits.length === 12 || digits.length === 13) && digits.startsWith("55")) {
     digits = digits.slice(2);
   }
   return digits;
 }
 
-// ─── VERIFICAÇÃO DE AUTORIZAÇÃO ────────────────────────────────────────────────
+// ─── VERIFICAÇÃO DE AUTORIZAÇÃO ───────────────────────────────────────────────
 
 export interface AutorizacaoResult {
   autorizado: boolean;
@@ -28,26 +23,21 @@ export async function verificarAutorizacaoCompraPorTelefone(
   telefone: string
 ): Promise<AutorizacaoResult> {
   const normRecebido = normalizarTelefone(telefone);
-
-  // Busca todos os colaboradores (sem filtro de paginação)
   const { data: todos } = await storage.getSellers({ limit: 1000 });
 
   const encontrado = todos.find((s: any) => {
-    // Compara contra whatsappNumber (campo específico do bot), whatsapp e telefone
     const candidatos = [s.whatsappNumber, s.whatsapp, s.telefone]
       .filter(Boolean)
-      .map((n) => normalizarTelefone(n!));
+      .map((n: string) => normalizarTelefone(n));
     return candidatos.includes(normRecebido);
   }) ?? null;
 
   if (!encontrado) {
     return { autorizado: false, colaborador: null, motivo: "telefone_nao_cadastrado" };
   }
-
   if (encontrado.autorizadoCompras) {
     return { autorizado: true, colaborador: encontrado, motivo: "colaborador_autorizado" };
   }
-
   return { autorizado: false, colaborador: encontrado, motivo: "colaborador_nao_autorizado" };
 }
 
@@ -61,9 +51,63 @@ export interface LucyAgentParams {
   reply: (msg: string, nextStep?: string, extraData?: Record<string, unknown>) => Promise<void>;
 }
 
-export async function handleLucyAgent(params: LucyAgentParams): Promise<void> {
-  const { from, reply } = params;
+// Mensagens que são apenas uma chamada pelo nome — sem intenção de compra
+const GREETING_PATTERNS = [
+  "lucy", "oi lucy", "ola lucy", "olá lucy", "ei lucy",
+  "oi, lucy", "olá, lucy", "oi! lucy", "lucy!", "lucy?",
+  "chama lucy", "quero falar com a lucy", "falar com a lucy",
+];
 
+function isJustGreeting(msgNorm: string): boolean {
+  const clean = msgNorm.trim();
+  return GREETING_PATTERNS.includes(clean);
+}
+
+export async function handleLucyAgent(params: LucyAgentParams): Promise<void> {
+  const { from, rawBody, msgNorm, session, reply } = params;
+  const step = session.step ?? "collecting";
+  const data = (session.data ?? {}) as Record<string, unknown>;
+
+  // ── ETAPA 1: usuário está esperando Lucy responder (chamou só pelo nome) ──
+  // Agora ele vai descrever o que precisa → fazer a verificação
+  if (step === "lucy_aguardando") {
+    await verificarEResponder(from, reply, data);
+    return;
+  }
+
+  // ── ETAPA 2: coletando dados (fase futura — por ora só avisa) ─────────────
+  if (step === "lucy_coletando") {
+    await reply(
+      `✅ Certo! Sua solicitação foi recebida.\n\nEm breve o setor de compras dará retorno. 🛒`,
+      "collecting",
+      {}
+    );
+    return;
+  }
+
+  // ── ENTRADA NOVA: verificar se é só uma chamada pelo nome ─────────────────
+  if (isJustGreeting(msgNorm)) {
+    await reply(
+      `Oi! Eu sou a *Lucy* 👋\n\n` +
+      `Sou a agente de Estoque e Compras da GIGAI.\n\n` +
+      `Me conta o que você precisa — material, quantidade e se é para uma OS, estoque ou expediente — e eu te ajudo!`,
+      "lucy_aguardando",
+      { agente: "lucy" }
+    );
+    return;
+  }
+
+  // ── ENTRADA NOVA: tem intenção de compra → verificar autorização ──────────
+  await verificarEResponder(from, reply, data);
+}
+
+// ─── VERIFICAÇÃO E RESPOSTA ───────────────────────────────────────────────────
+
+async function verificarEResponder(
+  from: string,
+  reply: LucyAgentParams["reply"],
+  data: Record<string, unknown>
+): Promise<void> {
   try {
     const resultado = await verificarAutorizacaoCompraPorTelefone(from);
 
@@ -87,7 +131,7 @@ export async function handleLucyAgent(params: LucyAgentParams): Promise<void> {
       await reply(
         `Oi ${nome}! Eu sou a *Lucy*, agente de Estoque e Compras da GIGAI. 🛒\n\n` +
         `Encontrei seu cadastro, mas você ainda não está autorizado a solicitar compras.\n\n` +
-        `Vou encaminhar essa solicitação para aprovação de um responsável.`,
+        `Peça para um responsável liberar sua autorização no sistema.`,
         "collecting",
         {}
       );
