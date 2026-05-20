@@ -41,8 +41,38 @@ export async function routeMessage(params: RouterParams): Promise<void> {
   const step = session.step ?? "collecting";
   const data = (session.data ?? {}) as Record<string, unknown>;
 
+  // ════════════════════════════════════════════════════════════════════════
+  // PRIORIDADE ABSOLUTA: Lucy (compras/estoque) — detecta antes de TUDO
+  // ════════════════════════════════════════════════════════════════════════
+  const msgLower = msgNorm;
+  const isLucyKeyword =
+    msgLower.includes("lucy") ||
+    msgLower.includes("compra") ||
+    msgLower.includes("compras") ||
+    msgLower.includes("material") ||
+    msgLower.includes("estoque") ||
+    msgLower.includes("reposicao") ||
+    msgLower.includes("reposição") ||
+    msgLower.includes("fornecedor") ||
+    msgLower.includes("cotacao") ||
+    msgLower.includes("cotação") ||
+    msgLower.includes("insumo") ||
+    msgLower.includes("insumos") ||
+    msgLower.includes("pedido de material") ||
+    msgLower.includes("material para os") ||
+    msgLower.includes("material de expediente") ||
+    msgLower.includes("preciso de tinta") ||
+    msgLower.includes("preciso de papel") ||
+    msgLower.includes("preciso comprar");
+
+  if (isLucyKeyword) {
+    console.log(`[AgentRouter] → LUCY (prioridade absoluta) msg="${rawBody.slice(0, 60)}"`);
+    await storage.updateWhatsappSession(session.id, { data: { ...data, agente: "lucy" } });
+    await handleLucyAgent({ from, rawBody, msgNorm, session: { ...session, data: { ...data, agente: "lucy" } }, reply });
+    return;
+  }
+
   // ── 1. COMANDOS UNIVERSAIS (qualquer agente) ──────────────────────────────
-  // "cancelar" dentro do fluxo de frota é tratado internamente pelo agente
   if (!step.startsWith("veh_") && CANCEL_CMDS.has(msgNorm)) {
     await storage.updateWhatsappSession(session.id, { step: "collecting", data: {} });
     await reply(botConfig.cancelMsg, "collecting");
@@ -57,27 +87,19 @@ export async function routeMessage(params: RouterParams): Promise<void> {
     return;
   }
 
-  // ── 2. ROTEAMENTO POR STEP ATIVO (sem IA — sessão em andamento) ───────────
-
-  // Frota: step veh_*
+  // ── 2. ROTEAMENTO POR STEP ATIVO (sessão em andamento) ───────────────────
   if (step.startsWith("veh_")) {
     await runFleetAgent(params);
     return;
   }
-
-  // Lucy (Compras/Estoque): step lucy_*
-  if (step.startsWith("lucy_") || step === "lucy_aguardando") {
+  if (step.startsWith("lucy_") || data.agente === "lucy") {
     await handleLucyAgent({ from, rawBody, msgNorm, session, reply });
     return;
   }
-
-  // Compras (agente legado): step purch_*
   if (step.startsWith("purch_")) {
     await handlePurchaseAgent({ from, rawBody, msgNorm, session, reply });
     return;
   }
-
-  // Comercial: steps específicos
   if (["confirmar", "done", "status_query"].includes(step)) {
     await handleCommercialAgent({
       from, fromKey, rawBody, msgNorm, phoneNumberId, session,
@@ -88,9 +110,8 @@ export async function routeMessage(params: RouterParams): Promise<void> {
     return;
   }
 
-  // ── 3. SESSÃO EM ANDAMENTO (agente gravado no data) ───────────────────────
+  // ── 3. SESSÃO EM ANDAMENTO (agente gravado no data) ─────────────────────
   const agenteAtivo = data.agente as string | undefined;
-
   if (agenteAtivo === "frota") {
     await runFleetAgent(params);
     return;
@@ -109,18 +130,7 @@ export async function routeMessage(params: RouterParams): Promise<void> {
     return;
   }
 
-  // ── 4. DETECÇÃO RÁPIDA POR PALAVRAS-CHAVE (sem IA) ───────────────────────
-
-  // Ativação direta da Lucy por nome ou palavras-chave de compras/estoque
-  const LUCY_KEYWORDS = ["lucy", "compra", "compras", "material", "estoque", "reposicao",
-    "reposição", "fornecedor", "cotacao", "cotação", "pedido de material",
-    "material para os", "material de expediente", "insumo", "insumos"];
-  if (LUCY_KEYWORDS.some(kw => msgNorm.includes(kw))) {
-    await storage.updateWhatsappSession(session.id, { data: { ...data, agente: "lucy" } });
-    await handleLucyAgent({ from, rawBody, msgNorm, session: { ...session, data: { ...data, agente: "lucy" } }, reply });
-    return;
-  }
-
+  // ── 4. FROTA por palavras-chave ──────────────────────────────────────────
   if (isVehicleExitCommand(msgNorm) || isVehicleReturnCommand(msgNorm)) {
     await runFleetAgent(params);
     return;

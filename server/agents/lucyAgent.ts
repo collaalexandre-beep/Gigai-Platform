@@ -1,8 +1,6 @@
 import { storage } from "../storage";
 import type { Seller, WhatsappSession } from "@shared/schema";
 
-// ─── NORMALIZAÇÃO DE TELEFONE ─────────────────────────────────────────────────
-
 export function normalizarTelefone(telefone: string): string {
   let digits = telefone.replace(/\D/g, "");
   if ((digits.length === 12 || digits.length === 13) && digits.startsWith("55")) {
@@ -10,8 +8,6 @@ export function normalizarTelefone(telefone: string): string {
   }
   return digits;
 }
-
-// ─── VERIFICAÇÃO DE AUTORIZAÇÃO ───────────────────────────────────────────────
 
 export interface AutorizacaoResult {
   autorizado: boolean;
@@ -41,8 +37,6 @@ export async function verificarAutorizacaoCompraPorTelefone(
   return { autorizado: false, colaborador: encontrado, motivo: "colaborador_nao_autorizado" };
 }
 
-// ─── AGENTE LUCY ──────────────────────────────────────────────────────────────
-
 export interface LucyAgentParams {
   from: string;
   rawBody: string;
@@ -51,91 +45,51 @@ export interface LucyAgentParams {
   reply: (msg: string, nextStep?: string, extraData?: Record<string, unknown>) => Promise<void>;
 }
 
-// Mensagens que são apenas uma chamada pelo nome, sem conteúdo de pedido
-const GREETING_ONLY = new Set([
-  "lucy", "oi lucy", "ola lucy", "olá lucy", "ei lucy",
-  "oilá lucy", "oi,lucy", "ola,lucy",
-  "chama lucy", "quero falar com a lucy", "falar com a lucy",
-  "me passa a lucy", "chama a lucy",
-]);
-
-function isSomenteSaudacao(msgNorm: string): boolean {
-  return GREETING_ONLY.has(msgNorm.trim());
-}
-
 export async function handleLucyAgent(params: LucyAgentParams): Promise<void> {
   const { from, rawBody, msgNorm, session, reply } = params;
-  const step = session.step ?? "collecting";
-  const data = (session.data ?? {}) as Record<string, unknown>;
 
-  console.log(`[Lucy] step="${step}" msgNorm="${msgNorm}"`);
+  const isChamadaPeloNome = msgNorm.trim() === "lucy" || msgNorm.trim().startsWith("lucy ") || msgNorm.trim().startsWith("oi lucy") || msgNorm.trim().startsWith("ola lucy") || msgNorm.trim().startsWith("olá lucy");
+  const isIntencaoDeCompra = !isChamadaPeloNome;
 
-  // ─── STEP: lucy_aguardando ────────────────────────────────────────────────
-  // Usuário chamou a Lucy (saudação) e agora descreveu o que precisa
-  if (step === "lucy_aguardando") {
-    await fazerVerificacaoEResponder(from, rawBody, data, reply);
-    return;
-  }
-
-  // ─── STEP: lucy_coletando ─────────────────────────────────────────────────
-  // Usuário está autorizado e descreveu o pedido (fase 1 → só confirma recebimento)
-  if (step === "lucy_coletando") {
-    await reply(
-      `✅ Anotei o seu pedido!\n\n` +
-      `*"${rawBody}"*\n\n` +
-      `Em breve o setor de compras vai dar continuidade. 🛒\n\n` +
-      `Se precisar de mais alguma coisa, é só chamar.`,
-      "collecting",
-      {}
-    );
-    return;
-  }
-
-  // ─── ENTRADA NOVA: só uma saudação ("lucy", "oi lucy", etc.) ─────────────
-  if (isSomenteSaudacao(msgNorm)) {
-    await reply(
-      `👋 Olá! Aqui é a *Lucy*, agente de Estoque e Compras da GIGAI.\n\n` +
-      `Me conta o que você precisa — informe o material, quantidade e se é para uma OS, estoque ou expediente.`,
-      "lucy_aguardando",
-      { agente: "lucy" }
-    );
-    return;
-  }
-
-  // ─── ENTRADA NOVA: já veio com intenção de compra → verificar e responder ─
-  await fazerVerificacaoEResponder(from, rawBody, data, reply);
-}
-
-// ─── VERIFICAÇÃO DE AUTORIZAÇÃO + RESPOSTA ───────────────────────────────────
-
-async function fazerVerificacaoEResponder(
-  from: string,
-  rawBody: string,
-  data: Record<string, unknown>,
-  reply: LucyAgentParams["reply"]
-): Promise<void> {
   try {
     const resultado = await verificarAutorizacaoCompraPorTelefone(from);
-    console.log(`[Lucy] verificação: motivo="${resultado.motivo}" colaborador="${resultado.colaborador?.nomeCompleto ?? "—"}"`);
+    console.log(`[Lucy] chamada="${isChamadaPeloNome}" intencao="${isIntencaoDeCompra}" motivo="${resultado.motivo}" colaborador="${resultado.colaborador?.nomeCompleto ?? "—"}"`);
 
+    // ─── Autorizado ──────────────────────────────────────────────────────
     if (resultado.motivo === "colaborador_autorizado") {
       const nome = resultado.colaborador!.nomeCompleto.split(" ")[0];
+
+      if (isIntencaoDeCompra) {
+        // Usuário já descreveu o pedido → anota e confirma
+        await reply(
+          `✅ Anotei, ${nome}!\n\n` +
+          `Pedido: *${rawBody}*\n\n` +
+          `O setor de compras vai dar continuidade. Obrigado! 🛒`,
+          "collecting",
+          {}
+        );
+        return;
+      }
+
+      // Só chamou pelo nome → pede para descrever
       await reply(
-        `Olá, ${nome}! ✅ Identifiquei seu cadastro e você está autorizado a solicitar compras.\n\n` +
-        `Me diga:\n` +
-        `• O *material* que precisa\n` +
-        `• A *quantidade* e unidade\n` +
-        `• Se é para uma *OS*, para *estoque* ou *expediente*`,
-        "lucy_coletando",
-        { agente: "lucy", lucy_colaborador: resultado.colaborador!.nomeCompleto }
+        `Oi ${nome}! Aqui é a *Lucy* 🛒\n\n` +
+        `Você está autorizado a solicitar compras. Me diga o que precisa:\n` +
+        `• Material\n` +
+        `• Quantidade e unidade\n` +
+        `• Se é para OS, estoque ou expediente`,
+        "collecting",
+        {}
       );
       return;
     }
 
+    // ─── Cadastrado, mas NÃO autorizado ──────────────────────────────────────────
     if (resultado.motivo === "colaborador_nao_autorizado") {
       const nome = resultado.colaborador!.nomeCompleto.split(" ")[0];
       await reply(
-        `Olá, ${nome}. Encontrei seu cadastro, mas você ainda não está autorizado a solicitar compras.\n\n` +
+        `Oi ${nome}. Aqui é a *Lucy* 🛒\n\n` +
+        `Encontrei seu cadastro, mas você ainda não está autorizado a solicitar compras.\n` +
         `Peça para um responsável liberar sua autorização no sistema.`,
         "collecting",
         {}
@@ -143,17 +97,18 @@ async function fazerVerificacaoEResponder(
       return;
     }
 
-    // telefone_nao_cadastrado
+    // ─── Telefone NÃO cadastrado ──────────────────────────────────────────
     await reply(
-      `Olá! Não encontrei seu número no cadastro de colaboradores.\n\n` +
+      `Oi! Aqui é a *Lucy* 🛒\n\n` +
+      `Não encontrei seu número no cadastro de colaboradores.\n` +
       `Para solicitar compras, peça para um responsável cadastrar seu WhatsApp e liberar a autorização.`,
       "collecting",
       {}
     );
   } catch (err) {
-    console.error("[Lucy] Erro na verificação:", err);
+    console.error("[Lucy] Erro:", err);
     await reply(
-      `⚠️ Houve um erro interno. Tente novamente ou contate um responsável.`,
+      `⚠️ Erro interno. Tente novamente ou contate um responsável.`,
       "collecting",
       {}
     );
