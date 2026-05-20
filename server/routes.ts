@@ -35,6 +35,7 @@ import {
   insertVehicleMaintenanceItemSchema,
   insertVehicleMaintenanceHistorySchema,
   insertVehicleIssueReportSchema,
+  insertSupplierSchema,
 } from "@shared/schema";
 import { calcMaintenanceItemStatus } from "./storage";
 import { generateProductSuggestion, suggestQuoteItem, generateSpecialQuote, adjustSpecialQuote, extractFromAdjustment } from "./ai";
@@ -1472,6 +1473,55 @@ export async function registerRoutes(
       const { id } = req.params;
       const { status } = req.body as { status: string };
       const row = await storage.updatePurchaseRequest(id, { status } as any);
+      res.json(row);
+    } catch (err) { handleError(res, err); }
+  });
+
+  // ─── SUPPLIERS ───────────────────────────────────────────────────────────────
+
+  app.get("/api/suppliers", async (req: Request, res: Response) => {
+    try {
+      const search = req.query.search as string | undefined;
+      const ativo = req.query.ativo !== undefined ? req.query.ativo === "true" : undefined;
+      const material = req.query.material as string | undefined;
+      const page = req.query.page ? Number(req.query.page) : 1;
+      const limit = req.query.limit ? Number(req.query.limit) : 50;
+      const result = await storage.getSuppliers({ search, ativo, material, page, limit });
+      res.json(result);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.get("/api/suppliers/:id", async (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      const row = await storage.getSupplier(id);
+      if (!row) return res.status(404).json({ error: "Fornecedor não encontrado" });
+      res.json(row);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.post("/api/suppliers", async (req: Request, res: Response) => {
+    try {
+      const data = insertSupplierSchema.parse(req.body);
+      const row = await storage.createSupplier(data);
+      res.status(201).json(row);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.patch("/api/suppliers/:id", async (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      const row = await storage.updateSupplier(id, req.body);
+      if (!row) return res.status(404).json({ error: "Fornecedor não encontrado" });
+      res.json(row);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.patch("/api/suppliers/:id/toggle-active", async (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      const row = await storage.toggleSupplierActive(id);
+      if (!row) return res.status(404).json({ error: "Fornecedor não encontrado" });
       res.json(row);
     } catch (err) { handleError(res, err); }
   });

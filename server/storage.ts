@@ -89,6 +89,9 @@ import {
   purchaseRequests,
   type PurchaseRequest,
   type InsertPurchaseRequest,
+  suppliers,
+  type Supplier,
+  type InsertSupplier,
   vehicleMaintenanceItems,
   vehicleMaintenanceHistory,
   vehicleIssueReports,
@@ -353,6 +356,19 @@ export interface IStorage {
   createPurchaseRequest(data: InsertPurchaseRequest): Promise<PurchaseRequest>;
   getPurchaseRequests(filters?: { status?: string }): Promise<PurchaseRequest[]>;
   updatePurchaseRequest(id: string, data: Partial<PurchaseRequest>): Promise<PurchaseRequest>;
+
+  // Suppliers
+  getSuppliers(params?: {
+    search?: string;
+    ativo?: boolean;
+    material?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: Supplier[]; total: number }>;
+  getSupplier(id: string): Promise<Supplier | undefined>;
+  createSupplier(data: InsertSupplier): Promise<Supplier>;
+  updateSupplier(id: string, data: Partial<InsertSupplier>): Promise<Supplier | undefined>;
+  toggleSupplierActive(id: string): Promise<Supplier | undefined>;
 }
 
 // ─── MAINTENANCE STATUS UTILITY ───────────────────────────────────────────────
@@ -1843,6 +1859,77 @@ export class DatabaseStorage implements IStorage {
         target: waBotConfig.id,
         set: { ...data, updatedAt: new Date() } as any,
       })
+      .returning();
+    return row;
+  }
+
+  // ─── SUPPLIERS ────────────────────────────────────────────────────────
+
+  async getSuppliers(params?: {
+    search?: string;
+    ativo?: boolean;
+    material?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: Supplier[]; total: number }> {
+    const page = params?.page ?? 1;
+    const limit = params?.limit ?? 50;
+    const offset = (page - 1) * limit;
+
+    const conditions: any[] = [];
+    if (params?.ativo !== undefined) conditions.push(eq(suppliers.ativo, params.ativo));
+    if (params?.material) conditions.push(sql`${suppliers.materiaisFornecidos} @> ARRAY[${params.material}]`);
+    if (params?.search) {
+      const q = `%${params.search}%`;
+      conditions.push(
+        or(
+          ilike(suppliers.nome, q),
+          ilike(suppliers.cnpjCpf, q),
+          ilike(suppliers.telefone, q),
+          ilike(suppliers.whatsapp, q)
+        )
+      );
+    }
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(suppliers).where(where);
+    const data = await db
+      .select()
+      .from(suppliers)
+      .where(where)
+      .orderBy(asc(suppliers.nome))
+      .limit(limit)
+      .offset(offset);
+
+    return { data, total: countResult?.count ?? 0 };
+  }
+
+  async getSupplier(id: string): Promise<Supplier | undefined> {
+    const [row] = await db.select().from(suppliers).where(eq(suppliers.id, id));
+    return row;
+  }
+
+  async createSupplier(data: InsertSupplier): Promise<Supplier> {
+    const [row] = await db.insert(suppliers).values(data).returning();
+    return row;
+  }
+
+  async updateSupplier(id: string, data: Partial<InsertSupplier>): Promise<Supplier | undefined> {
+    const [row] = await db
+      .update(suppliers)
+      .set({ ...data, updatedAt: new Date() } as any)
+      .where(eq(suppliers.id, id))
+      .returning();
+    return row;
+  }
+
+  async toggleSupplierActive(id: string): Promise<Supplier | undefined> {
+    const existing = await this.getSupplier(id);
+    if (!existing) return undefined;
+    const [row] = await db
+      .update(suppliers)
+      .set({ ativo: !existing.ativo, updatedAt: new Date() })
+      .where(eq(suppliers.id, id))
       .returning();
     return row;
   }

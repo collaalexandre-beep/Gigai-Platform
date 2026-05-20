@@ -1,0 +1,120 @@
+Antes de avançar no cadastro de solicitações de compra, quero criar a guia de Fornecedores dentro do módulo Estoque.
+
+IMPORTANTE:
+- Não criar outro WhatsApp bot.
+- Não alterar webhook do WhatsApp.
+- Não alterar atendimento comercial.
+- Não alterar revisão dos carros.
+- Não alterar a Lucy.
+- Não alterar contas a pagar.
+- Não criar cotações ainda.
+- Não criar ordem de compra ainda.
+- Apenas criar o cadastro de fornecedores.
+
+FASE 3 — Estoque > Fornecedores
+
+Objetivo:
+Criar uma guia de Fornecedores dentro do módulo Estoque, para depois ser usada pela Lucy e pelo fluxo de compras.
+
+1. Dentro do módulo Estoque, criar uma guia/aba chamada:
+
+Fornecedores
+
+2. A tela Estoque > Fornecedores deve ter:
+
+Título:
+Fornecedores
+
+Subtítulo:
+Cadastro de fornecedores de materiais, serviços e insumos
+
+Botão:
+Novo Fornecedor
+
+Tabela com colunas:
+- Nome
+- CNPJ/CPF
+- Telefone/WhatsApp
+- E-mail
+- Contato
+- Materiais fornecidos
+- Condição de pagamento
+- Prazo médio
+- Status
+- Ações
+
+3. Criar tabela no banco chamada suppliers, seguindo o padrão atual do projeto.
+
+Campos:
+
+id
+nome
+tipo_pessoa
+cnpj_cpf
+telefone
+whatsapp
+email
+contato
+materiais_fornecidos
+condicao_pagamento_padrao
+prazo_medio_entrega
+observacao
+ativo
+created_at
+updated_at
+
+4. O campo tipo_pessoa deve aceitar:
+
+Pessoa Jurídica
+Pessoa Física
+
+5. O campo ativo deve ser booleano, padrão true.
+
+6. O botão Novo Fornecedor deve abrir formulário com os campos:
+
+Nome
+Tipo de pessoa
+CNPJ/CPF
+Telefone
+WhatsApp
+E-mail
+Contato
+Materiais fornecidos
+Condição de pagamento padrão
+Prazo médio de entrega
+Observação
+Ativo
+
+7. Criar ações básicas:
+
+Visualizar
+Editar
+Desativar
+Reativar
+
+8. Ao desativar fornecedor, não apagar do banco. Apenas alterar ativo para false.
+
+9. Criar filtros simples:
+
+Status: ativos, inativos, todos
+Material fornecido
+Nome
+CNPJ/CPF
+
+10. Criar busca por nome, CNPJ/CPF, telefone ou material fornecido.
+
+11. Não integrar ainda com WhatsApp dos fornecedores.
+
+12. Não enviar pedidos de cotação ainda.
+
+13. Não criar purchase_quotes ainda.
+
+14. Depois de implementar, me explique:
+
+- quais arquivos foram criados ou alterados
+- qual tabela foi criada
+- onde encontro a guia Fornecedores
+- como cadastrar fornecedor
+- como editar fornecedor
+- como desativar e reativar fornecedor
+- se algo do WhatsApp, Lucy, comercial ou frota foi alterado

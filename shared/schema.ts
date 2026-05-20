@@ -1375,6 +1375,42 @@ export const insertPurchaseRequestSchema = createInsertSchema(purchaseRequests).
 export type InsertPurchaseRequest = z.infer<typeof insertPurchaseRequestSchema>;
 export type PurchaseRequest = typeof purchaseRequests.$inferSelect;
 
+// ─── SUPPLIERS ────────────────────────────────────────────────────────────────
+
+export const suppliers = pgTable(
+  "suppliers",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    nome: text("nome").notNull(),
+    tipoPessoa: text("tipo_pessoa").notNull().default("pj"), // pj | pf
+    cnpjCpf: text("cnpj_cpf"),
+    telefone: text("telefone"),
+    whatsapp: text("whatsapp"),
+    email: text("email"),
+    contato: text("contato"),
+    materiaisFornecidos: text("materiais_fornecidos").array(),
+    condicaoPagamentoPadrao: text("condicao_pagamento_padrao"),
+    prazoMedioEntrega: text("prazo_medio_entrega"),
+    observacao: text("observacao"),
+    ativo: boolean("ativo").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_suppliers_nome").on(t.nome),
+    index("idx_suppliers_cnpj_cpf").on(t.cnpjCpf),
+    index("idx_suppliers_ativo").on(t.ativo),
+  ]
+);
+
+export const insertSupplierSchema = createInsertSchema(suppliers).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
+export type Supplier = typeof suppliers.$inferSelect;
+
 // ─── DASHBOARD STATS (view types) ────────────────────────────────────────────
 
 export interface DashboardStats {

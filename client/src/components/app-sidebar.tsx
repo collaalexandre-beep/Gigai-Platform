@@ -30,6 +30,7 @@ import {
   Car,
   LogOut,
   PackageOpen,
+  Truck,
 } from "lucide-react";
 
 const navItems = [
@@ -57,6 +58,7 @@ const vehicleItems = [
 
 const inventoryItems = [
   { title: "Compras", url: "/inventory/purchases", icon: PackageOpen },
+  { title: "Fornecedores", url: "/inventory/suppliers", icon: Truck },
 ];
 
 const configItems = [

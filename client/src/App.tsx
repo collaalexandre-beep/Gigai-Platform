@@ -42,6 +42,7 @@ import VehicleExitsPage from "@/pages/vehicles/exits/index";
 import VehicleExitFormPage from "@/pages/vehicles/exits/form";
 import VehicleExitDetailPage from "@/pages/vehicles/exits/detail";
 import PurchasesPage from "@/pages/inventory/purchases";
+import SuppliersPage from "@/pages/inventory/suppliers";
 
 function PrintRouter() {
   return (
@@ -96,6 +97,7 @@ function AppRouter() {
       <Route path="/vehicles/:id/edit" component={VehicleFormPage} />
       <Route path="/vehicles/:id" component={VehicleDetailPage} />
       <Route path="/inventory/purchases" component={PurchasesPage} />
+      <Route path="/inventory/suppliers" component={SuppliersPage} />
       <Route component={NotFound} />
     </Switch>
   );
