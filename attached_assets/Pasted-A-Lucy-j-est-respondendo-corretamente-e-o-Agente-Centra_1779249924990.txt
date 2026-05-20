@@ -1,0 +1,90 @@
+A Lucy já está respondendo corretamente e o Agente Central está encaminhando mensagens de compra/estoque para ela.
+
+Agora quero criar o módulo Estoque no ERP.
+
+IMPORTANTE:
+- Não criar outro WhatsApp bot.
+- Não alterar o atendimento comercial.
+- Não alterar o fluxo de revisão dos carros.
+- Não quebrar o webhook atual do WhatsApp.
+- Não alterar a Lucy além do necessário.
+- Não registrar compras ainda pelo WhatsApp nesta fase.
+- Não cotar com fornecedores ainda.
+- Não criar ordem de compra ainda.
+- Não mexer no financeiro ainda.
+
+FASE 2 — Criar módulo Estoque com guia Compras
+
+Objetivo:
+Criar a estrutura visual e inicial do módulo Estoque, com uma guia chamada Compras.
+
+1. No menu principal do ERP, criar um módulo chamado:
+
+Estoque
+
+2. Dentro do módulo Estoque, criar uma guia/aba chamada:
+
+Compras
+
+3. A tela Estoque > Compras deve ter:
+
+Título:
+Compras
+
+Subtítulo:
+Solicitações de compra e reposição de materiais
+
+Botão:
+Nova Solicitação
+
+Tabela inicial com as colunas:
+- Código
+- Data
+- Solicitante
+- Material
+- Quantidade
+- OS
+- Tipo
+- Urgência
+- Status
+- Ações
+
+4. Nesta fase, a tabela pode ficar vazia ou usando dados simulados somente se necessário para teste visual.
+
+5. Criar também os estados/status visuais que serão usados futuramente:
+
+- Aguardando informações
+- Aguardando aprovação
+- Aprovado
+- Em cotação
+- Comprado
+- Aguardando entrega
+- Recebido
+- Cancelado
+
+6. Se o projeto já tiver controle de permissões, permitir que apenas usuários Admin ou Compras acessem essa tela. Se ainda não tiver permissões prontas, apenas criar a tela normalmente e deixar a proteção para fase futura.
+
+7. O botão Nova Solicitação pode abrir um modal ou uma tela simples, mas nesta fase não precisa salvar no banco ainda. Pode apenas exibir os campos que serão usados futuramente:
+
+- Solicitante
+- Material
+- Quantidade
+- Unidade
+- OS relacionada
+- Tipo da compra
+- Urgência
+- Observação
+
+8. Tipos de compra:
+- OS
+- Estoque
+- Expediente
+- Manutenção
+- Outro
+
+9. Depois de implementar, me explique:
+- quais arquivos foram criados ou alterados
+- onde encontro o módulo Estoque
+- como acessar a guia Compras
+- se o botão Nova Solicitação já abre o formulário
+- se algo do WhatsApp, comercial ou frota foi alterado

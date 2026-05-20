@@ -29,6 +29,7 @@ import {
   MessageCircle,
   Car,
   LogOut,
+  PackageOpen,
 } from "lucide-react";
 
 const navItems = [
@@ -52,6 +53,10 @@ const cadastroItems = [
 const vehicleItems = [
   { title: "Frota", url: "/vehicles", icon: Car },
   { title: "Saídas", url: "/vehicles/exits", icon: LogOut },
+];
+
+const inventoryItems = [
+  { title: "Compras", url: "/inventory/purchases", icon: PackageOpen },
 ];
 
 const configItems = [
@@ -150,6 +155,17 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {renderMenuItems(vehicleItems)}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup className="mt-4">
+          <SidebarGroupLabel className="text-xs text-muted-foreground font-medium px-2 mb-1">
+            Estoque
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {renderMenuItems(inventoryItems)}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
