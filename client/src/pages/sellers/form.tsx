@@ -46,6 +46,7 @@ interface SellerFormData {
   percentualComissao: string;
   observacoes: string;
   autorizadoDirigir: boolean;
+  autorizadoCompras: boolean;
   cnhCategoria: string;
   cnhValidade: string;
   cnhObservacoes: string;
@@ -71,7 +72,8 @@ const emptySellerForm: SellerFormData = {
   cidade: "", estado: "", cep: "",
   cargo: "", funcao: "", dataEntrada: "", status: "ativo",
   percentualComissao: "", observacoes: "",
-  autorizadoDirigir: false, cnhCategoria: "", cnhValidade: "", cnhObservacoes: "",
+  autorizadoDirigir: false, autorizadoCompras: false,
+  cnhCategoria: "", cnhValidade: "", cnhObservacoes: "",
   whatsappNumber: "",
 };
 
@@ -144,6 +146,7 @@ export default function SellerFormPage() {
         percentualComissao: existingData.percentualComissao || "",
         observacoes: existingData.observacoes || "",
         autorizadoDirigir: (existingData as any).autorizadoDirigir ?? false,
+        autorizadoCompras: (existingData as any).autorizadoCompras ?? false,
         cnhCategoria: (existingData as any).cnhCategoria || "",
         cnhValidade: (existingData as any).cnhValidade || "",
         cnhObservacoes: (existingData as any).cnhObservacoes || "",
@@ -696,6 +699,19 @@ export default function SellerFormPage() {
                 />
                 <Label htmlFor="autorizadoDirigir" className="text-sm cursor-pointer">
                   Motorista autorizado a conduzir veículos da empresa
+                </Label>
+              </div>
+              <div className="md:col-span-2 flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="autorizadoCompras"
+                  checked={form.autorizadoCompras}
+                  onChange={(e) => set("autorizadoCompras", e.target.checked)}
+                  className="w-4 h-4 rounded"
+                  data-testid="checkbox-autorizado-compras"
+                />
+                <Label htmlFor="autorizadoCompras" className="text-sm cursor-pointer">
+                  Autorizado a solicitar compras
                 </Label>
               </div>
               <div className="md:col-span-2">

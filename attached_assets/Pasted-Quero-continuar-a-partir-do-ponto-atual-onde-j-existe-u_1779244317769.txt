@@ -1,0 +1,110 @@
+Quero continuar a partir do ponto atual, onde já existe um Agente Central.
+
+Não quero criar outro WhatsApp bot.
+Não quero substituir o atendimento comercial atual.
+Não quero remover ou alterar o fluxo atual de revisão dos carros.
+Não quero quebrar o webhook existente do WhatsApp.
+Não quero apagar dados, secrets, banco de dados ou variáveis de ambiente.
+
+Agora quero criar um novo agente especializado chamado Lucy.
+
+A Lucy será o agente responsável por Estoque e Compras.
+
+FASE 1 — Criar Lucy + permissão de compra nos colaboradores
+
+Objetivo desta fase:
+Apenas testar se o Agente Central consegue encaminhar mensagens de compras/estoque para a Lucy e se a Lucy consegue verificar se o colaborador está autorizado pelo número de WhatsApp.
+
+1. Criar um agente chamado Lucy.
+
+Arquivo sugerido:
+agents/lucyAgent.js
+
+2. O Agente Central deve identificar mensagens relacionadas a:
+- compra
+- compras
+- material
+- estoque
+- reposição
+- fornecedor
+- cotação
+- pedido de material
+- material para OS
+- material de expediente
+
+Quando identificar essas intenções, deve encaminhar para a Lucy.
+
+3. No cadastro de colaboradores, adicionar um campo booleano:
+
+autorizado_compras
+
+Nome exibido na tela:
+
+"Autorizado a solicitar compras"
+
+Esse campo deve aparecer como checkbox/tick no cadastro do colaborador.
+
+Valor padrão:
+false / desmarcado
+
+4. Criar uma função interna para buscar colaborador pelo telefone/WhatsApp.
+
+A função deve:
+- receber o telefone vindo da mensagem do WhatsApp
+- normalizar o número removendo espaços, parênteses, hífens, símbolos e prefixos diferentes
+- comparar com o telefone cadastrado no colaborador
+- retornar o colaborador encontrado ou null
+
+5. Criar uma função interna chamada:
+
+verificarAutorizacaoCompraPorTelefone(telefone)
+
+Ela deve retornar:
+
+{
+  "autorizado": true ou false,
+  "colaborador": dados_do_colaborador_ou_null,
+  "motivo": "colaborador_autorizado | colaborador_nao_autorizado | telefone_nao_cadastrado"
+}
+
+6. Quando a Lucy receber uma mensagem de compra/estoque pelo WhatsApp, ela deve primeiro verificar a autorização pelo telefone.
+
+7. Comportamento da Lucy nesta fase:
+
+Se telefone cadastrado e autorizado:
+Responder:
+"Oi, eu sou a Lucy, agente de Estoque e Compras da GIGAI. Identifiquei que você está autorizado a solicitar compras. Você só precisa me dizer o material, quantidade e se é para uma OS, estoque ou expediente."
+
+Se telefone cadastrado, mas não autorizado:
+Responder:
+"Oi, eu sou a Lucy, agente de Estoque e Compras da GIGAI. Encontrei seu cadastro, mas você ainda não está autorizado a solicitar compras. Vou encaminhar essa solicitação para aprovação de um responsável."
+
+Se telefone não cadastrado:
+Responder:
+"Oi, eu sou a Lucy, agente de Estoque e Compras da GIGAI. Não encontrei seu número no cadastro de colaboradores. Para solicitar compras, peça para um responsável cadastrar seu WhatsApp e liberar a autorização."
+
+8. Nesta fase a Lucy NÃO deve:
+- registrar compra
+- criar solicitação de compra
+- criar ordem de compra
+- cotar com fornecedores
+- criar contas a pagar
+- enviar mensagem para fornecedor
+- ler Gmail
+- criar outro bot de WhatsApp
+
+9. Preserve tudo que já funciona hoje:
+- atendimento comercial
+- revisão dos carros
+- webhook do WhatsApp
+- variáveis de ambiente
+- banco de dados
+- configurações existentes
+
+10. Faça o mínimo necessário para testar a rota até a Lucy.
+
+Depois de implementar, me explique:
+- quais arquivos foram criados ou alterados
+- onde fica o checkbox no cadastro de colaboradores
+- como testar pelo WhatsApp com colaborador autorizado
+- como testar pelo WhatsApp com colaborador não autorizado

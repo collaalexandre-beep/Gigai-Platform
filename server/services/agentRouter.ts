@@ -3,6 +3,7 @@ import { classifyMessage } from "../agents/centralAgent";
 import { handleCommercialAgent, DEFAULT_SYSTEM_PROMPT, DEFAULT_ATTENDANT_MSG } from "../agents/commercialAgent";
 import { handleVehicleWaFlow, isVehicleExitCommand, isVehicleReturnCommand } from "../agents/fleetAgent";
 import { handlePurchaseAgent, PURCH_STEPS } from "../agents/purchaseAgent";
+import { handleLucyAgent } from "../agents/lucyAgent";
 import type { WhatsappSession } from "@shared/schema";
 
 export interface RouterParams {
@@ -64,7 +65,13 @@ export async function routeMessage(params: RouterParams): Promise<void> {
     return;
   }
 
-  // Compras: step purch_*
+  // Lucy (Compras/Estoque): step lucy_*
+  if (step.startsWith("lucy_")) {
+    await handleLucyAgent({ from, rawBody, msgNorm, session, reply });
+    return;
+  }
+
+  // Compras (agente legado): step purch_*
   if (step.startsWith("purch_")) {
     await handlePurchaseAgent({ from, rawBody, msgNorm, session, reply });
     return;
@@ -88,8 +95,8 @@ export async function routeMessage(params: RouterParams): Promise<void> {
     await runFleetAgent(params);
     return;
   }
-  if (agenteAtivo === "compras") {
-    await handlePurchaseAgent({ from, rawBody, msgNorm, session, reply });
+  if (agenteAtivo === "compras" || agenteAtivo === "lucy") {
+    await handleLucyAgent({ from, rawBody, msgNorm, session, reply });
     return;
   }
   if (agenteAtivo === "comercial") {
@@ -120,8 +127,8 @@ export async function routeMessage(params: RouterParams): Promise<void> {
       break;
 
     case "compras":
-      await storage.updateWhatsappSession(session.id, { data: { ...data, agente: "compras" } });
-      await handlePurchaseAgent({ from, rawBody, msgNorm, session: { ...session, data: { ...data, agente: "compras" } }, reply });
+      await storage.updateWhatsappSession(session.id, { data: { ...data, agente: "lucy" } });
+      await handleLucyAgent({ from, rawBody, msgNorm, session: { ...session, data: { ...data, agente: "lucy" } }, reply });
       break;
 
     case "financeiro":

@@ -377,6 +377,8 @@ export const sellers = pgTable(
     cnhValidade: date("cnh_validade"),
     cnhObservacoes: text("cnh_observacoes"),
     whatsappNumber: text("whatsapp_number"),
+    // Purchasing
+    autorizadoCompras: boolean("autorizado_compras").notNull().default(false),
     // Timestamps
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
