@@ -97,16 +97,16 @@ function ConversationPanel({ session }: { session: SessionWithMessages }) {
         {Object.keys(data).length > 0 && (
           <div className="mt-2 grid grid-cols-2 gap-1">
             {/* Agente Comercial */}
-            {data.produto && <div className="text-xs"><span className="text-muted-foreground">Produto:</span> {String(data.produto)}</div>}
-            {data.largura && data.altura && <div className="text-xs"><span className="text-muted-foreground">Medidas:</span> {String(data.largura)}m × {String(data.altura)}m</div>}
-            {data.quantidade && !data.purch_quantidade && <div className="text-xs"><span className="text-muted-foreground">Qtd:</span> {String(data.quantidade)}</div>}
-            {data.nomeCliente && <div className="text-xs"><span className="text-muted-foreground">Nome:</span> {String(data.nomeCliente)}</div>}
-            {data.cidade && <div className="text-xs"><span className="text-muted-foreground">Cidade:</span> {String(data.cidade)}</div>}
-            {/* Agente de Compras */}
-            {data.purch_material && <div className="text-xs col-span-2"><span className="text-muted-foreground">🛒 Material:</span> {String(data.purch_material)}</div>}
-            {data.purch_quantidade && <div className="text-xs"><span className="text-muted-foreground">Qtd:</span> {String(data.purch_quantidade)} {data.purch_unidade ? String(data.purch_unidade) : ""}</div>}
-            {data.purch_urgencia && <div className="text-xs"><span className="text-muted-foreground">Urgência:</span> {String(data.purch_urgencia).replace("_", " ")}</div>}
-            {data.purch_os && <div className="text-xs"><span className="text-muted-foreground">OS:</span> {String(data.purch_os)}</div>}
+            {!!data.produto && <div className="text-xs"><span className="text-muted-foreground">Produto:</span> {String(data.produto)}</div>}
+            {!!data.largura && !!data.altura && <div className="text-xs"><span className="text-muted-foreground">Medidas:</span> {String(data.largura)}m × {String(data.altura)}m</div>}
+            {!!data.quantidade && !data.purch_quantidade && <div className="text-xs"><span className="text-muted-foreground">Qtd:</span> {String(data.quantidade)}</div>}
+            {!!data.nomeCliente && <div className="text-xs"><span className="text-muted-foreground">Nome:</span> {String(data.nomeCliente)}</div>}
+            {!!data.cidade && <div className="text-xs"><span className="text-muted-foreground">Cidade:</span> {String(data.cidade)}</div>}
+            {/* Lucy — Agente de Compras */}
+            {!!data.purch_material && <div className="text-xs col-span-2"><span className="text-muted-foreground">🛒 Material:</span> {String(data.purch_material)}</div>}
+            {!!data.purch_quantidade && <div className="text-xs"><span className="text-muted-foreground">Qtd:</span> {String(data.purch_quantidade)} {data.purch_unidade ? String(data.purch_unidade) : ""}</div>}
+            {!!data.purch_urgencia && <div className="text-xs"><span className="text-muted-foreground">Urgência:</span> {String(data.purch_urgencia).replace("_", " ")}</div>}
+            {!!data.purch_os && <div className="text-xs"><span className="text-muted-foreground">OS:</span> {String(data.purch_os)}</div>}
           </div>
         )}
       </div>

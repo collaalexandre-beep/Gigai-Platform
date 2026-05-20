@@ -170,7 +170,7 @@ export default function SellerFormPage() {
     }
   }, [existingData]);
 
-  const set = (f: keyof SellerFormData, v: string) => setForm((p) => ({ ...p, [f]: v }));
+  const set = (f: keyof SellerFormData, v: string | boolean) => setForm((p) => ({ ...p, [f]: v }));
   const setBank = (f: keyof BankFormData, v: string) => setBankForm((p) => ({ ...p, [f]: v }));
 
   const isPF = form.tipoPessoa === "fisica";

@@ -110,6 +110,17 @@ export async function routeMessage(params: RouterParams): Promise<void> {
   }
 
   // ── 4. DETECÇÃO RÁPIDA POR PALAVRAS-CHAVE (sem IA) ───────────────────────
+
+  // Ativação direta da Lucy por nome ou palavras-chave de compras/estoque
+  const LUCY_KEYWORDS = ["lucy", "compra", "compras", "material", "estoque", "reposicao",
+    "reposição", "fornecedor", "cotacao", "cotação", "pedido de material",
+    "material para os", "material de expediente", "insumo", "insumos"];
+  if (LUCY_KEYWORDS.some(kw => msgNorm.includes(kw))) {
+    await storage.updateWhatsappSession(session.id, { data: { ...data, agente: "lucy" } });
+    await handleLucyAgent({ from, rawBody, msgNorm, session: { ...session, data: { ...data, agente: "lucy" } }, reply });
+    return;
+  }
+
   if (isVehicleExitCommand(msgNorm) || isVehicleReturnCommand(msgNorm)) {
     await runFleetAgent(params);
     return;

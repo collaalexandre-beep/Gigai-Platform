@@ -29,10 +29,10 @@ export async function verificarAutorizacaoCompraPorTelefone(
 ): Promise<AutorizacaoResult> {
   const normRecebido = normalizarTelefone(telefone);
 
-  // Busca todos os colaboradores ativos
-  const todos = await storage.getSellers();
+  // Busca todos os colaboradores (sem filtro de paginação)
+  const { data: todos } = await storage.getSellers({ limit: 1000 });
 
-  const encontrado = todos.find((s) => {
+  const encontrado = todos.find((s: any) => {
     // Compara contra whatsappNumber (campo específico do bot), whatsapp e telefone
     const candidatos = [s.whatsappNumber, s.whatsapp, s.telefone]
       .filter(Boolean)
