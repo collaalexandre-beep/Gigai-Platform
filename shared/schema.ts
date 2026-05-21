@@ -1356,22 +1356,33 @@ export type WaBotConfig = typeof waBotConfig.$inferSelect;
 
 // ─── SOLICITAÇÕES DE COMPRA ───────────────────────────────────────────────────
 
-export const purchaseRequests = pgTable("purchase_requests", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  solicitanteNome: text("solicitante_nome"),
-  solicitanteTelefone: text("solicitante_telefone"),
-  material: text("material").notNull(),
-  quantidade: text("quantidade"),
-  unidade: text("unidade"),
-  urgencia: text("urgencia").default("normal"),
-  osRelacionada: text("os_relacionada"),
-  observacao: text("observacao"),
-  fornecedorSugerido: text("fornecedor_sugerido"),
-  status: text("status").default("pendente"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
+export const purchaseRequests = pgTable(
+  "purchase_requests",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    codigo: text("codigo").notNull().unique(),
+    solicitanteNome: text("solicitante_nome"),
+    solicitanteTelefone: text("solicitante_telefone"),
+    material: text("material").notNull(),
+    quantidade: text("quantidade"),
+    unidade: text("unidade"),
+    osRelacionada: text("os_relacionada"),
+    tipoCompra: text("tipo_compra"),
+    urgencia: text("urgencia").default("normal"),
+    observacao: text("observacao"),
+    status: text("status").default("aguardando_aprovacao"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_purchase_requests_codigo").on(t.codigo),
+    index("idx_purchase_requests_status").on(t.status),
+    index("idx_purchase_requests_tipo").on(t.tipoCompra),
+    index("idx_purchase_requests_material").on(t.material),
+  ]
+);
 
-export const insertPurchaseRequestSchema = createInsertSchema(purchaseRequests).omit({ id: true, createdAt: true });
+export const insertPurchaseRequestSchema = createInsertSchema(purchaseRequests).omit({ id: true, createdAt: true, updatedAt: true, codigo: true });
 export type InsertPurchaseRequest = z.infer<typeof insertPurchaseRequestSchema>;
 export type PurchaseRequest = typeof purchaseRequests.$inferSelect;
 

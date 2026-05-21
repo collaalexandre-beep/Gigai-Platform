@@ -354,7 +354,14 @@ export interface IStorage {
 
   // Purchase Requests
   createPurchaseRequest(data: InsertPurchaseRequest): Promise<PurchaseRequest>;
-  getPurchaseRequests(filters?: { status?: string }): Promise<PurchaseRequest[]>;
+  getPurchaseRequest(id: string): Promise<PurchaseRequest | undefined>;
+  getPurchaseRequests(params?: {
+    status?: string;
+    tipoCompra?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: PurchaseRequest[]; total: number }>;
   updatePurchaseRequest(id: string, data: Partial<PurchaseRequest>): Promise<PurchaseRequest>;
 
   // Suppliers
@@ -1837,19 +1844,64 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createPurchaseRequest(data: InsertPurchaseRequest): Promise<PurchaseRequest> {
-    const [row] = await db.insert(purchaseRequests).values(data).returning();
+    // Gera código sequencial SC-NNNNNN via sequence PostgreSQL
+    const result = await db.execute(sql`SELECT nextval('seq_purchase_code') as n`);
+    const n = Number((result as any)?.rows?.[0]?.n ?? (result as any)?.[0]?.n ?? 1);
+    const codigo = `SC-${String(n).padStart(6, "0")}`;
+
+    const [row] = await db.insert(purchaseRequests).values({ ...data, codigo } as any).returning();
     return row;
   }
 
-  async getPurchaseRequests(filters?: { status?: string }): Promise<PurchaseRequest[]> {
-    if (filters?.status) {
-      return db.select().from(purchaseRequests).where(eq(purchaseRequests.status, filters.status)).orderBy(desc(purchaseRequests.createdAt));
+  async getPurchaseRequest(id: string): Promise<PurchaseRequest | undefined> {
+    const [row] = await db.select().from(purchaseRequests).where(eq(purchaseRequests.id, id));
+    return row;
+  }
+
+  async getPurchaseRequests(params?: {
+    status?: string;
+    tipoCompra?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ data: PurchaseRequest[]; total: number }> {
+    const page = params?.page ?? 1;
+    const limit = params?.limit ?? 50;
+    const offset = (page - 1) * limit;
+
+    const conditions: any[] = [];
+    if (params?.status) conditions.push(eq(purchaseRequests.status, params.status));
+    if (params?.tipoCompra) conditions.push(eq(purchaseRequests.tipoCompra, params.tipoCompra));
+    if (params?.search) {
+      const q = `%${params.search}%`;
+      conditions.push(
+        or(
+          ilike(purchaseRequests.codigo, q),
+          ilike(purchaseRequests.material, q),
+          ilike(purchaseRequests.solicitanteNome, q)
+        )
+      );
     }
-    return db.select().from(purchaseRequests).orderBy(desc(purchaseRequests.createdAt));
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(purchaseRequests).where(where);
+    const data = await db
+      .select()
+      .from(purchaseRequests)
+      .where(where)
+      .orderBy(desc(purchaseRequests.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    return { data, total: countResult?.count ?? 0 };
   }
 
   async updatePurchaseRequest(id: string, data: Partial<PurchaseRequest>): Promise<PurchaseRequest> {
-    const [row] = await db.update(purchaseRequests).set(data as any).where(eq(purchaseRequests.id, id)).returning();
+    const [row] = await db
+      .update(purchaseRequests)
+      .set({ ...data, updatedAt: new Date() } as any)
+      .where(eq(purchaseRequests.id, id))
+      .returning();
     return row;
   }
 

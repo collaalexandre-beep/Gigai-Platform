@@ -36,6 +36,7 @@ import {
   insertVehicleMaintenanceHistorySchema,
   insertVehicleIssueReportSchema,
   insertSupplierSchema,
+  insertPurchaseRequestSchema,
 } from "@shared/schema";
 import { calcMaintenanceItemStatus } from "./storage";
 import { generateProductSuggestion, suggestQuoteItem, generateSpecialQuote, adjustSpecialQuote, extractFromAdjustment } from "./ai";
@@ -1463,16 +1464,44 @@ export async function registerRoutes(
   app.get("/api/purchase-requests", async (req: Request, res: Response) => {
     try {
       const status = req.query.status as string | undefined;
-      const rows = await storage.getPurchaseRequests(status ? { status } : undefined);
-      res.json(rows);
+      const tipoCompra = req.query.tipoCompra as string | undefined;
+      const search = req.query.search as string | undefined;
+      const page = req.query.page ? Number(req.query.page) : 1;
+      const limit = req.query.limit ? Number(req.query.limit) : 50;
+      const result = await storage.getPurchaseRequests({ status, tipoCompra, search, page, limit });
+      res.json(result);
     } catch (err) { handleError(res, err); }
   });
 
-  app.patch("/api/purchase-requests/:id/status", async (req: Request, res: Response) => {
+  app.get("/api/purchase-requests/:id", async (req: Request, res: Response) => {
     try {
-      const { id } = req.params;
-      const { status } = req.body as { status: string };
-      const row = await storage.updatePurchaseRequest(id, { status } as any);
+      const id = String(req.params.id);
+      const row = await storage.getPurchaseRequest(id);
+      if (!row) return res.status(404).json({ error: "Solicitação não encontrada" });
+      res.json(row);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.post("/api/purchase-requests", async (req: Request, res: Response) => {
+    try {
+      const data = insertPurchaseRequestSchema.parse(req.body);
+      const row = await storage.createPurchaseRequest(data);
+      res.status(201).json(row);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.patch("/api/purchase-requests/:id", async (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      const row = await storage.updatePurchaseRequest(id, req.body);
+      res.json(row);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.patch("/api/purchase-requests/:id/cancel", async (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      const row = await storage.updatePurchaseRequest(id, { status: "cancelado" } as any);
       res.json(row);
     } catch (err) { handleError(res, err); }
   });
