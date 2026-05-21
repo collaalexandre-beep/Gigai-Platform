@@ -58,6 +58,10 @@ type Supplier = {
   prazoMedioEntrega: string | null;
   observacao: string | null;
   ativo: boolean;
+  aceitaCotacaoWhatsapp: boolean;
+  whatsappAutorizado: boolean;
+  templateCotacaoNome: string | null;
+  ultimoContatoWhatsapp: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -83,6 +87,9 @@ export default function SuppliersPage() {
   const [formPrazo, setFormPrazo] = useState("");
   const [formObs, setFormObs] = useState("");
   const [formAtivo, setFormAtivo] = useState(true);
+  const [formAceitaCotacao, setFormAceitaCotacao] = useState(true);
+  const [formWhatsappAutorizado, setFormWhatsappAutorizado] = useState(false);
+  const [formTemplate, setFormTemplate] = useState("solicitacao_cotacao_fornecedor");
 
   const buildUrl = () => {
     const params = new URLSearchParams();
@@ -145,6 +152,8 @@ export default function SuppliersPage() {
     setFormNome(""); setFormTipo("pj"); setFormCnpjCpf(""); setFormTelefone("");
     setFormWhatsapp(""); setFormEmail(""); setFormContato(""); setFormMateriais("");
     setFormCondicao(""); setFormPrazo(""); setFormObs(""); setFormAtivo(true);
+    setFormAceitaCotacao(true); setFormWhatsappAutorizado(false);
+    setFormTemplate("solicitacao_cotacao_fornecedor");
     setEditingId(null);
   };
 
@@ -167,6 +176,9 @@ export default function SuppliersPage() {
     setFormPrazo(s.prazoMedioEntrega ?? "");
     setFormObs(s.observacao ?? "");
     setFormAtivo(s.ativo);
+    setFormAceitaCotacao(s.aceitaCotacaoWhatsapp);
+    setFormWhatsappAutorizado(s.whatsappAutorizado);
+    setFormTemplate(s.templateCotacaoNome ?? "solicitacao_cotacao_fornecedor");
     setOpenForm(true);
   };
 
@@ -189,6 +201,9 @@ export default function SuppliersPage() {
       prazoMedioEntrega: formPrazo.trim() || null,
       observacao: formObs.trim() || null,
       ativo: formAtivo,
+      aceitaCotacaoWhatsapp: formAceitaCotacao,
+      whatsappAutorizado: formWhatsappAutorizado,
+      templateCotacaoNome: formTemplate.trim() || "solicitacao_cotacao_fornecedor",
     };
     if (editingId) {
       updateMutation.mutate({ id: editingId, payload });
@@ -397,6 +412,45 @@ export default function SuppliersPage() {
                 <Label htmlFor="ativo" className="font-normal">Ativo</Label>
               </div>
             </div>
+            <Separator className="sm:col-span-2 my-1" />
+            <div className="sm:col-span-2">
+              <h4 className="text-sm font-semibold text-primary">Cotação por WhatsApp</h4>
+              <p className="text-xs text-muted-foreground">Controle se a Lucy pode enviar cotações a este fornecedor</p>
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <input
+                  id="aceita-cotacao"
+                  type="checkbox"
+                  checked={formAceitaCotacao}
+                  onChange={(e) => setFormAceitaCotacao(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                <Label htmlFor="aceita-cotacao" className="font-normal">Aceita cotação</Label>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <input
+                  id="whatsapp-autorizado"
+                  type="checkbox"
+                  checked={formWhatsappAutorizado}
+                  onChange={(e) => setFormWhatsappAutorizado(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+                <Label htmlFor="whatsapp-autorizado" className="font-normal">WhatsApp autorizado</Label>
+              </div>
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="template">Template de cotação (nome no Meta)</Label>
+              <Input
+                id="template"
+                value={formTemplate}
+                onChange={(e) => setFormTemplate(e.target.value)}
+                placeholder="solicitacao_cotacao_fornecedor"
+              />
+              <p className="text-xs text-muted-foreground">Template aprovado no Meta Business para envio fora da janela de 24h</p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpenForm(false)}>Cancelar</Button>
@@ -455,6 +509,24 @@ export default function SuppliersPage() {
                   </div>
                 </>
               )}
+              <Separator />
+              <div>
+                <span className="text-muted-foreground text-sm">Cotação por WhatsApp:</span>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  <Badge variant={viewing.aceitaCotacaoWhatsapp ? "default" : "secondary"} className="text-xs">
+                    {viewing.aceitaCotacaoWhatsapp ? "Aceita cotação" : "Não aceita cotação"}
+                  </Badge>
+                  <Badge variant={viewing.whatsappAutorizado ? "default" : "destructive"} className="text-xs">
+                    {viewing.whatsappAutorizado ? "WhatsApp autorizado" : "WhatsApp não autorizado"}
+                  </Badge>
+                  {viewing.templateCotacaoNome && (
+                    <Badge variant="outline" className="text-xs">Template: {viewing.templateCotacaoNome}</Badge>
+                  )}
+                  {viewing.ultimoContatoWhatsapp && (
+                    <Badge variant="outline" className="text-xs">Últ. contato: {new Date(viewing.ultimoContatoWhatsapp).toLocaleString("pt-BR")}</Badge>
+                  )}
+                </div>
+              </div>
             </div>
           )}
           <DialogFooter>

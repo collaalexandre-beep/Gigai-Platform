@@ -1393,6 +1393,10 @@ export const suppliers = pgTable(
     prazoMedioEntrega: text("prazo_medio_entrega"),
     observacao: text("observacao"),
     ativo: boolean("ativo").notNull().default(true),
+    aceitaCotacaoWhatsapp: boolean("aceita_cotacao_whatsapp").notNull().default(true),
+    whatsappAutorizado: boolean("whatsapp_autorizado").notNull().default(false),
+    templateCotacaoNome: text("template_cotacao_nome").notNull().default("solicitacao_cotacao_fornecedor"),
+    ultimoContatoWhatsapp: timestamp("ultimo_contato_whatsapp"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -1400,6 +1404,7 @@ export const suppliers = pgTable(
     index("idx_suppliers_nome").on(t.nome),
     index("idx_suppliers_cnpj_cpf").on(t.cnpjCpf),
     index("idx_suppliers_ativo").on(t.ativo),
+    index("idx_suppliers_whatsapp_autorizado").on(t.whatsappAutorizado),
   ]
 );
 

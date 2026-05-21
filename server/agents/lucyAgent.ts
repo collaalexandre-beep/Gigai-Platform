@@ -1,5 +1,6 @@
 import { storage } from "../storage";
-import type { Seller, WhatsappSession } from "@shared/schema";
+import { sendMetaMessage, sendMetaTemplateMessage, getMetaPhoneId } from "../services/metaWhatsapp";
+import type { Seller, WhatsappSession, Supplier } from "@shared/schema";
 
 export function normalizarTelefone(telefone: string): string {
   let digits = telefone.replace(/\D/g, "");
@@ -43,6 +44,69 @@ export interface LucyAgentParams {
   msgNorm: string;
   session: WhatsappSession;
   reply: (msg: string, nextStep?: string, extraData?: Record<string, unknown>) => Promise<void>;
+}
+
+/**
+ * Verifica se um fornecedor pode receber cotação por WhatsApp.
+ * Retorna o fornecedor (se elegível) ou a razão do bloqueio.
+ */
+export function podeCotarPorWhatsapp(supplier: Supplier): { elegivel: boolean; razao?: string } {
+  if (!supplier.ativo) return { elegivel: false, razao: "fornecedor_inativo" };
+  if (!supplier.whatsapp || supplier.whatsapp.trim().length < 8) return { elegivel: false, razao: "sem_whatsapp" };
+  if (!supplier.aceitaCotacaoWhatsapp) return { elegivel: false, razao: "nao_aceita_cotacao" };
+  if (!supplier.whatsappAutorizado) return { elegivel: false, razao: "whatsapp_nao_autorizado" };
+  if (!supplier.templateCotacaoNome || supplier.templateCotacaoNome.trim() === "") {
+    return { elegivel: false, razao: "sem_template" };
+  }
+  return { elegivel: true };
+}
+
+/**
+ * Envia cotação a um fornecedor por WhatsApp.
+ * Se último contato > 24h, usa template da Meta.
+ * Se dentro da janela, envia mensagem normal.
+ */
+export async function enviarCotacaoFornecedor(
+  supplier: Supplier,
+  mensagem: string,
+  solicitanteNome?: string,
+  material?: string,
+  quantidade?: string
+): Promise<{ sucesso: boolean; erro?: string; usouTemplate: boolean }> {
+  const check = podeCotarPorWhatsapp(supplier);
+  if (!check.elegivel) {
+    return { sucesso: false, erro: check.razao, usouTemplate: false };
+  }
+
+  const phoneId = getMetaPhoneId();
+  const to = supplier.whatsapp!;
+
+  // Verifica se último contato foi nas últimas 24h
+  const ultimo = supplier.ultimoContatoWhatsapp;
+  const dentroDaJanela = ultimo
+    ? (Date.now() - new Date(ultimo).getTime()) < 24 * 60 * 60 * 1000
+    : false;
+
+  if (dentroDaJanela) {
+    // Envia mensagem normal (sessão ativa)
+    const body = `Olá! Aqui é a Lucy da Gráfica+ 🛒\n\n` +
+      (solicitanteNome ? `Solicitante: ${solicitanteNome}\n` : "") +
+      `Material: ${material ?? "N/I"}\n` +
+      `Quantidade: ${quantidade ?? "N/I"}\n\n` +
+      `Detalhes: ${mensagem}\n\n` +
+      `Poderia nos enviar uma cotação? Obrigado!`;
+    await sendMetaMessage(phoneId, to, body);
+    return { sucesso: true, usouTemplate: false };
+  }
+
+  // Fora da janela → usa template aprovado
+  const templateName = supplier.templateCotacaoNome ?? "solicitacao_cotacao_fornecedor";
+  const params = [
+    { type: "text", text: material ?? "Material não informado" },
+    { type: "text", text: quantidade ?? "Quantidade não informada" },
+  ];
+  await sendMetaTemplateMessage(phoneId, to, templateName, "pt_BR", params);
+  return { sucesso: true, usouTemplate: true };
 }
 
 export async function handleLucyAgent(params: LucyAgentParams): Promise<void> {
