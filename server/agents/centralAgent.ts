@@ -11,7 +11,7 @@ export interface ClassificationResult {
   confianca: number;
 }
 
-const CLASSIFICATION_PROMPT = `Você é o Agente Central de roteamento de mensagens de um sistema de gestão para uma gráfica comercial brasileira chamada Gráfica+.
+const CLASSIFICATION_PROMPT = `Você é o *Jones*, o roteador central de mensagens de um sistema de gestão para uma gráfica comercial brasileira chamada Gráfica+.
 
 Você recebe mensagens de WhatsApp de CLIENTES e FUNCIONÁRIOS e precisa classificar para qual agente especializado encaminhar.
 
@@ -63,7 +63,7 @@ export async function classifyMessage(message: string): Promise<ClassificationRe
       confianca: typeof result.confianca === "number" ? result.confianca : 0,
     };
   } catch (e) {
-    console.error("[CentralAgent] Erro na classificação:", e);
+    console.error("[Jones] Erro na classificação:", e);
     return { destino: "humano", intencao: "erro na classificação", confianca: 0 };
   }
 }

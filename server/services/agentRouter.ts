@@ -1,5 +1,5 @@
 import { storage } from "../storage";
-import { classifyMessage } from "../agents/centralAgent";
+import { classifyMessage } from "../agents/centralAgent"; // Jones = roteador central
 import { handleCommercialAgent, DEFAULT_SYSTEM_PROMPT, DEFAULT_ATTENDANT_MSG } from "../agents/commercialAgent";
 import { handleVehicleWaFlow, isVehicleExitCommand, isVehicleReturnCommand } from "../agents/fleetAgent";
 import { handlePurchaseAgent, PURCH_STEPS } from "../agents/purchaseAgent";
@@ -136,8 +136,8 @@ export async function routeMessage(params: RouterParams): Promise<void> {
     return;
   }
 
-  // ── 5. CLASSIFICAÇÃO POR AGENTE CENTRAL (IA) ─────────────────────────────
-  console.log(`[AgentRouter] Sessão nova ou não classificada — chamando Agente Central. msg="${rawBody.slice(0, 60)}"`);
+  // ── 5. CLASSIFICAÇÃO PELO JONES (IA) ──────────────────────────────────────
+  console.log(`[AgentRouter] Sessão nova ou não classificada — chamando Jones. msg="${rawBody.slice(0, 60)}"`);
   const classification = await classifyMessage(rawBody);
   console.log(`[AgentRouter] Classificação:`, classification);
 
