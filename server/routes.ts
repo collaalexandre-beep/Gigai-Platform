@@ -1484,9 +1484,11 @@ export async function registerRoutes(
       const search = req.query.search as string | undefined;
       const ativo = req.query.ativo !== undefined ? req.query.ativo === "true" : undefined;
       const material = req.query.material as string | undefined;
+      const aceitaCotacaoWhatsapp = req.query.aceitaCotacaoWhatsapp !== undefined ? req.query.aceitaCotacaoWhatsapp === "true" : undefined;
+      const whatsappAutorizado = req.query.whatsappAutorizado !== undefined ? req.query.whatsappAutorizado === "true" : undefined;
       const page = req.query.page ? Number(req.query.page) : 1;
       const limit = req.query.limit ? Number(req.query.limit) : 50;
-      const result = await storage.getSuppliers({ search, ativo, material, page, limit });
+      const result = await storage.getSuppliers({ search, ativo, material, aceitaCotacaoWhatsapp, whatsappAutorizado, page, limit });
       res.json(result);
     } catch (err) { handleError(res, err); }
   });

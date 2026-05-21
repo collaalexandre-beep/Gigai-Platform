@@ -58,6 +58,9 @@ export function podeCotarPorWhatsapp(supplier: Supplier): { elegivel: boolean; r
   if (!supplier.templateCotacaoNome || supplier.templateCotacaoNome.trim() === "") {
     return { elegivel: false, razao: "sem_template" };
   }
+  if (!supplier.idiomaTemplateCotacao || supplier.idiomaTemplateCotacao.trim() === "") {
+    return { elegivel: false, razao: "sem_idioma_template" };
+  }
   return { elegivel: true };
 }
 
@@ -101,11 +104,12 @@ export async function enviarCotacaoFornecedor(
 
   // Fora da janela → usa template aprovado
   const templateName = supplier.templateCotacaoNome ?? "solicitacao_cotacao_fornecedor";
+  const idioma = supplier.idiomaTemplateCotacao ?? "pt_BR";
   const params = [
     { type: "text", text: material ?? "Material não informado" },
     { type: "text", text: quantidade ?? "Quantidade não informada" },
   ];
-  await sendMetaTemplateMessage(phoneId, to, templateName, "pt_BR", params);
+  await sendMetaTemplateMessage(phoneId, to, templateName, idioma, params);
   return { sucesso: true, usouTemplate: true };
 }
 

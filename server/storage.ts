@@ -362,6 +362,8 @@ export interface IStorage {
     search?: string;
     ativo?: boolean;
     material?: string;
+    aceitaCotacaoWhatsapp?: boolean;
+    whatsappAutorizado?: boolean;
     page?: number;
     limit?: number;
   }): Promise<{ data: Supplier[]; total: number }>;
@@ -1869,6 +1871,8 @@ export class DatabaseStorage implements IStorage {
     search?: string;
     ativo?: boolean;
     material?: string;
+    aceitaCotacaoWhatsapp?: boolean;
+    whatsappAutorizado?: boolean;
     page?: number;
     limit?: number;
   }): Promise<{ data: Supplier[]; total: number }> {
@@ -1878,6 +1882,8 @@ export class DatabaseStorage implements IStorage {
 
     const conditions: any[] = [];
     if (params?.ativo !== undefined) conditions.push(eq(suppliers.ativo, params.ativo));
+    if (params?.aceitaCotacaoWhatsapp !== undefined) conditions.push(eq(suppliers.aceitaCotacaoWhatsapp, params.aceitaCotacaoWhatsapp));
+    if (params?.whatsappAutorizado !== undefined) conditions.push(eq(suppliers.whatsappAutorizado, params.whatsappAutorizado));
     if (params?.material) conditions.push(sql`${suppliers.materiaisFornecidos} @> ARRAY[${params.material}]`);
     if (params?.search) {
       const q = `%${params.search}%`;
