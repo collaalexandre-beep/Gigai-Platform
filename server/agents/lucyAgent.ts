@@ -1,6 +1,7 @@
 import { storage } from "../storage";
 import { sendMetaMessage, sendMetaTemplateMessage, getMetaPhoneId } from "../services/metaWhatsapp";
 import type { Seller, WhatsappSession, Supplier } from "@shared/schema";
+import { handlePurchaseAgent } from "./purchaseAgent";
 
 export function normalizarTelefone(telefone: string): string {
   let digits = telefone.replace(/\D/g, "");
@@ -128,14 +129,21 @@ export async function handleLucyAgent(params: LucyAgentParams): Promise<void> {
       const nome = resultado.colaborador!.nomeCompleto.split(" ")[0];
 
       if (isIntencaoDeCompra) {
-        // Usuário já descreveu o pedido → anota e confirma
-        await reply(
-          `✅ Anotei, ${nome}!\n\n` +
-          `Pedido: *${rawBody}*\n\n` +
-          `O setor de compras vai dar continuidade. Obrigado! 🛒`,
-          "collecting",
-          {}
-        );
+        // Usuário já descreveu o pedido → passa para o agente de compras coletar e confirmar
+        const sessionComNome = {
+          ...session,
+          step: "purch_coletando",
+          data: {
+            ...(session.data as Record<string, unknown>),
+            agente: "compras",
+            purch_solicitante: resultado.colaborador!.nomeCompleto,
+          },
+        };
+        await storage.updateWhatsappSession(session.id, {
+          step: "purch_coletando",
+          data: sessionComNome.data,
+        });
+        await handlePurchaseAgent({ from, rawBody, msgNorm, session: sessionComNome, reply });
         return;
       }
 
@@ -145,9 +153,10 @@ export async function handleLucyAgent(params: LucyAgentParams): Promise<void> {
         `Você está autorizado a solicitar compras. Me diga o que precisa:\n` +
         `• Material\n` +
         `• Quantidade e unidade\n` +
-        `• Se é para OS, estoque ou expediente`,
-        "collecting",
-        {}
+        `• Se é para OS, estoque ou expediente\n` +
+        `• Fornecedor preferido (opcional)`,
+        "purch_coletando",
+        { agente: "compras", purch_solicitante: resultado.colaborador!.nomeCompleto }
       );
       return;
     }

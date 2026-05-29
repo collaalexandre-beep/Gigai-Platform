@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { storage } from "../storage";
 import type { WhatsappSession } from "@shared/schema";
+import { enviarCotacaoFornecedor } from "./lucyAgent";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -76,16 +77,22 @@ export async function handlePurchaseAgent(params: PurchaseAgentParams): Promise<
   if (step === PURCH_STEPS.CONFIRMAR) {
     if (CONFIRM_WORDS.includes(msgNorm)) {
       try {
+        const material    = (data.purch_material as string) || "Material não especificado";
+        const quantidade  = (data.purch_quantidade as string) || null;
+        const unidade     = (data.purch_unidade as string) || null;
+        const fornNome    = (data.purch_fornecedor as string) || null;
+        const solicitante = (data.purch_solicitante as string) || null;
+
         await storage.createPurchaseRequest({
-          solicitanteNome: (data.purch_solicitante as string) || null,
+          solicitanteNome: solicitante,
           solicitanteTelefone: phone,
-          material: (data.purch_material as string) || "Material não especificado",
-          quantidade: (data.purch_quantidade as string) || null,
-          unidade: (data.purch_unidade as string) || null,
+          material,
+          quantidade,
+          unidade,
           urgencia: (data.purch_urgencia as string) || "normal",
           osRelacionada: (data.purch_os as string) || null,
           observacao: (data.purch_obs as string) || null,
-          fornecedorSugerido: (data.purch_fornecedor as string) || null,
+          fornecedorSugerido: fornNome,
           status: "pendente",
         } as any);
 
@@ -96,15 +103,60 @@ export async function handlePurchaseAgent(params: PurchaseAgentParams): Promise<
         };
         const urg = (data.purch_urgencia as string) || "normal";
 
+        // ── Disparar cotação WhatsApp ──────────────────────────────────────
+        let linhaFornecedor = "";
+        try {
+          if (fornNome && fornNome.trim().length > 0) {
+            // Fornecedor específico pedido → busca pelo nome
+            const { data: lista } = await storage.getSuppliers({ search: fornNome, ativo: true, limit: 5 });
+            const alvo = lista.find(s =>
+              s.aceitaCotacaoWhatsapp && s.whatsappAutorizado && s.whatsapp && s.templateCotacaoNome
+            );
+            if (alvo) {
+              const res = await enviarCotacaoFornecedor(alvo, `Solicitação de compra de ${material}`, solicitante ?? undefined, material, quantidade ?? undefined);
+              linhaFornecedor = res.sucesso
+                ? `\n📨 Cotação enviada para *${alvo.nomeFantasia ?? alvo.nome}* via WhatsApp${res.usouTemplate ? " (template)" : ""}.`
+                : `\n⚠️ Não foi possível enviar WhatsApp para ${alvo.nome}: ${res.erro ?? "erro desconhecido"}.`;
+            } else {
+              linhaFornecedor = `\n⚠️ Fornecedor *"${fornNome}"* não encontrado ou não está habilitado para cotação via WhatsApp.`;
+            }
+          } else {
+            // Sem fornecedor específico → busca elegíveis pelo material
+            const { data: lista } = await storage.getSuppliers({
+              ativo: true,
+              aceitaCotacaoWhatsapp: true,
+              whatsappAutorizado: true,
+              material,
+              limit: 10,
+            });
+            const elegiveis = lista.filter(s => s.whatsapp && s.templateCotacaoNome);
+            if (elegiveis.length > 0) {
+              const resultados = await Promise.all(
+                elegiveis.map(s => enviarCotacaoFornecedor(s, `Solicitação de compra de ${material}`, solicitante ?? undefined, material, quantidade ?? undefined))
+              );
+              const enviados = elegiveis.filter((_, i) => resultados[i].sucesso).map(s => s.nomeFantasia ?? s.nome);
+              linhaFornecedor = enviados.length > 0
+                ? `\n📨 Cotação enviada para: *${enviados.join(", ")}*.`
+                : `\n⚠️ Nenhum fornecedor elegível encontrado para envio automático.`;
+            } else {
+              linhaFornecedor = `\n💡 Nenhum fornecedor cadastrado e habilitado para cotação automática via WhatsApp.`;
+            }
+          }
+        } catch (waErr) {
+          console.error("[PurchaseAgent] Erro ao enviar cotação WA:", waErr);
+          linhaFornecedor = `\n⚠️ Erro ao disparar cotação WhatsApp.`;
+        }
+
         await reply(
           `✅ *Solicitação registrada com sucesso!*\n\n` +
-          `📦 *Material:* ${data.purch_material}\n` +
-          `🔢 *Quantidade:* ${data.purch_quantidade} ${data.purch_unidade}\n` +
+          `📦 *Material:* ${material}\n` +
+          `🔢 *Quantidade:* ${quantidade ?? "—"} ${unidade ?? ""}\n` +
           `⚡ *Urgência:* ${urgLabels[urg] ?? urg}\n` +
           (data.purch_os ? `🔖 *OS:* ${data.purch_os}\n` : "") +
           (data.purch_obs ? `📝 *Obs:* ${data.purch_obs}\n` : "") +
-          (data.purch_fornecedor ? `🏪 *Fornecedor:* ${data.purch_fornecedor}\n` : "") +
-          `\nO setor de compras foi notificado. Obrigado! 🙏`,
+          (fornNome ? `🏪 *Fornecedor:* ${fornNome}\n` : "") +
+          linhaFornecedor +
+          `\n\nObrigado! 🙏`,
           "collecting",
           {}
         );

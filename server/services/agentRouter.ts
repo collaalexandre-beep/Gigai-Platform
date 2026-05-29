@@ -42,6 +42,15 @@ export async function routeMessage(params: RouterParams): Promise<void> {
   const data = (session.data ?? {}) as Record<string, unknown>;
 
   // ════════════════════════════════════════════════════════════════════════
+  // PRIORIDADE: step purch_* em andamento supera qualquer keyword
+  // (garante que o fluxo de coleta não seja interrompido)
+  // ════════════════════════════════════════════════════════════════════════
+  if (step.startsWith("purch_")) {
+    await handlePurchaseAgent({ from, rawBody, msgNorm, session, reply });
+    return;
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
   // PRIORIDADE ABSOLUTA: Lucy (compras/estoque) — detecta antes de TUDO
   // ════════════════════════════════════════════════════════════════════════
   const msgLower = msgNorm;
@@ -94,10 +103,6 @@ export async function routeMessage(params: RouterParams): Promise<void> {
   }
   if (step.startsWith("lucy_") || data.agente === "lucy") {
     await handleLucyAgent({ from, rawBody, msgNorm, session, reply });
-    return;
-  }
-  if (step.startsWith("purch_")) {
-    await handlePurchaseAgent({ from, rawBody, msgNorm, session, reply });
     return;
   }
   if (["confirmar", "done", "status_query"].includes(step)) {
