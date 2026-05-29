@@ -126,6 +126,84 @@ const publicaCnpjWsProvider: CnpjProvider = {
   },
 };
 
+// ─── Provider: open.cnpja.com ─────────────────────────────────────────────────
+// Fonte: https://open.cnpja.com — dados Receita Federal + IEs (melhor cobertura de IE que SINTEGRA)
+// Endpoint: GET /office/{cnpj14}
+// Retorna `registrations` array com IEs por UF
+
+const openCnpjaProvider: CnpjProvider = {
+  name: "open.cnpja.com",
+  async lookup(cnpj: string): Promise<CnpjLookupResult> {
+    const clean = cnpj.replace(/\D/g, "");
+    const url = `https://open.cnpja.com/office/${clean}`;
+    try {
+      const res = await fetch(url, {
+        headers: { "User-Agent": "GraficaERP/1.0", "Accept": "application/json" },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        return { success: false, provider: "open.cnpja.com", error: `HTTP ${res.status}: ${text.slice(0, 200)}` };
+      }
+      const raw = await res.json();
+
+      // Extrair IEs do array registrations
+      let inscricaoEstadual: string | undefined;
+      const regs = Array.isArray(raw.registrations) ? raw.registrations : [];
+      if (regs.length > 0) {
+        const ativas = regs.filter((r: any) => r.enabled !== false);
+        const lista = ativas.length > 0 ? ativas : regs;
+        inscricaoEstadual = lista
+          .map((r: any) => {
+            const uf = r.state || "";
+            const num = String(r.number || "").trim();
+            return uf && num ? `${uf}: ${num}` : (num || "");
+          })
+          .filter(Boolean)
+          .join(" / ");
+        if (!inscricaoEstadual) inscricaoEstadual = undefined;
+      }
+
+      // Telefone
+      let telefone: string | undefined;
+      if (Array.isArray(raw.phones) && raw.phones.length > 0) {
+        const p = raw.phones[0];
+        telefone = p.area && p.number ? `(${p.area}) ${p.number}` : undefined;
+      }
+
+      // Endereço
+      const addr = raw.address || {};
+      const cep = addr.zip
+        ? String(addr.zip).replace(/\D/g, "").replace(/(\d{5})(\d{3})/, "$1-$2")
+        : undefined;
+
+      const data: CnpjData = {
+        cnpj: clean,
+        razaoSocial: raw.company?.name,
+        nomeFantasia: raw.alias || undefined,
+        inscricaoEstadual,
+        situacaoCadastral: raw.status?.text,
+        dataAbertura: raw.founded,
+        naturezaJuridica: raw.nature?.text,
+        logradouro: addr.street ? `${addr.street}`.trim() : undefined,
+        numero: addr.number || undefined,
+        complemento: addr.details || undefined,
+        bairro: addr.district || undefined,
+        cidade: addr.city,
+        estado: addr.state,
+        cep,
+        telefone,
+        email: Array.isArray(raw.emails) && raw.emails.length > 0 ? raw.emails[0].address : undefined,
+      };
+
+      return { success: true, provider: "open.cnpja.com", data, rawResponse: raw };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, provider: "open.cnpja.com", error: msg };
+    }
+  },
+};
+
 // ─── Provider: BrasilAPI ──────────────────────────────────────────────────────
 
 const brasilApiProvider: CnpjProvider = {
@@ -221,9 +299,10 @@ const receitaWsProvider: CnpjProvider = {
 
 // ─── Service ─────────────────────────────────────────────────────────────────
 
-// Ordem de tentativa: publica.cnpj.ws (tem IE) → BrasilAPI → ReceitaWS
+// Ordem de tentativa: publica.cnpj.ws (IE via SINTEGRA) → open.cnpja.com (IE alternativo) → BrasilAPI → ReceitaWS
 const providers: CnpjProvider[] = [
   publicaCnpjWsProvider,
+  openCnpjaProvider,
   brasilApiProvider,
   receitaWsProvider,
 ];
