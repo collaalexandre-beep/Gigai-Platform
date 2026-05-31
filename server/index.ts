@@ -67,6 +67,31 @@ app.use((req, res, next) => {
     console.error("[Seed] Erro ao popular banco:", err);
   }
 
+  // ── Correção pontual de dados: SGI LTDA ────────────────────────────────────
+  // Corrige o número WhatsApp (faltava o 9 do celular) e o nome do template
+  try {
+    const { db } = await import("./db");
+    const { suppliers } = await import("@shared/schema");
+    const { eq } = await import("drizzle-orm");
+    const [sgi] = await db
+      .select({ id: suppliers.id, whatsapp: suppliers.whatsapp, template: suppliers.templateCotacaoNome })
+      .from(suppliers)
+      .where(eq(suppliers.id, "555af950-94cf-4483-a916-1a602a14e03d"))
+      .limit(1);
+    if (sgi) {
+      const updates: Record<string, string | null> = {};
+      if (sgi.whatsapp === "555186280534") updates["whatsapp"] = "5551986280534";
+      if (sgi.template === "lucy_cotacao_fornecedor" || !sgi.template) updates["templateCotacaoNome"] = "grafica_cotacao";
+      if (Object.keys(updates).length > 0) {
+        await db.update(suppliers).set(updates as any).where(eq(suppliers.id, "555af950-94cf-4483-a916-1a602a14e03d"));
+        console.log("[Fix] SGI LTDA atualizado:", updates);
+      }
+    }
+  } catch (err) {
+    console.error("[Fix] Erro ao corrigir dados da SGI:", err);
+  }
+  // ──────────────────────────────────────────────────────────────────────────
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
