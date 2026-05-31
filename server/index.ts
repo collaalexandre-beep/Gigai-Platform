@@ -80,7 +80,7 @@ app.use((req, res, next) => {
       .limit(1);
     if (sgi) {
       const updates: Record<string, string | null> = {};
-      if (sgi.whatsapp === "555186280534") updates["whatsapp"] = "5551986280534";
+      if (sgi.whatsapp === "555186280534" || sgi.whatsapp === "5551986280534") updates["whatsapp"] = "555186280534";
       if (sgi.template === "lucy_cotacao_fornecedor" || !sgi.template) updates["templateCotacaoNome"] = "grafica_cotacao";
       if (Object.keys(updates).length > 0) {
         await db.update(suppliers).set(updates as any).where(eq(suppliers.id, "555af950-94cf-4483-a916-1a602a14e03d"));
