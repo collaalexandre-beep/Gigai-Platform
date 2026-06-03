@@ -42,42 +42,18 @@ export async function routeMessage(params: RouterParams): Promise<void> {
   const data = (session.data ?? {}) as Record<string, unknown>;
 
   // ════════════════════════════════════════════════════════════════════════
-  // PRIORIDADE: step purch_* em andamento supera qualquer keyword
-  // (garante que o fluxo de coleta não seja interrompido)
+  // PRIORIDADE 1: purch_confirmar → purchaseAgent (salva no DB, envia WA)
   // ════════════════════════════════════════════════════════════════════════
-  if (step.startsWith("purch_")) {
+  if (step === "purch_confirmar") {
     await handlePurchaseAgent({ from, rawBody, msgNorm, session, reply });
     return;
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // PRIORIDADE ABSOLUTA: Lucy (compras/estoque) — detecta antes de TUDO
+  // PRIORIDADE 2: purch_coletando e outros purch_* → Lucy (conversa com IA)
   // ════════════════════════════════════════════════════════════════════════
-  const msgLower = msgNorm;
-  const isLucyKeyword =
-    msgLower.includes("lucy") ||
-    msgLower.includes("compra") ||
-    msgLower.includes("compras") ||
-    msgLower.includes("material") ||
-    msgLower.includes("estoque") ||
-    msgLower.includes("reposicao") ||
-    msgLower.includes("reposição") ||
-    msgLower.includes("fornecedor") ||
-    msgLower.includes("cotacao") ||
-    msgLower.includes("cotação") ||
-    msgLower.includes("insumo") ||
-    msgLower.includes("insumos") ||
-    msgLower.includes("pedido de material") ||
-    msgLower.includes("material para os") ||
-    msgLower.includes("material de expediente") ||
-    msgLower.includes("preciso de tinta") ||
-    msgLower.includes("preciso de papel") ||
-    msgLower.includes("preciso comprar");
-
-  if (isLucyKeyword) {
-    console.log(`[AgentRouter] → LUCY (prioridade absoluta) msg="${rawBody.slice(0, 60)}"`);
-    await storage.updateWhatsappSession(session.id, { data: { ...data, agente: "lucy" } });
-    await handleLucyAgent({ from, rawBody, msgNorm, session: { ...session, data: { ...data, agente: "lucy" } }, reply });
+  if (step.startsWith("purch_")) {
+    await handleLucyAgent({ from, rawBody, msgNorm, session, reply });
     return;
   }
 
@@ -140,6 +116,19 @@ export async function routeMessage(params: RouterParams): Promise<void> {
     await runFleetAgent(params);
     return;
   }
+
+  // ── 4b. FALLBACK: colaborador autorizado → Lucy (sem precisar de keyword) ─
+  try {
+    const { verificarAutorizacaoCompraPorTelefone } = await import("../agents/lucyAgent");
+    const auth = await verificarAutorizacaoCompraPorTelefone(from);
+    if (auth.motivo === "colaborador_autorizado") {
+      console.log(`[AgentRouter] → LUCY (colaborador autorizado detectado) msg="${rawBody.slice(0, 60)}"`);
+      const sessionLucy = { ...session, data: { ...data, agente: "lucy" } };
+      await storage.updateWhatsappSession(session.id, { data: sessionLucy.data });
+      await handleLucyAgent({ from, rawBody, msgNorm, session: sessionLucy, reply });
+      return;
+    }
+  } catch (_) { /* ignora erro de lookup — cai no Jones */ }
 
   // ── 5. CLASSIFICAÇÃO PELO JONES (IA) ──────────────────────────────────────
   console.log(`[AgentRouter] Sessão nova ou não classificada — chamando Jones. msg="${rawBody.slice(0, 60)}"`);

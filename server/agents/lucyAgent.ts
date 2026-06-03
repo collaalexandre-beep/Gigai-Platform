@@ -1,7 +1,12 @@
+import OpenAI from "openai";
 import { storage } from "../storage";
 import { sendMetaMessage, sendMetaTemplateMessage, getMetaPhoneId } from "../services/metaWhatsapp";
 import type { Seller, WhatsappSession, Supplier } from "@shared/schema";
-import { handlePurchaseAgent } from "./purchaseAgent";
+
+const openai = new OpenAI({
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+});
 
 export function normalizarTelefone(telefone: string): string {
   let digits = telefone.replace(/\D/g, "");
@@ -47,10 +52,6 @@ export interface LucyAgentParams {
   reply: (msg: string, nextStep?: string, extraData?: Record<string, unknown>) => Promise<void>;
 }
 
-/**
- * Verifica se um fornecedor pode receber cotação por WhatsApp.
- * Retorna o fornecedor (se elegível) ou a razão do bloqueio.
- */
 export function podeCotarPorWhatsapp(supplier: Supplier): { elegivel: boolean; razao?: string } {
   if (!supplier.ativo) return { elegivel: false, razao: "fornecedor_inativo" };
   if (!supplier.whatsapp || supplier.whatsapp.trim().length < 8) return { elegivel: false, razao: "sem_whatsapp" };
@@ -65,11 +66,6 @@ export function podeCotarPorWhatsapp(supplier: Supplier): { elegivel: boolean; r
   return { elegivel: true };
 }
 
-/**
- * Envia cotação a um fornecedor por WhatsApp.
- * Se último contato > 24h, usa template da Meta.
- * Se dentro da janela, envia mensagem normal.
- */
 export async function enviarCotacaoFornecedor(
   supplier: Supplier,
   mensagem: string,
@@ -85,15 +81,14 @@ export async function enviarCotacaoFornecedor(
   const phoneId = getMetaPhoneId();
   const to = supplier.whatsapp!;
 
-  // Verifica se último contato foi nas últimas 24h
   const ultimo = supplier.ultimoContatoWhatsapp;
   const dentroDaJanela = ultimo
     ? (Date.now() - new Date(ultimo).getTime()) < 24 * 60 * 60 * 1000
     : false;
 
   if (dentroDaJanela) {
-    // Envia mensagem normal (sessão ativa)
-    const body = `Olá! Aqui é a Lucy da Gráfica+ 🛒\n\n` +
+    const body =
+      `Olá! Aqui é a Lucy da Gráfica+ 🛒\n\n` +
       (solicitanteNome ? `Solicitante: ${solicitanteNome}\n` : "") +
       `Material: ${material ?? "N/I"}\n` +
       `Quantidade: ${quantidade ?? "N/I"}\n\n` +
@@ -103,91 +98,169 @@ export async function enviarCotacaoFornecedor(
     return { sucesso: true, usouTemplate: false };
   }
 
-  // Fora da janela → usa template aprovado
   const templateName = supplier.templateCotacaoNome ?? "solicitacao_cotacao_fornecedor";
   const idioma = supplier.idiomaTemplateCotacao ?? "pt_BR";
   const params = [
     { type: "text", text: material ?? "Material não informado" },
     { type: "text", text: quantidade ?? "Quantidade não informada" },
+    { type: "text", text: solicitanteNome ?? "Equipe" },
   ];
   await sendMetaTemplateMessage(phoneId, to, templateName, idioma, params);
   return { sucesso: true, usouTemplate: true };
 }
 
+// ─── LUCY: AGENTE CONVERSACIONAL COM IA E HISTÓRICO ──────────────────────────
+
+type HistoryMsg = { role: "user" | "assistant"; content: string };
+
 export async function handleLucyAgent(params: LucyAgentParams): Promise<void> {
   const { from, rawBody, msgNorm, session, reply } = params;
-
-  const isChamadaPeloNome = msgNorm.trim() === "lucy" || msgNorm.trim().startsWith("lucy ") || msgNorm.trim().startsWith("oi lucy") || msgNorm.trim().startsWith("ola lucy") || msgNorm.trim().startsWith("olá lucy");
-  const isIntencaoDeCompra = !isChamadaPeloNome;
+  const data = (session.data ?? {}) as Record<string, unknown>;
 
   try {
     const resultado = await verificarAutorizacaoCompraPorTelefone(from);
-    console.log(`[Lucy] chamada="${isChamadaPeloNome}" intencao="${isIntencaoDeCompra}" motivo="${resultado.motivo}" colaborador="${resultado.colaborador?.nomeCompleto ?? "—"}"`);
+    console.log(`[Lucy] motivo="${resultado.motivo}" colaborador="${resultado.colaborador?.nomeCompleto ?? "—"}"`);
 
-    // ─── Autorizado ──────────────────────────────────────────────────────
-    if (resultado.motivo === "colaborador_autorizado") {
-      const nome = resultado.colaborador!.nomeCompleto.split(" ")[0];
-
-      if (isIntencaoDeCompra) {
-        // Usuário já descreveu o pedido → passa para o agente de compras coletar e confirmar
-        const sessionComNome = {
-          ...session,
-          step: "purch_coletando",
-          data: {
-            ...(session.data as Record<string, unknown>),
-            agente: "compras",
-            purch_solicitante: resultado.colaborador!.nomeCompleto,
-          },
-        };
-        await storage.updateWhatsappSession(session.id, {
-          step: "purch_coletando",
-          data: sessionComNome.data,
-        });
-        await handlePurchaseAgent({ from, rawBody, msgNorm, session: sessionComNome, reply });
-        return;
-      }
-
-      // Só chamou pelo nome → pede para descrever
+    // ─── Número desconhecido ──────────────────────────────────────────────
+    if (resultado.motivo === "telefone_nao_cadastrado") {
       await reply(
-        `Oi ${nome}! Aqui é a *Lucy* 🛒\n\n` +
-        `Você está autorizado a solicitar compras. Me diga o que precisa:\n` +
-        `• Material\n` +
-        `• Quantidade e unidade\n` +
-        `• Se é para OS, estoque ou expediente\n` +
-        `• Fornecedor preferido (opcional)`,
-        "purch_coletando",
-        { agente: "compras", purch_solicitante: resultado.colaborador!.nomeCompleto }
+        `Olá! Sou a Lucy, assistente de compras da Gráfica+.\n\n` +
+        `Seu número não está cadastrado no sistema. Para solicitar compras, peça para um responsável te cadastrar e liberar o acesso.`,
+        "collecting", {}
       );
       return;
     }
 
-    // ─── Cadastrado, mas NÃO autorizado ──────────────────────────────────────────
+    // ─── Cadastrado mas sem autorização ──────────────────────────────────
     if (resultado.motivo === "colaborador_nao_autorizado") {
       const nome = resultado.colaborador!.nomeCompleto.split(" ")[0];
       await reply(
-        `Oi ${nome}. Aqui é a *Lucy* 🛒\n\n` +
-        `Encontrei seu cadastro, mas você ainda não está autorizado a solicitar compras.\n` +
-        `Peça para um responsável liberar sua autorização no sistema.`,
-        "collecting",
-        {}
+        `Oi ${nome}! Sou a Lucy 🛒\n\n` +
+        `Você está no sistema, mas ainda não tem autorização para solicitar compras. ` +
+        `Fala com um responsável para liberar o seu acesso, tá bom?`,
+        "collecting", {}
       );
       return;
     }
 
-    // ─── Telefone NÃO cadastrado ──────────────────────────────────────────
-    await reply(
-      `Oi! Aqui é a *Lucy* 🛒\n\n` +
-      `Não encontrei seu número no cadastro de colaboradores.\n` +
-      `Para solicitar compras, peça para um responsável cadastrar seu WhatsApp e liberar a autorização.`,
-      "collecting",
-      {}
-    );
+    // ─── AUTORIZADO → conversa com IA ────────────────────────────────────
+    const colaborador = resultado.colaborador!;
+    const nome = colaborador.nomeCompleto.split(" ")[0];
+
+    // Histórico das últimas 10 trocas (20 mensagens)
+    const history: HistoryMsg[] = (data.lucy_history as HistoryMsg[]) ?? [];
+
+    // Dados de compra já coletados
+    const purchData = {
+      material:    (data.purch_material  as string | null) ?? null,
+      quantidade:  (data.purch_quantidade as string | null) ?? null,
+      unidade:     (data.purch_unidade   as string | null) ?? null,
+      urgencia:    (data.purch_urgencia  as string | null) ?? null,
+      fornecedor:  (data.purch_fornecedor as string | null) ?? null,
+      os:          (data.purch_os        as string | null) ?? null,
+      obs:         (data.purch_obs       as string | null) ?? null,
+    };
+
+    const dadosColetados = Object.entries(purchData)
+      .filter(([, v]) => v !== null)
+      .map(([k, v]) => `${k}: ${v}`)
+      .join(", ") || "nenhum ainda";
+
+    const systemPrompt =
+      `Você é a Lucy, assistente interna de compras da Gráfica+. ` +
+      `Sua personalidade é simpática, natural e direta — como uma colega de trabalho de confiança. ` +
+      `Use linguagem coloquial brasileira (pode usar "tá", "ótimo", "perfeito", etc.).\n\n` +
+      `Você está conversando com ${nome} (${colaborador.nomeCompleto}), colaborador(a) autorizado(a).\n\n` +
+      `Sua missão é coletar dados para uma solicitação de compra de forma natural, sem parecer um robô:\n` +
+      `- material: o que precisa comprar (obrigatório)\n` +
+      `- quantidade + unidade: ex. "5 resmas", "10 litros" (obrigatório)\n` +
+      `- urgencia: "normal", "urgente" ou "muito_urgente" (obrigatório — se não mencionado, pergunte casualmente)\n` +
+      `- fornecedor: fornecedor preferido, ex. "SGI", "Serilon" (opcional)\n` +
+      `- os: número de OS relacionada (opcional)\n` +
+      `- obs: especificação técnica ou observação (opcional)\n\n` +
+      `Dados já coletados nessa conversa: ${dadosColetados}\n\n` +
+      `REGRAS:\n` +
+      `1. Converse naturalmente — sem listas com bullets, sem menus\n` +
+      `2. Se já tiver os dados obrigatórios, não fique fazendo mais perguntas — vá para o resumo\n` +
+      `3. Não repita perguntas sobre dados já informados\n` +
+      `4. Quando tiver material + quantidade + urgência → complete=true e faça um resumo pedindo "pode confirmar? (sim/não)"\n` +
+      `5. Se o colaborador quiser cancelar, responda de forma natural e marque complete=false\n\n` +
+      `Responda SOMENTE com JSON válido:\n` +
+      `{\n` +
+      `  "reply": "sua resposta em português natural",\n` +
+      `  "material": string | null,\n` +
+      `  "quantidade": string | null,\n` +
+      `  "unidade": string | null,\n` +
+      `  "urgencia": "normal" | "urgente" | "muito_urgente" | null,\n` +
+      `  "fornecedor": string | null,\n` +
+      `  "os": string | null,\n` +
+      `  "obs": string | null,\n` +
+      `  "complete": boolean\n` +
+      `}`;
+
+    const messages = [
+      { role: "system" as const, content: systemPrompt },
+      ...history.slice(-20),
+      { role: "user" as const, content: rawBody },
+    ];
+
+    const resp = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages,
+      response_format: { type: "json_object" },
+      temperature: 0.7,
+      max_tokens: 500,
+    });
+
+    const result = JSON.parse(resp.choices[0].message.content ?? "{}") as {
+      reply: string;
+      material: string | null;
+      quantidade: string | null;
+      unidade: string | null;
+      urgencia: string | null;
+      fornecedor: string | null;
+      os: string | null;
+      obs: string | null;
+      complete: boolean;
+    };
+
+    // Mescla dados novos com existentes (não sobrescreve com null)
+    const newPurchData = {
+      purch_material:    result.material   ?? purchData.material,
+      purch_quantidade:  result.quantidade ?? purchData.quantidade,
+      purch_unidade:     result.unidade    ?? purchData.unidade,
+      purch_urgencia:    result.urgencia   ?? purchData.urgencia,
+      purch_fornecedor:  result.fornecedor ?? purchData.fornecedor,
+      purch_os:          result.os         ?? purchData.os,
+      purch_obs:         result.obs        ?? purchData.obs,
+    };
+
+    // Mantém histórico (max 20 mensagens = 10 trocas)
+    const newHistory: HistoryMsg[] = [
+      ...history,
+      { role: "user", content: rawBody },
+      { role: "assistant", content: result.reply },
+    ].slice(-20);
+
+    const newData: Record<string, unknown> = {
+      ...data,
+      agente: "lucy",
+      purch_solicitante: colaborador.nomeCompleto,
+      ...newPurchData,
+      lucy_history: newHistory,
+    };
+
+    if (result.complete) {
+      await reply(result.reply, "purch_confirmar", newData);
+    } else {
+      await reply(result.reply, "purch_coletando", newData);
+    }
   } catch (err) {
     console.error("[Lucy] Erro:", err);
     await reply(
-      `⚠️ Erro interno. Tente novamente ou contate um responsável.`,
-      "collecting",
-      {}
+      `Oi! Sou a Lucy 🛒 Tive um probleminha técnico aqui — pode repetir o que você precisava?`,
+      "purch_coletando",
+      { ...data, agente: "lucy" }
     );
   }
 }
