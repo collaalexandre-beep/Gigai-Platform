@@ -909,6 +909,21 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/ai/client-agent", async (req: Request, res: Response) => {
+    try {
+      const { message, history = [] } = req.body as {
+        message: string;
+        history?: { role: "user" | "assistant"; content: string }[];
+      };
+      if (!message?.trim()) return res.status(400).json({ error: "Mensagem obrigatória" });
+      const { runClientAgent } = await import("./agents/clientAgent");
+      const result = await runClientAgent(message, history);
+      res.json(result);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
   app.post("/api/ai/generate-product", async (req: Request, res: Response) => {
     try {
       const { prompt } = req.body;
