@@ -238,10 +238,11 @@ export function ClientAgentPanel({ open, onClose }: ClientAgentPanelProps) {
     setLoading(true);
 
     try {
-      const res = await apiRequest<AgentResponse>("POST", "/api/ai/client-agent", {
+      const raw = await apiRequest("POST", "/api/ai/client-agent", {
         message: msg,
         history: buildHistory(),
       });
+      const res: AgentResponse = await raw.json();
 
       const assistantMsg: ChatMessage = {
         role: "assistant",
