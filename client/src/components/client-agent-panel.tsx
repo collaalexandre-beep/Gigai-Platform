@@ -122,6 +122,7 @@ function StatsChart({ data }: { data: { label: string; total: number }[] }) {
 
 function ToolBadge({ tool, mutated }: { tool: string; mutated?: boolean }) {
   const LABELS: Record<string, { label: string; icon: React.ElementType }> = {
+    consultar_cnpj:      { label: "Consultou Receita Federal", icon: Search },
     buscar_clientes:     { label: "Buscou clientes", icon: Search },
     obter_cliente:       { label: "Consultou cliente", icon: Building2 },
     criar_cliente:       { label: "Cadastrou cliente", icon: Plus },

@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { storage } from "../storage";
+import { lookupCnpj } from "../cnpj";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -10,16 +11,40 @@ const SYSTEM_PROMPT = `Você é o assistente de gestão de clientes da Gráfica+
 
 Você tem acesso a ferramentas para consultar, cadastrar, editar e remover clientes no sistema.
 
-REGRAS:
+REGRAS GERAIS:
 - Responda sempre em português brasileiro
 - Seja conciso e direto — este é um sistema interno de gestão
-- Para criar ou editar clientes, confirme os dados antes de executar
-- Ao listar clientes, mostre as informações mais relevantes
 - Se uma busca não retornar resultados, diga que não encontrou e sugira alternativas
 - Para ações destrutivas (remover cliente), peça confirmação explícita do usuário antes de executar
-- Nunca invente dados — use apenas o que veio das ferramentas`;
+- Nunca invente dados — use apenas o que veio das ferramentas
+
+REGRA DE CADASTRO COM CNPJ (OBRIGATÓRIA):
+Sempre que o usuário fornecer um CNPJ (com ou sem formatação) para cadastrar um cliente:
+1. PRIMEIRO use a ferramenta "consultar_cnpj" para buscar os dados na Receita Federal
+2. Se a consulta retornar dados, use-os para preencher todos os campos: razaoSocial, nomeFantasia, inscricaoEstadual, endereco, telefone, email, etc.
+3. Depois use "criar_cliente" com todos os dados encontrados (incluindo inscricaoEstadual)
+4. Informe ao usuário quais dados foram preenchidos automaticamente
+
+Se a consulta CNPJ falhar, avise o usuário e pergunte se deseja cadastrar manualmente.`;
 
 const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "consultar_cnpj",
+      description: "Consulta dados de uma empresa na Receita Federal pelo CNPJ. Retorna razão social, nome fantasia, endereço completo, inscrição estadual, telefone, e-mail e situação cadastral. SEMPRE use esta ferramenta antes de cadastrar um cliente PJ.",
+      parameters: {
+        type: "object",
+        properties: {
+          cnpj: {
+            type: "string",
+            description: "CNPJ da empresa (com ou sem formatação, ex: 15.331.855/0001-72 ou 15331855000172)",
+          },
+        },
+        required: ["cnpj"],
+      },
+    },
+  },
   {
     type: "function",
     function: {
@@ -64,22 +89,35 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "criar_cliente",
-      description: "Cadastra um novo cliente no sistema",
+      description: "Cadastra um novo cliente no sistema. Para clientes PJ com CNPJ, use sempre consultar_cnpj primeiro para preencher todos os dados.",
       parameters: {
         type: "object",
         properties: {
           razaoSocial: { type: "string", description: "Razão social ou nome completo (obrigatório)" },
-          nomeFantasia: { type: "string", description: "Nome fantasia (opcional)" },
-          tipoPessoa: { type: "string", enum: ["fisica", "juridica"], description: "Tipo de pessoa" },
-          cnpj: { type: "string", description: "CNPJ para pessoa jurídica" },
+          nomeFantasia: { type: "string", description: "Nome fantasia" },
+          tipoPessoa: { type: "string", enum: ["fisica", "juridica"], description: "Tipo de pessoa (padrão: juridica)" },
+          cnpj: { type: "string", description: "CNPJ formatado para pessoa jurídica" },
           cpf: { type: "string", description: "CPF para pessoa física" },
+          inscricaoEstadual: { type: "string", description: "Inscrição estadual (obtida via consultar_cnpj)" },
+          inscricaoMunicipal: { type: "string", description: "Inscrição municipal" },
+          situacaoCadastral: { type: "string", description: "Situação cadastral na Receita Federal" },
+          naturezaJuridica: { type: "string", description: "Natureza jurídica" },
+          dataAbertura: { type: "string", description: "Data de abertura (YYYY-MM-DD)" },
           telefone: { type: "string", description: "Telefone de contato" },
+          whatsapp: { type: "string", description: "Número WhatsApp" },
           email: { type: "string", description: "E-mail" },
+          site: { type: "string", description: "Site da empresa" },
+          cep: { type: "string", description: "CEP" },
+          logradouro: { type: "string", description: "Logradouro (rua/av)" },
+          numero: { type: "string", description: "Número do endereço" },
+          complemento: { type: "string", description: "Complemento" },
+          bairro: { type: "string", description: "Bairro" },
           cidade: { type: "string", description: "Cidade" },
           estado: { type: "string", description: "UF (2 letras)" },
           status: { type: "string", enum: ["ativo", "inativo", "prospect", "bloqueado"], description: "Status inicial (padrão: prospect)" },
           observacoes: { type: "string", description: "Observações internas" },
           segmento: { type: "string", description: "Segmento de mercado" },
+          potencialCompra: { type: "string", enum: ["baixo", "medio", "alto"], description: "Potencial de compra" },
         },
         required: ["razaoSocial"],
       },
@@ -96,8 +134,15 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
           id: { type: "string", description: "ID do cliente a atualizar" },
           razaoSocial: { type: "string" },
           nomeFantasia: { type: "string" },
+          inscricaoEstadual: { type: "string" },
           telefone: { type: "string" },
+          whatsapp: { type: "string" },
           email: { type: "string" },
+          cep: { type: "string" },
+          logradouro: { type: "string" },
+          numero: { type: "string" },
+          complemento: { type: "string" },
+          bairro: { type: "string" },
           cidade: { type: "string" },
           estado: { type: "string" },
           status: { type: "string", enum: ["ativo", "inativo", "prospect", "bloqueado"] },
@@ -149,6 +194,39 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
 
 async function executeTool(name: string, args: Record<string, unknown>): Promise<unknown> {
   switch (name) {
+    case "consultar_cnpj": {
+      const { cnpj } = args as { cnpj: string };
+      const result = await lookupCnpj(cnpj);
+      if (!result.success || !result.data) {
+        return {
+          sucesso: false,
+          erro: result.error ?? "Consulta falhou em todos os provedores",
+          provider: result.provider,
+        };
+      }
+      const d = result.data;
+      return {
+        sucesso: true,
+        provider: result.provider,
+        cnpj: d.cnpj,
+        razaoSocial: d.razaoSocial,
+        nomeFantasia: d.nomeFantasia,
+        inscricaoEstadual: d.inscricaoEstadual,
+        situacaoCadastral: d.situacaoCadastral,
+        dataAbertura: d.dataAbertura,
+        naturezaJuridica: d.naturezaJuridica,
+        logradouro: d.logradouro,
+        numero: d.numero,
+        complemento: d.complemento,
+        bairro: d.bairro,
+        cidade: d.cidade,
+        estado: d.estado,
+        cep: d.cep,
+        telefone: d.telefone,
+        email: d.email,
+      };
+    }
+
     case "buscar_clientes": {
       const { search, status, limit = 20 } = args as { search?: string; status?: string; limit?: number };
       const result = await storage.getClients({
@@ -187,11 +265,15 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
         nomeFantasia: client.nomeFantasia,
         cnpj: client.cnpj,
         cpf: client.cpf,
+        inscricaoEstadual: client.inscricaoEstadual,
         telefone: client.telefone,
         whatsapp: client.whatsapp,
         email: client.email,
         cidade: client.cidade,
         estado: client.estado,
+        cep: client.cep,
+        logradouro: client.logradouro,
+        bairro: client.bairro,
         status: client.status,
         segmento: client.segmento,
         potencialCompra: client.potencialCompra,
@@ -202,20 +284,33 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
     }
 
     case "criar_cliente": {
-      const { razaoSocial, ...rest } = args as { razaoSocial: string; [k: string]: unknown };
+      const data = args as Record<string, unknown>;
       const client = await storage.createClient({
-        razaoSocial,
-        tipoPessoa: (rest.tipoPessoa as "fisica" | "juridica") ?? "juridica",
-        status: (rest.status as "ativo" | "inativo" | "prospect" | "bloqueado") ?? "prospect",
-        nomeFantasia: (rest.nomeFantasia as string) ?? null,
-        cnpj: (rest.cnpj as string) ?? null,
-        cpf: (rest.cpf as string) ?? null,
-        telefone: (rest.telefone as string) ?? null,
-        email: (rest.email as string) ?? null,
-        cidade: (rest.cidade as string) ?? null,
-        estado: (rest.estado as string) ?? null,
-        observacoes: (rest.observacoes as string) ?? null,
-        segmento: (rest.segmento as string) ?? null,
+        razaoSocial: data.razaoSocial as string,
+        tipoPessoa: (data.tipoPessoa as "fisica" | "juridica") ?? "juridica",
+        status: (data.status as "ativo" | "inativo" | "prospect" | "bloqueado") ?? "prospect",
+        nomeFantasia: (data.nomeFantasia as string) ?? null,
+        cnpj: (data.cnpj as string) ?? null,
+        cpf: (data.cpf as string) ?? null,
+        inscricaoEstadual: (data.inscricaoEstadual as string) ?? null,
+        inscricaoMunicipal: (data.inscricaoMunicipal as string) ?? null,
+        situacaoCadastral: (data.situacaoCadastral as string) ?? null,
+        naturezaJuridica: (data.naturezaJuridica as string) ?? null,
+        dataAbertura: (data.dataAbertura as string) ?? null,
+        telefone: (data.telefone as string) ?? null,
+        whatsapp: (data.whatsapp as string) ?? null,
+        email: (data.email as string) ?? null,
+        site: (data.site as string) ?? null,
+        cep: (data.cep as string) ?? null,
+        logradouro: (data.logradouro as string) ?? null,
+        numero: (data.numero as string) ?? null,
+        complemento: (data.complemento as string) ?? null,
+        bairro: (data.bairro as string) ?? null,
+        cidade: (data.cidade as string) ?? null,
+        estado: (data.estado as string) ?? null,
+        observacoes: (data.observacoes as string) ?? null,
+        segmento: (data.segmento as string) ?? null,
+        potencialCompra: (data.potencialCompra as string) ?? null,
       } as any);
       return { sucesso: true, id: client.id, nome: client.nomeFantasia || client.razaoSocial };
     }
@@ -337,7 +432,7 @@ export async function runClientAgent(
   let mutated = false;
 
   let iterations = 0;
-  while (iterations < 5) {
+  while (iterations < 8) {
     iterations++;
 
     const response = await openai.chat.completions.create({
@@ -345,8 +440,8 @@ export async function runClientAgent(
       messages,
       tools: TOOLS,
       tool_choice: "auto",
-      temperature: 0.3,
-      max_tokens: 1000,
+      temperature: 0.2,
+      max_tokens: 1200,
     });
 
     const choice = response.choices[0];
@@ -354,11 +449,7 @@ export async function runClientAgent(
     messages.push(msg as OpenAI.Chat.ChatCompletionMessageParam);
 
     if (choice.finish_reason === "stop" || !msg.tool_calls?.length) {
-      return {
-        reply: msg.content ?? "Pronto.",
-        toolCalls,
-        mutated,
-      };
+      return { reply: msg.content ?? "Pronto.", toolCalls, mutated };
     }
 
     for (const tc of msg.tool_calls) {
@@ -376,9 +467,5 @@ export async function runClientAgent(
     }
   }
 
-  return {
-    reply: "Processamento concluído.",
-    toolCalls,
-    mutated,
-  };
+  return { reply: "Processamento concluído.", toolCalls, mutated };
 }
