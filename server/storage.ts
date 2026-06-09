@@ -252,10 +252,18 @@ export interface IStorage {
   // Quotes
   getQuotes(params?: {
     clientId?: string;
+    sellerId?: string;
+    search?: string;
     status?: string;
     page?: number;
     limit?: number;
-  }): Promise<{ data: Quote[]; total: number }>;
+  }): Promise<{
+    data: (Quote & {
+      client: { id: string; razaoSocial: string; nomeFantasia: string | null } | null;
+      seller: { id: string; nomeCompleto: string } | null;
+    })[];
+    total: number;
+  }>;
   getQuote(id: string): Promise<Quote | undefined>;
   createQuote(data: InsertQuote): Promise<Quote>;
   updateQuote(id: string, data: Partial<InsertQuote>): Promise<Quote | undefined>;
@@ -1137,30 +1145,83 @@ export class DatabaseStorage implements IStorage {
 
   async getQuotes(params: {
     clientId?: string;
+    sellerId?: string;
+    search?: string;
     status?: string;
     page?: number;
     limit?: number;
-  } = {}): Promise<{ data: Quote[]; total: number }> {
-    const { clientId, status, page = 1, limit = 25 } = params;
+  } = {}): Promise<{
+    data: (Quote & {
+      client: { id: string; razaoSocial: string; nomeFantasia: string | null } | null;
+      seller: { id: string; nomeCompleto: string } | null;
+    })[];
+    total: number;
+  }> {
+    const { clientId, sellerId, search, status, page = 1, limit = 25 } = params;
     const offset = (page - 1) * limit;
     const conditions = [isNull(quotes.deletedAt)];
 
     if (clientId) conditions.push(eq(quotes.clientId, clientId));
+    if (sellerId) conditions.push(eq(quotes.sellerId, sellerId));
     if (status) conditions.push(eq(quotes.status, status as any));
+    if (search) {
+      conditions.push(
+        or(
+          ilike(quotes.numero, `%${search}%`),
+          ilike(clients.razaoSocial, `%${search}%`),
+          ilike(clients.nomeFantasia, `%${search}%`),
+        )!
+      );
+    }
 
     const where = and(...conditions);
+
     const [countResult] = await db
       .select({ count: sql<number>`count(*)` })
       .from(quotes)
+      .leftJoin(clients, eq(quotes.clientId, clients.id))
       .where(where);
 
-    const data = await db
-      .select()
+    const rows = await db
+      .select({
+        id: quotes.id,
+        numero: quotes.numero,
+        clientId: quotes.clientId,
+        contactId: quotes.contactId,
+        sellerId: quotes.sellerId,
+        companyId: quotes.companyId,
+        data: quotes.data,
+        validade: quotes.validade,
+        status: quotes.status,
+        desconto: quotes.desconto,
+        impostos: quotes.impostos,
+        prazoProd: quotes.prazoProd,
+        prazosPagamentoId: quotes.prazosPagamentoId,
+        formaPagamento: quotes.formaPagamento,
+        observacoes: quotes.observacoes,
+        valorTotal: quotes.valorTotal,
+        createdAt: quotes.createdAt,
+        updatedAt: quotes.updatedAt,
+        deletedAt: quotes.deletedAt,
+        clientDbId: clients.id,
+        clientRazaoSocial: clients.razaoSocial,
+        clientNomeFantasia: clients.nomeFantasia,
+        sellerDbId: sellers.id,
+        sellerNomeCompleto: sellers.nomeCompleto,
+      })
       .from(quotes)
+      .leftJoin(clients, eq(quotes.clientId, clients.id))
+      .leftJoin(sellers, eq(quotes.sellerId, sellers.id))
       .where(where)
       .orderBy(desc(quotes.createdAt))
       .limit(limit)
       .offset(offset);
+
+    const data = rows.map(({ clientDbId, clientRazaoSocial, clientNomeFantasia, sellerDbId, sellerNomeCompleto, ...quote }) => ({
+      ...quote,
+      client: clientDbId ? { id: clientDbId, razaoSocial: clientRazaoSocial!, nomeFantasia: clientNomeFantasia } : null,
+      seller: sellerDbId ? { id: sellerDbId, nomeCompleto: sellerNomeCompleto! } : null,
+    }));
 
     return { data, total: Number(countResult.count) };
   }

@@ -35,6 +35,7 @@ function useQuoteSearch() {
     search: params.get("search") || "",
     status: params.get("status") || "",
     clientId: params.get("clientId") || "",
+    sellerId: params.get("sellerId") || "",
     page: Number(params.get("page")) || 1,
     updateSearch: (key: string, value: string) => {
       const p = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
@@ -52,17 +53,18 @@ function useQuoteSearch() {
 
 export default function QuotesPage() {
   const { toast } = useToast();
-  const { search, status, clientId, page, updateSearch, setPage } = useQuoteSearch();
+  const { search, status, clientId, sellerId, page, updateSearch, setPage } = useQuoteSearch();
   const [localSearch, setLocalSearch] = useState(search);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery<{ data: (Quote & { client?: Client, seller?: Seller })[]; total: number }>({
-    queryKey: ["/api/quotes", { search, status, clientId, page }],
+    queryKey: ["/api/quotes", { search, status, clientId, sellerId, page }],
     queryFn: () => {
       const p = new URLSearchParams();
       if (search) p.set("search", search);
       if (status) p.set("status", status);
       if (clientId) p.set("clientId", clientId);
+      if (sellerId) p.set("sellerId", sellerId);
       p.set("page", String(page));
       p.set("limit", String(LIMIT));
       return fetch(`/api/quotes?${p}`).then((r) => r.json());
@@ -71,7 +73,12 @@ export default function QuotesPage() {
 
   const { data: clients = [] } = useQuery<Client[]>({
     queryKey: ["/api/clients"],
-    queryFn: () => fetch("/api/clients?limit=100").then(r => r.json()).then(d => d.data),
+    queryFn: () => fetch("/api/clients?limit=200").then(r => r.json()).then(d => d.data),
+  });
+
+  const { data: sellers = [] } = useQuery<Seller[]>({
+    queryKey: ["/api/sellers"],
+    queryFn: () => fetch("/api/sellers").then(r => r.json()).then(d => d.data ?? d),
   });
 
   const deleteMutation = useMutation({
@@ -174,15 +181,34 @@ export default function QuotesPage() {
           onValueChange={(v) => updateSearch("clientId", v === "all" ? "" : v)}
           data-testid="select-client-filter"
         >
-          <SelectTrigger className="w-56">
+          <SelectTrigger className="w-48">
             <User className="w-4 h-4 mr-1.5 text-muted-foreground" />
-            <SelectValue placeholder="Filtrar por cliente" />
+            <SelectValue placeholder="Todos os clientes" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Todos os clientes</SelectItem>
             {clients.map(c => (
               <SelectItem key={c.id} value={c.id}>
                 {c.nomeFantasia || c.razaoSocial}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        <Select
+          value={sellerId || "all"}
+          onValueChange={(v) => updateSearch("sellerId", v === "all" ? "" : v)}
+          data-testid="select-seller-filter"
+        >
+          <SelectTrigger className="w-48">
+            <User className="w-4 h-4 mr-1.5 text-muted-foreground" />
+            <SelectValue placeholder="Todos os vendedores" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos os vendedores</SelectItem>
+            {sellers.map(s => (
+              <SelectItem key={s.id} value={s.id}>
+                {s.nomeCompleto}
               </SelectItem>
             ))}
           </SelectContent>
@@ -196,7 +222,6 @@ export default function QuotesPage() {
             <tr className="border-b bg-muted/40">
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Número</th>
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Cliente</th>
-              <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden md:table-cell">Vendedor</th>
               <th className="text-left px-4 py-3 font-medium text-muted-foreground hidden lg:table-cell">Data</th>
               <th className="text-left px-4 py-3 font-medium text-muted-foreground">Status</th>
               <th className="text-right px-4 py-3 font-medium text-muted-foreground">Total</th>
@@ -209,7 +234,6 @@ export default function QuotesPage() {
                 <tr key={i} className="border-b">
                   <td className="px-4 py-3"><Skeleton className="h-4 w-20" /></td>
                   <td className="px-4 py-3"><Skeleton className="h-4 w-40" /></td>
-                  <td className="px-4 py-3 hidden md:table-cell"><Skeleton className="h-4 w-32" /></td>
                   <td className="px-4 py-3 hidden lg:table-cell"><Skeleton className="h-4 w-24" /></td>
                   <td className="px-4 py-3"><Skeleton className="h-5 w-16 rounded-full" /></td>
                   <td className="px-4 py-3 text-right"><Skeleton className="h-4 w-24 ml-auto" /></td>
@@ -218,11 +242,11 @@ export default function QuotesPage() {
               ))
             ) : data?.data.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-16 text-center">
+                <td colSpan={6} className="px-4 py-16 text-center">
                   <FileText className="w-10 h-10 mx-auto text-muted-foreground/40 mb-3" />
                   <p className="text-sm font-medium text-muted-foreground">Nenhum orçamento encontrado</p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {search || status || clientId ? "Tente ajustar os filtros" : "Crie seu primeiro orçamento"}
+                    {search || status || clientId || sellerId ? "Tente ajustar os filtros" : "Crie seu primeiro orçamento"}
                   </p>
                 </td>
               </tr>
@@ -242,13 +266,10 @@ export default function QuotesPage() {
                       {quote.client?.nomeFantasia || quote.client?.razaoSocial || "—"}
                     </div>
                   </td>
-                  <td className="px-4 py-3 hidden md:table-cell text-muted-foreground">
-                    {quote.seller?.nomeCompleto || "—"}
-                  </td>
                   <td className="px-4 py-3 hidden lg:table-cell text-muted-foreground">
                     <div className="flex items-center gap-1">
                       <Calendar className="w-3.5 h-3.5" />
-                      {quote.data ? format(new Date(quote.data), "dd/MM/yyyy") : "—"}
+                      {quote.data ? format(new Date(quote.data + "T12:00:00"), "dd/MM/yyyy") : "—"}
                     </div>
                   </td>
                   <td className="px-4 py-3">

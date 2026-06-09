@@ -1511,6 +1511,8 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
     try {
       const result = await storage.getQuotes({
         clientId: getQuery(req, "clientId"),
+        sellerId: getQuery(req, "sellerId"),
+        search: getQuery(req, "search"),
         status: getQuery(req, "status"),
         page: getQuery(req, "page") ? Number(getQuery(req, "page")) : 1,
         limit: getQuery(req, "limit") ? Number(getQuery(req, "limit")) : 25,
