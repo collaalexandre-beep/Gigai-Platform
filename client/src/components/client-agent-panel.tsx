@@ -3,7 +3,8 @@ import {
   Bot, Send, X, Sparkles, User, Loader2, Trash2,
   Search, Plus, Edit3, FileText, Building2, MapPin,
   Phone, ExternalLink, BarChart2, RefreshCw, Download,
-  CheckCircle2, AlertTriangle,
+  CheckCircle2, AlertTriangle, Paperclip, FileSpreadsheet,
+  FileWarning, XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,11 +32,22 @@ interface AgentResponse {
   mutated: boolean;
 }
 
+interface ImportResult {
+  imported: number;
+  skipped: number;
+  errors: number;
+  clients: { row: number; nome: string; id: string }[];
+  errorDetails: { row: number; nome: string; reason: string }[];
+  skippedDetails: { row: number; nome: string; reason: string }[];
+}
+
 interface ChatMessage {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "import";
   content: string;
   toolCalls?: ToolCall[];
   mutated?: boolean;
+  importResult?: ImportResult;
+  fileName?: string;
 }
 
 // ─── Suggestion chips ────────────────────────────────────────────────────────
@@ -193,6 +205,116 @@ function AssistantMessage({ msg }: { msg: ChatMessage }) {
   );
 }
 
+function ImportResultMessage({ msg }: { msg: ChatMessage }) {
+  const r = msg.importResult!;
+  const [showErrors, setShowErrors] = useState(false);
+  const [showClients, setShowClients] = useState(false);
+
+  return (
+    <div className="space-y-2">
+      {/* File badge */}
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+        <span className="font-medium">{msg.fileName}</span>
+      </div>
+
+      {/* Summary row */}
+      <div className="flex gap-2 flex-wrap">
+        {r.imported > 0 && (
+          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
+            <CheckCircle2 className="w-3 h-3" />
+            {r.imported} importado{r.imported !== 1 ? "s" : ""}
+          </span>
+        )}
+        {r.skipped > 0 && (
+          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-muted text-muted-foreground border-border">
+            <FileWarning className="w-3 h-3" />
+            {r.skipped} ignorado{r.skipped !== 1 ? "s" : ""}
+          </span>
+        )}
+        {r.errors > 0 && (
+          <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-red-50 text-red-600 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800">
+            <XCircle className="w-3 h-3" />
+            {r.errors} erro{r.errors !== 1 ? "s" : ""}
+          </span>
+        )}
+      </div>
+
+      <p className="text-sm leading-relaxed">{msg.content}</p>
+
+      {/* Imported clients list (collapsible) */}
+      {r.imported > 0 && (
+        <div>
+          <button
+            onClick={() => setShowClients((v) => !v)}
+            className="text-xs text-primary hover:underline flex items-center gap-1"
+          >
+            <ExternalLink className="w-3 h-3" />
+            {showClients ? "Ocultar" : "Ver"} clientes cadastrados
+          </button>
+          {showClients && (
+            <div className="mt-1 border border-border rounded-lg overflow-hidden text-xs">
+              <table className="w-full">
+                <thead className="bg-muted/50 border-b border-border">
+                  <tr>
+                    <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Linha</th>
+                    <th className="text-left px-2 py-1.5 font-medium text-muted-foreground">Nome</th>
+                    <th className="px-2 py-1.5 w-6"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {r.clients.map((c) => (
+                    <tr key={c.id} className="border-b border-border/50 last:border-0">
+                      <td className="px-2 py-1.5 text-muted-foreground">{c.row}</td>
+                      <td className="px-2 py-1.5 font-medium">{c.nome}</td>
+                      <td className="px-2 py-1.5">
+                        <Link href={`/clients/${c.id}`}>
+                          <ExternalLink className="w-3 h-3 text-muted-foreground hover:text-primary" />
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Errors (collapsible) */}
+      {r.errors > 0 && (
+        <div>
+          <button
+            onClick={() => setShowErrors((v) => !v)}
+            className="text-xs text-red-600 hover:underline flex items-center gap-1"
+          >
+            <AlertTriangle className="w-3 h-3" />
+            {showErrors ? "Ocultar" : "Ver"} erros
+          </button>
+          {showErrors && (
+            <div className="mt-1 space-y-0.5">
+              {r.errorDetails.map((e, i) => (
+                <div key={i} className="text-xs bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded px-2 py-1">
+                  <span className="text-muted-foreground">Linha {e.row}: </span>
+                  <span className="font-medium text-foreground">{e.nome}</span>
+                  <span className="text-red-600 dark:text-red-400"> — {e.reason}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {r.imported > 0 && (
+        <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 mt-1">
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          <span>Lista de clientes atualizada automaticamente</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Panel ───────────────────────────────────────────────────────────────
 
 interface ClientAgentPanelProps {
@@ -205,17 +327,19 @@ export function ClientAgentPanel({ open, onClose }: ClientAgentPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
-      content: "Olá! Sou o assistente de clientes da Gráfica+. Posso consultar, cadastrar, editar e gerar relatórios. O que você precisa?",
+      content: "Olá! Sou o assistente de clientes da Gráfica+. Posso consultar, cadastrar, editar e gerar relatórios. Também aceito planilhas Excel/CSV para importação em massa. O que você precisa?",
     },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [importing, setImporting] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [messages, loading, importing]);
 
   useEffect(() => {
     if (open) setTimeout(() => textareaRef.current?.focus(), 100);
@@ -224,7 +348,7 @@ export function ClientAgentPanel({ open, onClose }: ClientAgentPanelProps) {
   const buildHistory = useCallback((): HistoryMsg[] => {
     return messages
       .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({ role: m.role, content: m.content }))
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
       .slice(-20);
   }, [messages]);
 
@@ -264,6 +388,67 @@ export function ClientAgentPanel({ open, onClose }: ClientAgentPanelProps) {
       ]);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (!["xlsx", "xls", "csv"].includes(ext ?? "")) {
+      toast({ title: "Formato inválido", description: "Envie um arquivo .xlsx, .xls ou .csv", variant: "destructive" });
+      return;
+    }
+
+    setMessages((prev) => [...prev, {
+      role: "user",
+      content: `📎 ${file.name}`,
+      fileName: file.name,
+    }]);
+    setImporting(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const raw = await fetch("/api/clients/import", { method: "POST", body: formData });
+      if (!raw.ok) {
+        const err = await raw.json().catch(() => ({ error: "Erro desconhecido" }));
+        throw new Error(err.error ?? "Falha ao importar");
+      }
+      const result: ImportResult = await raw.json();
+
+      const total = result.imported + result.errors;
+      let summary = "";
+      if (result.imported === total && result.errors === 0) {
+        summary = `Importação concluída! ${result.imported} cliente${result.imported !== 1 ? "s" : ""} cadastrado${result.imported !== 1 ? "s" : ""} com sucesso.`;
+      } else if (result.imported === 0) {
+        summary = `Nenhum cliente foi importado. Verifique os erros abaixo.`;
+      } else {
+        summary = `Importação parcial: ${result.imported} importado${result.imported !== 1 ? "s" : ""}, ${result.errors} erro${result.errors !== 1 ? "s" : ""}.`;
+      }
+
+      setMessages((prev) => [...prev, {
+        role: "import",
+        content: summary,
+        importResult: result,
+        fileName: file.name,
+      }]);
+
+      if (result.imported > 0) {
+        queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      }
+    } catch (err) {
+      toast({ title: "Erro ao importar planilha", description: err instanceof Error ? err.message : "Tente novamente", variant: "destructive" });
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        content: `Erro ao importar a planilha: ${err instanceof Error ? err.message : "Tente novamente."}`,
+      }]);
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -332,6 +517,7 @@ export function ClientAgentPanel({ open, onClose }: ClientAgentPanelProps) {
             { label: "Cadastrar", icon: Plus },
             { label: "Editar", icon: Edit3 },
             { label: "Relatórios", icon: FileText },
+            { label: "Importar Excel", icon: FileSpreadsheet },
           ].map((cap) => (
             <span
               key={cap.label}
@@ -350,42 +536,58 @@ export function ClientAgentPanel({ open, onClose }: ClientAgentPanelProps) {
           <div key={i} className={cn("flex gap-2 items-start", msg.role === "user" ? "flex-row-reverse" : "")}>
             <div className={cn(
               "w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5",
-              msg.role === "assistant" ? "bg-primary" : "bg-muted border border-border",
+              msg.role === "assistant" || msg.role === "import"
+                ? "bg-primary"
+                : "bg-muted border border-border",
             )}>
-              {msg.role === "assistant"
-                ? <Bot className="w-3.5 h-3.5 text-primary-foreground" />
-                : <User className="w-3.5 h-3.5 text-muted-foreground" />
+              {msg.role === "user"
+                ? <User className="w-3.5 h-3.5 text-muted-foreground" />
+                : msg.role === "import"
+                  ? <FileSpreadsheet className="w-3.5 h-3.5 text-primary-foreground" />
+                  : <Bot className="w-3.5 h-3.5 text-primary-foreground" />
               }
             </div>
             <div className={cn(
               "max-w-[88%] rounded-2xl px-3.5 py-2.5 shadow-sm",
-              msg.role === "assistant"
+              msg.role === "assistant" || msg.role === "import"
                 ? "bg-card border border-border rounded-tl-sm"
                 : "bg-primary text-primary-foreground rounded-tr-sm",
             )}>
               {msg.role === "assistant"
                 ? <AssistantMessage msg={msg} />
-                : <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                : msg.role === "import"
+                  ? <ImportResultMessage msg={msg} />
+                  : <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
               }
             </div>
           </div>
         ))}
 
-        {loading && (
+        {(loading || importing) && (
           <div className="flex gap-2 items-start">
             <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-              <Bot className="w-3.5 h-3.5 text-primary-foreground" />
+              {importing
+                ? <FileSpreadsheet className="w-3.5 h-3.5 text-primary-foreground" />
+                : <Bot className="w-3.5 h-3.5 text-primary-foreground" />
+              }
             </div>
             <div className="bg-card border border-border rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
-              <div className="flex gap-1 items-center h-4">
-                {[0, 1, 2].map((i) => (
-                  <div
-                    key={i}
-                    className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce"
-                    style={{ animationDelay: `${i * 0.15}s` }}
-                  />
-                ))}
-              </div>
+              {importing ? (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Importando planilha...</span>
+                </div>
+              ) : (
+                <div className="flex gap-1 items-center h-4">
+                  {[0, 1, 2].map((i) => (
+                    <div
+                      key={i}
+                      className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce"
+                      style={{ animationDelay: `${i * 0.15}s` }}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -394,7 +596,7 @@ export function ClientAgentPanel({ open, onClose }: ClientAgentPanelProps) {
       </div>
 
       {/* Suggestions (first message only) */}
-      {messages.length === 1 && !loading && (
+      {messages.length === 1 && !loading && !importing && (
         <div className="px-4 pb-2 flex-shrink-0">
           <p className="text-xs text-muted-foreground mb-2">Sugestões:</p>
           <div className="flex flex-wrap gap-1.5">
@@ -416,6 +618,30 @@ export function ClientAgentPanel({ open, onClose }: ClientAgentPanelProps) {
       {/* Input */}
       <div className="border-t border-border p-3 flex-shrink-0">
         <div className="flex gap-2 items-end bg-muted/30 border border-border rounded-xl px-3 py-2 focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={handleFileChange}
+            data-testid="input-import-file"
+          />
+
+          {/* Paperclip button */}
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground"
+            disabled={loading || importing}
+            onClick={() => fileInputRef.current?.click()}
+            title="Importar planilha Excel ou CSV"
+            data-testid="button-attach-file"
+          >
+            <Paperclip className="w-3.5 h-3.5" />
+          </Button>
+
           <Textarea
             ref={textareaRef}
             value={input}
@@ -429,16 +655,29 @@ export function ClientAgentPanel({ open, onClose }: ClientAgentPanelProps) {
           <Button
             size="icon"
             className="h-7 w-7 flex-shrink-0"
-            disabled={!input.trim() || loading}
+            disabled={!input.trim() || loading || importing}
             onClick={() => sendMessage()}
             data-testid="button-send-agent-message"
           >
             {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground text-center mt-1.5">
-          IA pode cometer erros — confirme alterações importantes
-        </p>
+
+        {/* Import hint */}
+        <div className="flex items-center justify-between mt-1.5">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={loading || importing}
+            className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 transition-colors disabled:pointer-events-none"
+            data-testid="button-import-hint"
+          >
+            <FileSpreadsheet className="w-3 h-3" />
+            Importar planilha (.xlsx / .csv)
+          </button>
+          <p className="text-xs text-muted-foreground">
+            IA pode cometer erros
+          </p>
+        </div>
       </div>
     </div>
   );

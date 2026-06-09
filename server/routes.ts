@@ -45,9 +45,39 @@ import path from "path";
 import fs from "fs";
 import multer from "multer";
 import express from "express";
+import * as XLSX from "xlsx";
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads", "team-docs");
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+// ─── Excel/CSV column → field mapping ─────────────────────────────────────
+function normalizeColKey(k: string): string {
+  return k.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, "");
+}
+
+const COL_MAP: Record<string, string> = {
+  cnpj: "cnpj", cpf: "cpf",
+  razaosocial: "razaoSocial", nome: "razaoSocial", empresa: "razaoSocial", cliente: "razaoSocial",
+  nomefantasia: "nomeFantasia", fantasia: "nomeFantasia", apelido: "nomeFantasia",
+  email: "email", emailcontato: "email",
+  telefone: "telefone", fone: "telefone", tel: "telefone", celular: "telefone",
+  whatsapp: "whatsapp", wpp: "whatsapp", zap: "whatsapp",
+  cep: "cep",
+  logradouro: "logradouro", endereco: "logradouro", rua: "logradouro", avenida: "logradouro",
+  numero: "numero", num: "numero",
+  complemento: "complemento", compl: "complemento",
+  bairro: "bairro",
+  cidade: "cidade", municipio: "cidade",
+  estado: "estado", uf: "estado",
+  status: "status",
+  segmento: "segmento", ramo: "segmento",
+  observacoes: "observacoes", obs: "observacoes", anotacoes: "observacoes",
+  inscricaoestadual: "inscricaoEstadual", ie: "inscricaoEstadual",
+  inscricaomunicipal: "inscricaoMunicipal", im: "inscricaoMunicipal",
+  contato: "contato", nomecontato: "contato",
+};
 
 const teamDocUpload = multer({
   storage: multer.diskStorage({
@@ -244,6 +274,114 @@ export async function registerRoutes(
     try {
       await storage.softDeleteClient(getParam(req, "id"));
       res.json({ success: true });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  // ─── IMPORT CLIENTS FROM EXCEL/CSV ────────────────────────────────────────
+  app.post("/api/clients/import", memUpload.single("file"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: "Arquivo não enviado" });
+
+      const wb = XLSX.read(req.file.buffer, { type: "buffer" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" });
+
+      if (rawRows.length === 0) return res.status(400).json({ error: "Planilha vazia ou sem dados" });
+
+      // Normalise header keys
+      const rows = rawRows.map((row) => {
+        const mapped: Record<string, string> = {};
+        for (const [k, v] of Object.entries(row)) {
+          const field = COL_MAP[normalizeColKey(String(k))];
+          if (field) mapped[field] = String(v ?? "").trim();
+        }
+        return mapped;
+      });
+
+      const lookupCnpjFlag = req.query.lookup !== "false";
+      const VALID_STATUS = ["ativo", "inativo", "prospect", "bloqueado"];
+
+      type ImportResult = { row: number; nome: string; id: string };
+      type ImportError  = { row: number; nome: string; reason: string };
+
+      const imported: ImportResult[] = [];
+      const skipped:  ImportError[]  = [];
+      const errors:   ImportError[]  = [];
+
+      for (let i = 0; i < rows.length; i++) {
+        const rowNum = i + 2;
+        const row = rows[i];
+
+        // Skip completely empty rows
+        const values = Object.values(row).filter(Boolean);
+        if (values.length === 0) { skipped.push({ row: rowNum, nome: "—", reason: "Linha vazia" }); continue; }
+
+        // Clean CNPJ/CPF digits only
+        const cnpjRaw = row.cnpj?.replace(/\D/g, "") ?? "";
+        const cpfRaw  = row.cpf?.replace(/\D/g, "") ?? "";
+        const tipoPessoa: "juridica" | "fisica" = cnpjRaw ? "juridica" : "fisica";
+
+        let clientData: Record<string, unknown> = {
+          tipoPessoa,
+          cnpj: cnpjRaw || null,
+          cpf:  cpfRaw  || null,
+          razaoSocial: row.razaoSocial || row.nomeFantasia || `Importado linha ${rowNum}`,
+          nomeFantasia: row.nomeFantasia || null,
+          email: row.email || null,
+          telefone: row.telefone || null,
+          whatsapp: row.whatsapp || null,
+          cep: row.cep || null,
+          logradouro: row.logradouro || null,
+          numero: row.numero || null,
+          complemento: row.complemento || null,
+          bairro: row.bairro || null,
+          cidade: row.cidade || null,
+          estado: row.estado || null,
+          status: VALID_STATUS.includes(row.status?.toLowerCase() ?? "") ? row.status.toLowerCase() : "prospect",
+          segmento: row.segmento || null,
+          observacoes: row.observacoes || null,
+          inscricaoEstadual: row.inscricaoEstadual || null,
+          inscricaoMunicipal: row.inscricaoMunicipal || null,
+          origemLead: "outro",
+        };
+
+        // Optional CNPJ auto-lookup when address is missing
+        if (cnpjRaw && lookupCnpjFlag && !row.cidade) {
+          try {
+            const lookup = await lookupCnpj(cnpjRaw);
+            if (lookup.sucesso) {
+              clientData = {
+                ...clientData,
+                razaoSocial: lookup.razaoSocial ?? clientData.razaoSocial,
+                nomeFantasia: lookup.nomeFantasia ?? clientData.nomeFantasia,
+                inscricaoEstadual: lookup.inscricaoEstadual ?? clientData.inscricaoEstadual,
+                situacaoCadastral: lookup.situacaoCadastral ?? null,
+                naturezaJuridica: lookup.naturezaJuridica ?? null,
+                dataAbertura: lookup.dataAbertura ?? null,
+                logradouro: lookup.logradouro ?? clientData.logradouro,
+                numero: lookup.numero ?? clientData.numero,
+                bairro: lookup.bairro ?? clientData.bairro,
+                cidade: lookup.cidade ?? clientData.cidade,
+                estado: lookup.estado ?? clientData.estado,
+                cep: lookup.cep ?? clientData.cep,
+                telefone: clientData.telefone || lookup.telefone || null,
+                email: clientData.email || lookup.email || null,
+              };
+            }
+          } catch { /* lookup failed — continue with row data */ }
+        }
+
+        try {
+          const created = await storage.createClient(clientData as any);
+          imported.push({ row: rowNum, nome: String(clientData.razaoSocial), id: created.id });
+        } catch (err) {
+          errors.push({ row: rowNum, nome: String(clientData.razaoSocial), reason: err instanceof Error ? err.message : "Erro ao salvar" });
+        }
+      }
+
+      res.json({ imported: imported.length, skipped: skipped.length, errors: errors.length, clients: imported, errorDetails: errors, skippedDetails: skipped });
     } catch (err) {
       handleError(res, err);
     }
