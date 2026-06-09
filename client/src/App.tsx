@@ -43,6 +43,8 @@ import VehicleExitFormPage from "@/pages/vehicles/exits/form";
 import VehicleExitDetailPage from "@/pages/vehicles/exits/detail";
 import PurchasesPage from "@/pages/inventory/purchases";
 import SuppliersPage from "@/pages/inventory/suppliers";
+import AiAgentPage from "@/pages/settings/ai-agent";
+import QuoteAgentPage from "@/pages/quotes/agent";
 
 function PrintRouter() {
   return (
@@ -79,6 +81,7 @@ function AppRouter() {
       <Route path="/quotes" component={QuotesPage} />
       <Route path="/quotes/new" component={QuoteFormPage} />
       <Route path="/quotes/special" component={SpecialQuotePage} />
+      <Route path="/quotes/agent" component={QuoteAgentPage} />
       <Route path="/quotes/:id/edit" component={QuoteFormPage} />
       <Route path="/quotes/:id/print" component={QuotePrintPage} />
       <Route path="/quotes/:id" component={QuoteDetailPage} />
@@ -98,6 +101,7 @@ function AppRouter() {
       <Route path="/vehicles/:id" component={VehicleDetailPage} />
       <Route path="/inventory/purchases" component={PurchasesPage} />
       <Route path="/inventory/suppliers" component={SuppliersPage} />
+      <Route path="/settings/ai-agent" component={AiAgentPage} />
       <Route component={NotFound} />
     </Switch>
   );

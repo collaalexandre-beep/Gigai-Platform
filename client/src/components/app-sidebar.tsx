@@ -31,6 +31,7 @@ import {
   LogOut,
   PackageOpen,
   Truck,
+  Bot,
 } from "lucide-react";
 
 const navItems = [
@@ -42,6 +43,7 @@ const navItems = [
 
 const comercialItems = [
   { title: "Orçamentos", url: "/quotes", icon: FileText },
+  { title: "Agente de Orçamento", url: "/quotes/agent", icon: Bot },
   { title: "Pedidos", url: "/orders", icon: Package },
   { title: "WhatsApp Bot", url: "/whatsapp", icon: MessageCircle },
 ];
@@ -65,6 +67,7 @@ const configItems = [
   { title: "Empresas", url: "/companies", icon: Building2 },
   { title: "Prazos de Pagamento", url: "/payment-terms", icon: Clock },
   { title: "Formas de Pagamento", url: "/payment-methods", icon: CreditCard },
+  { title: "Treinamento do Agente IA", url: "/settings/ai-agent", icon: Bot },
 ];
 
 export function AppSidebar() {

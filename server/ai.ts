@@ -415,6 +415,127 @@ Retorne APENAS um JSON com o mesmo formato, completamente atualizado:
   return normalizeSpecialQuoteResult(JSON.parse(content));
 }
 
+// ─── QUOTE AGENT: Parse item list ─────────────────────────────────────────────
+
+export interface ParsedQuoteItem {
+  descricao: string;
+  largura: number | null;
+  altura: number | null;
+  area: number | null;
+  quantidade: number;
+  unidade: string;
+  precoUnitario: number;
+  precoTotal: number;
+  observacoes: string;
+}
+
+export interface ParseQuoteListResult {
+  titulo: string;
+  itens: ParsedQuoteItem[];
+  total: number;
+  observacoes: string;
+}
+
+export async function parseQuoteList(
+  itemListText: string,
+  rawMaterials: { id: string; nome: string; custoUnitario: string | null; unidadeCompra: string }[],
+  products: { id: string; nome: string; tipoCalculo: string; unidadeVenda: string }[],
+  rules: { nome: string; regra: string }[],
+  agentInstructions: string,
+  knowledgeContext: string
+): Promise<ParseQuoteListResult> {
+  const matList = rawMaterials.map((m) =>
+    `${m.nome} — R$${m.custoUnitario ?? "?"} / ${m.unidadeCompra}`
+  ).join("\n");
+
+  const prodList = products.map((p) =>
+    `${p.nome} — ${p.tipoCalculo} / ${p.unidadeVenda}`
+  ).join("\n");
+
+  const rulesList = rules.map((r) => `- ${r.nome}: ${r.regra}`).join("\n");
+
+  const systemPrompt = `Você é o orçamentista sênior de uma gráfica de comunicação visual no Brasil.
+Sua tarefa é interpretar uma lista de itens fornecida pelo vendedor e convertê-la em um orçamento estruturado.
+
+${agentInstructions ? `INSTRUÇÕES ESPECÍFICAS DA EMPRESA (prioridade máxima):\n${agentInstructions}\n` : ""}
+${knowledgeContext ? `BASE DE CONHECIMENTO:\n${knowledgeContext}\n` : ""}
+${rulesList ? `REGRAS DE ORÇAMENTO:\n${rulesList}\n` : ""}
+
+PRODUTOS/SERVIÇOS CADASTRADOS:
+${prodList || "Nenhum cadastrado."}
+
+MATÉRIAS-PRIMAS CADASTRADAS (preços base):
+${matList || "Nenhuma cadastrada."}
+
+COMO INTERPRETAR A LISTA:
+- Se o item tiver preço unitário explícito (R$X/un, R$X un, R$X cada), use exatamente esse preço
+- Se tiver dimensões (ex: 100x070, 140x100, 250x070), extraia largura e altura em metros
+- Calcule área = largura × altura quando for produto por m²
+- Se não tiver preço explícito, estime baseado no mercado brasileiro e nos materiais cadastrados
+- NUNCA retorne preço zero
+- precoTotal = precoUnitario × quantidade (recalcule sempre — não confie no total fornecido pelo usuário)
+- Para unidade: use "un" para unidades, "m²" para área, "ml" para metro linear
+- Dimensões: converta cm para metros (ex: 100×70 cm = 1,00m × 0,70m)
+- Identifique um título descritivo para o orçamento com base nos itens
+
+Retorne APENAS um JSON com este formato:
+{
+  "titulo": "Título descritivo do trabalho",
+  "itens": [
+    {
+      "descricao": "Descrição do item",
+      "largura": 1.00,
+      "altura": 0.70,
+      "area": 0.70,
+      "quantidade": 1200,
+      "unidade": "un",
+      "precoUnitario": 19.90,
+      "precoTotal": 23880.00,
+      "observacoes": ""
+    }
+  ],
+  "total": 23880.00,
+  "observacoes": "Qualquer observação geral sobre o orçamento"
+}
+
+IMPORTANTE: largura, altura e area devem ser null se o item não for calculado por área.`;
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: itemListText },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.1,
+  });
+
+  const content = response.choices[0].message.content;
+  if (!content) throw new Error("Falha ao obter resposta da IA");
+
+  const parsed = JSON.parse(content) as ParseQuoteListResult;
+
+  // Normalize: recompute precoTotal and total
+  if (Array.isArray(parsed.itens)) {
+    parsed.itens = parsed.itens.map((item) => {
+      const quantidade = Number(item.quantidade) || 0;
+      const precoUnitario = Number(item.precoUnitario) || 0;
+      return {
+        ...item,
+        largura: item.largura ? Number(item.largura) : null,
+        altura: item.altura ? Number(item.altura) : null,
+        area: item.area ? Number(item.area) : null,
+        quantidade,
+        precoUnitario,
+        precoTotal: Math.round(quantidade * precoUnitario * 100) / 100,
+      };
+    });
+    parsed.total = Math.round(parsed.itens.reduce((acc, i) => acc + i.precoTotal, 0) * 100) / 100;
+  }
+
+  return parsed;
+}
+
 export interface ExtractedMaterial {
   nome: string;
   categoria: string;

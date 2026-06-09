@@ -39,7 +39,7 @@ import {
   insertPurchaseRequestSchema,
 } from "@shared/schema";
 import { calcMaintenanceItemStatus } from "./storage";
-import { generateProductSuggestion, suggestQuoteItem, generateSpecialQuote, adjustSpecialQuote, extractFromAdjustment } from "./ai";
+import { generateProductSuggestion, suggestQuoteItem, generateSpecialQuote, adjustSpecialQuote, extractFromAdjustment, parseQuoteList } from "./ai";
 import { VEH_STEP_LABELS } from "./vehicle-wa";
 import path from "path";
 import fs from "fs";
@@ -59,6 +59,9 @@ const pdfParse: (buf: Buffer) => Promise<{ text: string }> = _require("pdf-parse
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads", "team-docs");
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+const AI_KNOWLEDGE_DIR = path.join(process.cwd(), "uploads", "ai-knowledge");
+if (!fs.existsSync(AI_KNOWLEDGE_DIR)) fs.mkdirSync(AI_KNOWLEDGE_DIR, { recursive: true });
 
 const memUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -2914,6 +2917,192 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
     try {
       const logs = await storage.getImportLogs(req.params.id);
       return res.json(logs);
+    } catch (err) { handleError(res, err); }
+  });
+
+  // ─── AI AGENT CONFIG ──────────────────────────────────────────────────────────
+
+  app.get("/api/ai-agent/config", async (req: Request, res: Response) => {
+    try {
+      const cfg = await storage.getAiAgentConfig();
+      res.json(cfg ?? { id: "default", instrucoes: "", updatedAt: new Date() });
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.put("/api/ai-agent/config", async (req: Request, res: Response) => {
+    try {
+      const { instrucoes } = req.body;
+      const cfg = await storage.upsertAiAgentConfig(instrucoes ?? "");
+      res.json(cfg);
+    } catch (err) { handleError(res, err); }
+  });
+
+  // ─── AI AGENT KNOWLEDGE FILES ─────────────────────────────────────────────────
+
+  const aiKnowledgeUpload = multer({
+    storage: multer.diskStorage({
+      destination: (_req, _file, cb) => cb(null, AI_KNOWLEDGE_DIR),
+      filename: (_req, file, cb) => {
+        const unique = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const ext = path.extname(file.originalname);
+        cb(null, `${unique}${ext}`);
+      },
+    }),
+    limits: { fileSize: 20 * 1024 * 1024 },
+  });
+
+  app.get("/api/ai-agent/knowledge-files", async (req: Request, res: Response) => {
+    try {
+      const files = await storage.listAiAgentKnowledgeFiles();
+      res.json(files);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.post("/api/ai-agent/knowledge-files", aiKnowledgeUpload.single("file"), async (req: Request, res: Response) => {
+    try {
+      const file = req.file;
+      if (!file) return res.status(400).json({ error: "Arquivo é obrigatório" });
+
+      let conteudoExtraido = "";
+      try {
+        const mime = file.mimetype;
+        if (mime === "application/pdf") {
+          const buf = fs.readFileSync(file.path);
+          const parsed = await pdfParse(buf);
+          conteudoExtraido = parsed.text.slice(0, 15000);
+        } else if (mime.includes("spreadsheet") || mime.includes("excel") || file.originalname.match(/\.(xlsx|xls)$/i)) {
+          const wb = XLSX.readFile(file.path);
+          const texts: string[] = [];
+          for (const sn of wb.SheetNames) {
+            texts.push(XLSX.utils.sheet_to_csv(wb.Sheets[sn]));
+          }
+          conteudoExtraido = texts.join("\n\n").slice(0, 15000);
+        } else if (mime === "text/plain" || mime === "text/csv") {
+          conteudoExtraido = fs.readFileSync(file.path, "utf8").slice(0, 15000);
+        } else if (mime.includes("wordprocessingml") || file.originalname.match(/\.docx$/i)) {
+          const result = await mammoth.extractRawText({ path: file.path });
+          conteudoExtraido = result.value.slice(0, 15000);
+        }
+      } catch (e) {
+        console.warn("[AI Knowledge] Não foi possível extrair texto:", e);
+      }
+
+      const nome = (req.body.nome as string) || file.originalname;
+      const record = await storage.createAiAgentKnowledgeFile({
+        nome,
+        nomeOriginal: file.originalname,
+        filePath: `/uploads/ai-knowledge/${file.filename}`,
+        mimeType: file.mimetype,
+        tamanho: file.size,
+        conteudoExtraido: conteudoExtraido || null,
+        ativo: true,
+      });
+      res.json(record);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.patch("/api/ai-agent/knowledge-files/:id", async (req: Request, res: Response) => {
+    try {
+      const { nome, ativo } = req.body;
+      const file = await storage.updateAiAgentKnowledgeFile(req.params.id, { nome, ativo });
+      if (!file) return res.status(404).json({ error: "Arquivo não encontrado" });
+      res.json(file);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.delete("/api/ai-agent/knowledge-files/:id", async (req: Request, res: Response) => {
+    try {
+      const files = await storage.listAiAgentKnowledgeFiles();
+      const file = files.find((f) => f.id === req.params.id);
+      if (file) {
+        const fullPath = path.join(process.cwd(), file.filePath);
+        if (fs.existsSync(fullPath)) fs.unlinkSync(fullPath);
+      }
+      await storage.deleteAiAgentKnowledgeFile(req.params.id);
+      res.status(204).end();
+    } catch (err) { handleError(res, err); }
+  });
+
+  // ─── QUOTE AGENT: Parse list + create quote ────────────────────────────────
+
+  app.post("/api/quotes/agent-parse", async (req: Request, res: Response) => {
+    try {
+      const { itemListText } = req.body;
+      if (!itemListText?.trim()) return res.status(400).json({ error: "Lista de itens é obrigatória" });
+
+      const [mats, prods, rules, cfg, knowledgeFiles] = await Promise.all([
+        storage.getRawMaterials({ limit: 200 }),
+        storage.getProducts({ limit: 200 }),
+        storage.listQuoteRules(),
+        storage.getAiAgentConfig(),
+        storage.listAiAgentKnowledgeFiles(),
+      ]);
+
+      const knowledgeContext = knowledgeFiles
+        .filter((f) => f.ativo && f.conteudoExtraido)
+        .map((f) => `=== ${f.nome} ===\n${f.conteudoExtraido}`)
+        .join("\n\n")
+        .slice(0, 20000);
+
+      const result = await parseQuoteList(
+        itemListText,
+        mats.data.map((m) => ({ id: m.id, nome: m.nome, custoUnitario: m.custoUnitario, unidadeCompra: m.unidadeCompra })),
+        prods.data.map((p) => ({ id: p.id, nome: p.nome, tipoCalculo: p.tipoCalculo, unidadeVenda: p.unidadeVenda })),
+        rules.filter((r) => r.ativa).map((r) => ({ nome: r.nome, regra: r.regra })),
+        cfg?.instrucoes ?? "",
+        knowledgeContext
+      );
+
+      res.json(result);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.post("/api/quotes/agent-create", async (req: Request, res: Response) => {
+    try {
+      const { clientId, sellerId, data: quoteData, validade, titulo, itens, total, observacoes } = req.body;
+      if (!clientId) return res.status(400).json({ error: "clientId é obrigatório" });
+      if (!Array.isArray(itens) || itens.length === 0) return res.status(400).json({ error: "Itens são obrigatórios" });
+
+      const quote = await storage.createQuote({
+        clientId,
+        sellerId: sellerId || null,
+        data: quoteData || new Date().toISOString().slice(0, 10),
+        validade: validade || null,
+        status: "rascunho",
+        observacoes: [titulo, observacoes].filter(Boolean).join("\n") || null,
+        valorTotal: String(total ?? 0),
+        desconto: "0",
+        impostos: "0",
+        prazoProd: null,
+        prazosPagamentoId: null,
+        formaPagamento: null,
+        companyId: null,
+        contactId: null,
+      });
+
+      const quoteItemsToSave = itens.map((item: any, idx: number) => ({
+        quoteId: quote.id,
+        descricao: item.descricao || "",
+        largura: item.largura ? String(item.largura) : null,
+        altura: item.altura ? String(item.altura) : null,
+        area: item.area ? String(item.area) : null,
+        quantidade: String(item.quantidade || 1),
+        unidade: item.unidade || "un",
+        custoCalculado: "0",
+        precoUnitario: String(item.precoUnitario || 0),
+        precoTotal: String(item.precoTotal || 0),
+        observacoes: item.observacoes || null,
+        ordem: idx,
+        productId: null,
+      }));
+
+      await storage.setQuoteItems(quote.id, quoteItemsToSave);
+
+      // Update valorTotal
+      const computedTotal = quoteItemsToSave.reduce((acc: number, i: any) => acc + Number(i.precoTotal), 0);
+      await storage.updateQuote(quote.id, { valorTotal: String(computedTotal) });
+
+      res.json({ ...quote, valorTotal: String(computedTotal) });
     } catch (err) { handleError(res, err); }
   });
 

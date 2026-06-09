@@ -1441,6 +1441,41 @@ export const insertSupplierSchema = createInsertSchema(suppliers).omit({
 export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
 export type Supplier = typeof suppliers.$inferSelect;
 
+// ─── AI AGENT CONFIG ──────────────────────────────────────────────────────────
+
+export const aiAgentConfig = pgTable("ai_agent_config", {
+  id: varchar("id").primaryKey().default("default"),
+  instrucoes: text("instrucoes").notNull().default(""),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertAiAgentConfigSchema = createInsertSchema(aiAgentConfig).omit({ updatedAt: true });
+export type InsertAiAgentConfig = z.infer<typeof insertAiAgentConfigSchema>;
+export type AiAgentConfig = typeof aiAgentConfig.$inferSelect;
+
+// ─── AI AGENT KNOWLEDGE FILES ─────────────────────────────────────────────────
+
+export const aiAgentKnowledgeFiles = pgTable(
+  "ai_agent_knowledge_files",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    nome: text("nome").notNull(),
+    nomeOriginal: text("nome_original").notNull(),
+    filePath: text("file_path").notNull(),
+    mimeType: text("mime_type"),
+    tamanho: integer("tamanho"),
+    conteudoExtraido: text("conteudo_extraido"),
+    ativo: boolean("ativo").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  }
+);
+
+export const insertAiAgentKnowledgeFileSchema = createInsertSchema(aiAgentKnowledgeFiles).omit({
+  id: true, createdAt: true,
+});
+export type InsertAiAgentKnowledgeFile = z.infer<typeof insertAiAgentKnowledgeFileSchema>;
+export type AiAgentKnowledgeFile = typeof aiAgentKnowledgeFiles.$inferSelect;
+
 // ─── DASHBOARD STATS (view types) ────────────────────────────────────────────
 
 export interface DashboardStats {

@@ -106,6 +106,12 @@ import {
   type VehicleMaintenanceTemplate,
   type InsertVehicleMaintenanceTemplate,
   type VehicleMaintenanceImportLog,
+  aiAgentConfig,
+  aiAgentKnowledgeFiles,
+  type AiAgentConfig,
+  type InsertAiAgentConfig,
+  type AiAgentKnowledgeFile,
+  type InsertAiAgentKnowledgeFile,
 } from "@shared/schema";
 import { addDays } from "date-fns";
 
@@ -311,6 +317,16 @@ export interface IStorage {
   createQuoteRule(data: InsertQuoteRule): Promise<QuoteRule>;
   updateQuoteRule(id: string, data: Partial<InsertQuoteRule>): Promise<QuoteRule | undefined>;
   deleteQuoteRule(id: string): Promise<void>;
+
+  // AI Agent Config
+  getAiAgentConfig(): Promise<AiAgentConfig | undefined>;
+  upsertAiAgentConfig(instrucoes: string): Promise<AiAgentConfig>;
+
+  // AI Agent Knowledge Files
+  listAiAgentKnowledgeFiles(): Promise<AiAgentKnowledgeFile[]>;
+  createAiAgentKnowledgeFile(data: InsertAiAgentKnowledgeFile): Promise<AiAgentKnowledgeFile>;
+  updateAiAgentKnowledgeFile(id: string, data: Partial<InsertAiAgentKnowledgeFile>): Promise<AiAgentKnowledgeFile | undefined>;
+  deleteAiAgentKnowledgeFile(id: string): Promise<void>;
 
   // Vehicles
   getVehicles(params?: { search?: string; status?: string }): Promise<Vehicle[]>;
@@ -1589,6 +1605,42 @@ export class DatabaseStorage implements IStorage {
 
   async deleteQuoteRule(id: string): Promise<void> {
     await db.delete(quoteRules).where(eq(quoteRules.id, id));
+  }
+
+  // ─── AI AGENT CONFIG ──────────────────────────────────────────────────────────
+
+  async getAiAgentConfig(): Promise<AiAgentConfig | undefined> {
+    const [cfg] = await db.select().from(aiAgentConfig).where(eq(aiAgentConfig.id, "default")).limit(1);
+    return cfg;
+  }
+
+  async upsertAiAgentConfig(instrucoes: string): Promise<AiAgentConfig> {
+    const [cfg] = await db
+      .insert(aiAgentConfig)
+      .values({ id: "default", instrucoes })
+      .onConflictDoUpdate({ target: aiAgentConfig.id, set: { instrucoes, updatedAt: new Date() } })
+      .returning();
+    return cfg;
+  }
+
+  // ─── AI AGENT KNOWLEDGE FILES ─────────────────────────────────────────────────
+
+  async listAiAgentKnowledgeFiles(): Promise<AiAgentKnowledgeFile[]> {
+    return db.select().from(aiAgentKnowledgeFiles).orderBy(desc(aiAgentKnowledgeFiles.createdAt));
+  }
+
+  async createAiAgentKnowledgeFile(data: InsertAiAgentKnowledgeFile): Promise<AiAgentKnowledgeFile> {
+    const [file] = await db.insert(aiAgentKnowledgeFiles).values(data).returning();
+    return file;
+  }
+
+  async updateAiAgentKnowledgeFile(id: string, data: Partial<InsertAiAgentKnowledgeFile>): Promise<AiAgentKnowledgeFile | undefined> {
+    const [file] = await db.update(aiAgentKnowledgeFiles).set(data).where(eq(aiAgentKnowledgeFiles.id, id)).returning();
+    return file;
+  }
+
+  async deleteAiAgentKnowledgeFile(id: string): Promise<void> {
+    await db.delete(aiAgentKnowledgeFiles).where(eq(aiAgentKnowledgeFiles.id, id));
   }
 
   // ─── VEHICLES ─────────────────────────────────────────────────────────────────
