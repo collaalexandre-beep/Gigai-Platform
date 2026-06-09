@@ -48,7 +48,13 @@ import express from "express";
 import * as XLSX from "xlsx";
 import mammoth from "mammoth";
 import { createRequire } from "module";
-const _require = createRequire(import.meta.url);
+import { pathToFileURL } from "url";
+// import.meta.url is undefined in esbuild's CJS production bundle — fall back to cwd
+const _metaUrl: string | URL =
+  (typeof import.meta !== "undefined" && import.meta.url)
+    ? import.meta.url
+    : pathToFileURL(process.cwd() + "/index.js").href;
+const _require = createRequire(_metaUrl);
 const pdfParse: (buf: Buffer) => Promise<{ text: string }> = _require("pdf-parse");
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads", "team-docs");
