@@ -46,6 +46,10 @@ import fs from "fs";
 import multer from "multer";
 import express from "express";
 import * as XLSX from "xlsx";
+import mammoth from "mammoth";
+import { createRequire } from "module";
+const _require = createRequire(import.meta.url);
+const pdfParse: (buf: Buffer) => Promise<{ text: string }> = _require("pdf-parse");
 
 const UPLOADS_DIR = path.join(process.cwd(), "uploads", "team-docs");
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -382,6 +386,155 @@ export async function registerRoutes(
       }
 
       res.json({ imported: imported.length, skipped: skipped.length, errors: errors.length, clients: imported, errorDetails: errors, skippedDetails: skipped });
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  // ─── IMPORT CLIENT FROM DOCUMENT (Word / PDF / Image) ─────────────────────
+  app.post("/api/clients/import-doc", memUpload.single("file"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: "Arquivo não enviado" });
+
+      const { OpenAI } = await import("openai");
+      const openai = new OpenAI({
+        apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+      });
+
+      const mime = req.file.mimetype;
+      const ext  = (req.file.originalname.split(".").pop() ?? "").toLowerCase();
+      const IMAGE_EXTS = ["jpg", "jpeg", "png", "webp", "gif", "bmp"];
+      const IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp"];
+
+      const SYSTEM = `Você é um assistente de extração de dados de fichas cadastrais brasileiras.
+Extraia os dados do cliente/empresa do documento e retorne SOMENTE um objeto JSON válido com estes campos (null para os não encontrados):
+{
+  "razaoSocial": string|null,
+  "nomeFantasia": string|null,
+  "cnpj": string|null,
+  "cpf": string|null,
+  "email": string|null,
+  "telefone": string|null,
+  "whatsapp": string|null,
+  "cep": string|null,
+  "logradouro": string|null,
+  "numero": string|null,
+  "complemento": string|null,
+  "bairro": string|null,
+  "cidade": string|null,
+  "estado": string|null,
+  "inscricaoEstadual": string|null,
+  "inscricaoMunicipal": string|null,
+  "segmento": string|null,
+  "observacoes": string|null
+}
+Retorne apenas o JSON, sem markdown, sem explicação.`;
+
+      let aiResponse: OpenAI.Chat.ChatCompletion;
+
+      if (IMAGE_EXTS.includes(ext) || IMAGE_MIMES.includes(mime)) {
+        // Vision path — send image as base64
+        const b64 = req.file.buffer.toString("base64");
+        const imgMime = mime.startsWith("image/") ? mime : "image/jpeg";
+        aiResponse = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [{
+            role: "user",
+            content: [
+              { type: "text", text: SYSTEM + "\n\nAnalise a imagem a seguir e extraia os dados cadastrais:" },
+              { type: "image_url", image_url: { url: `data:${imgMime};base64,${b64}`, detail: "high" } },
+            ],
+          }],
+          max_tokens: 1024,
+        });
+      } else {
+        // Text path — extract text from Word or PDF, then send to AI
+        let text = "";
+        if (ext === "docx" || mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+          const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+          text = result.value;
+        } else if (ext === "pdf" || mime === "application/pdf") {
+          const result = await pdfParse(req.file.buffer);
+          text = result.text;
+        } else {
+          return res.status(400).json({ error: "Formato não suportado. Use Word (.docx), PDF ou imagem." });
+        }
+
+        if (!text.trim()) return res.status(400).json({ error: "Não foi possível extrair texto do arquivo." });
+
+        aiResponse = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: SYSTEM },
+            { role: "user",   content: `Extraia os dados cadastrais deste documento:\n\n${text.slice(0, 8000)}` },
+          ],
+          max_tokens: 1024,
+        });
+      }
+
+      // Parse AI response
+      const raw = aiResponse.choices[0]?.message?.content ?? "{}";
+      let extracted: Record<string, string | null> = {};
+      try {
+        extracted = JSON.parse(raw.replace(/```json|```/g, "").trim());
+      } catch {
+        return res.status(422).json({ error: "IA não conseguiu estruturar os dados. Tente outro arquivo.", raw });
+      }
+
+      // Optional CNPJ lookup to enrich
+      const cnpjDigits = (extracted.cnpj ?? "").replace(/\D/g, "");
+      if (cnpjDigits && !extracted.cidade) {
+        try {
+          const lookup = await lookupCnpj(cnpjDigits);
+          if (lookup.sucesso) {
+            extracted = {
+              ...extracted,
+              razaoSocial: extracted.razaoSocial || lookup.razaoSocial || null,
+              nomeFantasia: extracted.nomeFantasia || lookup.nomeFantasia || null,
+              inscricaoEstadual: extracted.inscricaoEstadual || lookup.inscricaoEstadual || null,
+              logradouro: extracted.logradouro || lookup.logradouro || null,
+              numero: extracted.numero || lookup.numero || null,
+              bairro: extracted.bairro || lookup.bairro || null,
+              cidade: extracted.cidade || lookup.cidade || null,
+              estado: extracted.estado || lookup.estado || null,
+              cep: extracted.cep || lookup.cep || null,
+              telefone: extracted.telefone || lookup.telefone || null,
+              email: extracted.email || lookup.email || null,
+            };
+          }
+        } catch { /* ignore lookup errors */ }
+      }
+
+      // Create client
+      const VALID_STATUS = ["ativo", "inativo", "prospect", "bloqueado"];
+      const tipoPessoa = cnpjDigits ? "juridica" : "fisica";
+      const clientData = {
+        tipoPessoa,
+        cnpj: cnpjDigits || null,
+        cpf: (extracted.cpf ?? "").replace(/\D/g, "") || null,
+        razaoSocial: extracted.razaoSocial || req.file.originalname,
+        nomeFantasia: extracted.nomeFantasia || null,
+        email: extracted.email || null,
+        telefone: extracted.telefone || null,
+        whatsapp: extracted.whatsapp || null,
+        cep: extracted.cep || null,
+        logradouro: extracted.logradouro || null,
+        numero: extracted.numero || null,
+        complemento: extracted.complemento || null,
+        bairro: extracted.bairro || null,
+        cidade: extracted.cidade || null,
+        estado: extracted.estado || null,
+        status: "prospect",
+        segmento: extracted.segmento || null,
+        observacoes: extracted.observacoes || null,
+        inscricaoEstadual: extracted.inscricaoEstadual || null,
+        inscricaoMunicipal: extracted.inscricaoMunicipal || null,
+        origemLead: "outro",
+      };
+
+      const created = await storage.createClient(clientData as any);
+      res.json({ success: true, client: { id: created.id, nome: clientData.razaoSocial }, extracted });
     } catch (err) {
       handleError(res, err);
     }

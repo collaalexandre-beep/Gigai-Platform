@@ -2,9 +2,9 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Bot, Send, X, Sparkles, User, Loader2, Trash2,
   Search, Plus, Edit3, FileText, Building2, MapPin,
-  Phone, ExternalLink, BarChart2, RefreshCw, Download,
+  ExternalLink, BarChart2, RefreshCw, Download,
   CheckCircle2, AlertTriangle, Paperclip, FileSpreadsheet,
-  FileWarning, XCircle,
+  FileWarning, XCircle, FileImage, FileType, ScanText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -41,13 +41,42 @@ interface ImportResult {
   skippedDetails: { row: number; nome: string; reason: string }[];
 }
 
+interface DocImportResult {
+  success: boolean;
+  client: { id: string; nome: string };
+  extracted: Record<string, string | null>;
+}
+
 interface ChatMessage {
-  role: "user" | "assistant" | "import";
+  role: "user" | "assistant" | "import" | "doc-import";
   content: string;
   toolCalls?: ToolCall[];
   mutated?: boolean;
   importResult?: ImportResult;
+  docImportResult?: DocImportResult;
   fileName?: string;
+  fileType?: "spreadsheet" | "document" | "image";
+}
+
+// ─── File type helpers ────────────────────────────────────────────────────────
+
+const SPREADSHEET_EXTS = ["xlsx", "xls", "csv"];
+const DOC_EXTS         = ["docx", "pdf"];
+const IMAGE_EXTS       = ["jpg", "jpeg", "png", "webp", "gif", "bmp"];
+const ALL_ACCEPTED     = [...SPREADSHEET_EXTS, ...DOC_EXTS, ...IMAGE_EXTS];
+
+function getFileCategory(name: string): "spreadsheet" | "document" | "image" | null {
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  if (SPREADSHEET_EXTS.includes(ext)) return "spreadsheet";
+  if (DOC_EXTS.includes(ext))         return "document";
+  if (IMAGE_EXTS.includes(ext))       return "image";
+  return null;
+}
+
+function FileCategoryIcon({ cat, className }: { cat: "spreadsheet" | "document" | "image"; className?: string }) {
+  if (cat === "spreadsheet") return <FileSpreadsheet className={className} />;
+  if (cat === "image")       return <FileImage className={className} />;
+  return <FileType className={className} />;
 }
 
 // ─── Suggestion chips ────────────────────────────────────────────────────────
@@ -61,7 +90,7 @@ const SUGGESTIONS = [
 
 // ─── Tool result renderers ───────────────────────────────────────────────────
 
-function ClientTable({ data }: { data: { id: string; nome: string; cidade?: string; status: string; telefone?: string }[] }) {
+function ClientTable({ data }: { data: { id: string; nome: string; cidade?: string; status: string }[] }) {
   const STATUS_COLORS: Record<string, string> = {
     ativo: "text-emerald-700 bg-emerald-50 border-emerald-200",
     prospect: "text-blue-700 bg-blue-50 border-blue-200",
@@ -84,9 +113,7 @@ function ClientTable({ data }: { data: { id: string; nome: string; cidade?: stri
             <tr key={c.id} className="border-b border-border/50 last:border-0 hover:bg-muted/20 transition-colors">
               <td className="px-3 py-2 font-medium text-foreground">{c.nome}</td>
               <td className="px-3 py-2 text-muted-foreground hidden sm:table-cell">
-                {c.cidade ? (
-                  <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{c.cidade}</span>
-                ) : "—"}
+                {c.cidade ? <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{c.cidade}</span> : "—"}
               </td>
               <td className="px-3 py-2">
                 <span className={cn("px-1.5 py-0.5 rounded border text-xs font-medium", STATUS_COLORS[c.status] ?? "")}>
@@ -121,10 +148,7 @@ function StatsChart({ data }: { data: { label: string; total: number }[] }) {
             <span className="text-muted-foreground">{d.total}</span>
           </div>
           <div className="h-2 bg-muted rounded-full overflow-hidden">
-            <div
-              className={cn("h-full rounded-full transition-all", COLORS[d.label] ?? "bg-primary")}
-              style={{ width: `${(d.total / max) * 100}%` }}
-            />
+            <div className={cn("h-full rounded-full transition-all", COLORS[d.label] ?? "bg-primary")} style={{ width: `${(d.total / max) * 100}%` }} />
           </div>
         </div>
       ))}
@@ -134,12 +158,12 @@ function StatsChart({ data }: { data: { label: string; total: number }[] }) {
 
 function ToolBadge({ tool, mutated }: { tool: string; mutated?: boolean }) {
   const LABELS: Record<string, { label: string; icon: React.ElementType }> = {
-    consultar_cnpj:      { label: "Consultou Receita Federal", icon: Search },
-    buscar_clientes:     { label: "Buscou clientes", icon: Search },
-    obter_cliente:       { label: "Consultou cliente", icon: Building2 },
-    criar_cliente:       { label: "Cadastrou cliente", icon: Plus },
-    atualizar_cliente:   { label: "Atualizou cliente", icon: Edit3 },
-    remover_cliente:     { label: "Removeu cliente", icon: Trash2 },
+    consultar_cnpj:        { label: "Consultou Receita Federal", icon: Search },
+    buscar_clientes:       { label: "Buscou clientes", icon: Search },
+    obter_cliente:         { label: "Consultou cliente", icon: Building2 },
+    criar_cliente:         { label: "Cadastrou cliente", icon: Plus },
+    atualizar_cliente:     { label: "Atualizou cliente", icon: Edit3 },
+    remover_cliente:       { label: "Removeu cliente", icon: Trash2 },
     estatisticas_clientes: { label: "Gerou relatório", icon: BarChart2 },
   };
   const meta = LABELS[tool] ?? { label: tool, icon: Sparkles };
@@ -159,16 +183,11 @@ function ToolBadge({ tool, mutated }: { tool: string; mutated?: boolean }) {
 
 function AssistantMessage({ msg }: { msg: ChatMessage }) {
   const toolCalls = msg.toolCalls ?? [];
-
   const clientListResult = toolCalls.find((tc) => tc.tool === "buscar_clientes")?.result as
-    { clientes?: { id: string; nome: string; cidade?: string; status: string; telefone?: string }[] } | undefined;
-
+    { clientes?: { id: string; nome: string; cidade?: string; status: string }[] } | undefined;
   const statsResult = toolCalls.find((tc) => tc.tool === "estatisticas_clientes")?.result as
-    { tipo?: string; dados?: { status?: string; cidade?: string; total: number }[] } | undefined;
-
-  const hasMutations = toolCalls.some((tc) =>
-    ["criar_cliente", "atualizar_cliente", "remover_cliente"].includes(tc.tool)
-  );
+    { dados?: { status?: string; cidade?: string; total: number }[] } | undefined;
+  const hasMutations = toolCalls.some((tc) => ["criar_cliente", "atualizar_cliente", "remover_cliente"].includes(tc.tool));
 
   return (
     <div className="space-y-2">
@@ -179,22 +198,11 @@ function AssistantMessage({ msg }: { msg: ChatMessage }) {
           ))}
         </div>
       )}
-
       <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-
-      {clientListResult?.clientes && clientListResult.clientes.length > 0 && (
-        <ClientTable data={clientListResult.clientes} />
-      )}
-
+      {clientListResult?.clientes && clientListResult.clientes.length > 0 && <ClientTable data={clientListResult.clientes} />}
       {statsResult?.dados && statsResult.dados.length > 0 && (
-        <StatsChart
-          data={statsResult.dados.map((d) => ({
-            label: d.status ?? d.cidade ?? "—",
-            total: d.total,
-          }))}
-        />
+        <StatsChart data={statsResult.dados.map((d) => ({ label: d.status ?? d.cidade ?? "—", total: d.total }))} />
       )}
-
       {hasMutations && (
         <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 mt-1">
           <CheckCircle2 className="w-3.5 h-3.5" />
@@ -212,13 +220,10 @@ function ImportResultMessage({ msg }: { msg: ChatMessage }) {
 
   return (
     <div className="space-y-2">
-      {/* File badge */}
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-        <span className="font-medium">{msg.fileName}</span>
+        <span className="font-medium truncate max-w-[200px]">{msg.fileName}</span>
       </div>
-
-      {/* Summary row */}
       <div className="flex gap-2 flex-wrap">
         {r.imported > 0 && (
           <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
@@ -239,16 +244,10 @@ function ImportResultMessage({ msg }: { msg: ChatMessage }) {
           </span>
         )}
       </div>
-
       <p className="text-sm leading-relaxed">{msg.content}</p>
-
-      {/* Imported clients list (collapsible) */}
       {r.imported > 0 && (
         <div>
-          <button
-            onClick={() => setShowClients((v) => !v)}
-            className="text-xs text-primary hover:underline flex items-center gap-1"
-          >
+          <button onClick={() => setShowClients((v) => !v)} className="text-xs text-primary hover:underline flex items-center gap-1">
             <ExternalLink className="w-3 h-3" />
             {showClients ? "Ocultar" : "Ver"} clientes cadastrados
           </button>
@@ -268,9 +267,7 @@ function ImportResultMessage({ msg }: { msg: ChatMessage }) {
                       <td className="px-2 py-1.5 text-muted-foreground">{c.row}</td>
                       <td className="px-2 py-1.5 font-medium">{c.nome}</td>
                       <td className="px-2 py-1.5">
-                        <Link href={`/clients/${c.id}`}>
-                          <ExternalLink className="w-3 h-3 text-muted-foreground hover:text-primary" />
-                        </Link>
+                        <Link href={`/clients/${c.id}`}><ExternalLink className="w-3 h-3 text-muted-foreground hover:text-primary" /></Link>
                       </td>
                     </tr>
                   ))}
@@ -280,14 +277,9 @@ function ImportResultMessage({ msg }: { msg: ChatMessage }) {
           )}
         </div>
       )}
-
-      {/* Errors (collapsible) */}
       {r.errors > 0 && (
         <div>
-          <button
-            onClick={() => setShowErrors((v) => !v)}
-            className="text-xs text-red-600 hover:underline flex items-center gap-1"
-          >
+          <button onClick={() => setShowErrors((v) => !v)} className="text-xs text-red-600 hover:underline flex items-center gap-1">
             <AlertTriangle className="w-3 h-3" />
             {showErrors ? "Ocultar" : "Ver"} erros
           </button>
@@ -296,7 +288,7 @@ function ImportResultMessage({ msg }: { msg: ChatMessage }) {
               {r.errorDetails.map((e, i) => (
                 <div key={i} className="text-xs bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded px-2 py-1">
                   <span className="text-muted-foreground">Linha {e.row}: </span>
-                  <span className="font-medium text-foreground">{e.nome}</span>
+                  <span className="font-medium">{e.nome}</span>
                   <span className="text-red-600 dark:text-red-400"> — {e.reason}</span>
                 </div>
               ))}
@@ -304,13 +296,111 @@ function ImportResultMessage({ msg }: { msg: ChatMessage }) {
           )}
         </div>
       )}
-
       {r.imported > 0 && (
         <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 mt-1">
           <CheckCircle2 className="w-3.5 h-3.5" />
           <span>Lista de clientes atualizada automaticamente</span>
         </div>
       )}
+    </div>
+  );
+}
+
+function DocImportResultMessage({ msg }: { msg: ChatMessage }) {
+  const r = msg.docImportResult!;
+  const [showFields, setShowFields] = useState(false);
+  const cat = msg.fileType ?? "document";
+
+  const FIELD_LABELS: Record<string, string> = {
+    razaoSocial: "Razão Social", nomeFantasia: "Nome Fantasia",
+    cnpj: "CNPJ", cpf: "CPF", email: "E-mail",
+    telefone: "Telefone", whatsapp: "WhatsApp",
+    logradouro: "Logradouro", numero: "Número",
+    bairro: "Bairro", cidade: "Cidade", estado: "UF",
+    cep: "CEP", inscricaoEstadual: "IE", inscricaoMunicipal: "IM",
+    segmento: "Segmento", observacoes: "Observações",
+  };
+
+  const filledFields = Object.entries(r.extracted ?? {}).filter(([, v]) => v && v !== "null");
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <FileCategoryIcon cat={cat} className="w-3.5 h-3.5 text-primary" />
+        <span className="font-medium truncate max-w-[200px]">{msg.fileName}</span>
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
+          <ScanText className="w-3 h-3" />
+          {filledFields.length} campos extraídos
+        </span>
+        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
+          <CheckCircle2 className="w-3 h-3" />
+          Cadastrado
+        </span>
+      </div>
+
+      <p className="text-sm leading-relaxed">{msg.content}</p>
+
+      <div>
+        <button onClick={() => setShowFields((v) => !v)} className="text-xs text-primary hover:underline flex items-center gap-1">
+          <ExternalLink className="w-3 h-3" />
+          {showFields ? "Ocultar" : "Ver"} dados extraídos
+        </button>
+        {showFields && (
+          <div className="mt-1 space-y-0.5">
+            {filledFields.map(([k, v]) => (
+              <div key={k} className="flex gap-2 text-xs border-b border-border/40 py-0.5 last:border-0">
+                <span className="text-muted-foreground w-28 flex-shrink-0">{FIELD_LABELS[k] ?? k}:</span>
+                <span className="font-medium text-foreground">{v}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+          <CheckCircle2 className="w-3.5 h-3.5" />
+          <span>Cliente cadastrado e lista atualizada</span>
+        </div>
+        <Link href={`/clients/${r.client.id}`} className="text-xs text-primary hover:underline flex items-center gap-1 ml-auto">
+          <ExternalLink className="w-3 h-3" />
+          Abrir
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+// ─── Loading indicator ───────────────────────────────────────────────────────
+
+function LoadingBubble({ state }: { state: "thinking" | "importing" | "reading-doc" }) {
+  return (
+    <div className="flex gap-2 items-start">
+      <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
+        {state === "reading-doc"
+          ? <ScanText className="w-3.5 h-3.5 text-primary-foreground" />
+          : state === "importing"
+            ? <FileSpreadsheet className="w-3.5 h-3.5 text-primary-foreground" />
+            : <Bot className="w-3.5 h-3.5 text-primary-foreground" />
+        }
+      </div>
+      <div className="bg-card border border-border rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
+        {state === "thinking" ? (
+          <div className="flex gap-1 items-center h-4">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />
+            ))}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <span>{state === "reading-doc" ? "Lendo ficha com IA..." : "Importando planilha..."}</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -324,70 +414,45 @@ interface ClientAgentPanelProps {
 
 export function ClientAgentPanel({ open, onClose }: ClientAgentPanelProps) {
   const { toast } = useToast();
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      role: "assistant",
-      content: "Olá! Sou o assistente de clientes da Gráfica+. Posso consultar, cadastrar, editar e gerar relatórios. Também aceito planilhas Excel/CSV para importação em massa. O que você precisa?",
-    },
-  ]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([{
+    role: "assistant",
+    content: "Olá! Sou o assistente de clientes da Gráfica+. Posso consultar, cadastrar, editar e gerar relatórios. Também aceito planilhas, fichas em Word, PDF e fotos para cadastro automático. O que você precisa?",
+  }]);
+  const [input, setInput]       = useState("");
+  const [loadState, setLoadState] = useState<"idle" | "thinking" | "importing" | "reading-doc">("idle");
+  const bottomRef     = useRef<HTMLDivElement>(null);
+  const textareaRef   = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef  = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading, importing]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, loadState]);
+  useEffect(() => { if (open) setTimeout(() => textareaRef.current?.focus(), 100); }, [open]);
 
-  useEffect(() => {
-    if (open) setTimeout(() => textareaRef.current?.focus(), 100);
-  }, [open]);
-
-  const buildHistory = useCallback((): HistoryMsg[] => {
-    return messages
+  const buildHistory = useCallback((): HistoryMsg[] =>
+    messages
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }))
-      .slice(-20);
-  }, [messages]);
+      .slice(-20),
+  [messages]);
 
   async function sendMessage(text?: string) {
     const msg = (text ?? input).trim();
-    if (!msg || loading) return;
+    if (!msg || loadState !== "idle") return;
     setInput("");
-
-    const userMsg: ChatMessage = { role: "user", content: msg };
-    setMessages((prev) => [...prev, userMsg]);
-    setLoading(true);
-
+    setMessages((prev) => [...prev, { role: "user", content: msg }]);
+    setLoadState("thinking");
     try {
-      const raw = await apiRequest("POST", "/api/ai/client-agent", {
-        message: msg,
-        history: buildHistory(),
-      });
+      const raw = await apiRequest("POST", "/api/ai/client-agent", { message: msg, history: buildHistory() });
       const res: AgentResponse = await raw.json();
-
-      const assistantMsg: ChatMessage = {
-        role: "assistant",
-        content: res.reply,
-        toolCalls: res.toolCalls,
-        mutated: res.mutated,
-      };
-      setMessages((prev) => [...prev, assistantMsg]);
-
+      setMessages((prev) => [...prev, { role: "assistant", content: res.reply, toolCalls: res.toolCalls, mutated: res.mutated }]);
       if (res.mutated) {
         queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
         queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
       }
-    } catch (err) {
+    } catch {
       toast({ title: "Erro ao contactar o agente", variant: "destructive" });
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "Desculpe, tive um problema técnico. Tente novamente." },
-      ]);
+      setMessages((prev) => [...prev, { role: "assistant", content: "Desculpe, tive um problema técnico. Tente novamente." }]);
     } finally {
-      setLoading(false);
+      setLoadState("idle");
     }
   }
 
@@ -396,67 +461,69 @@ export function ClientAgentPanel({ open, onClose }: ClientAgentPanelProps) {
     if (!file) return;
     e.target.value = "";
 
-    const ext = file.name.split(".").pop()?.toLowerCase();
-    if (!["xlsx", "xls", "csv"].includes(ext ?? "")) {
-      toast({ title: "Formato inválido", description: "Envie um arquivo .xlsx, .xls ou .csv", variant: "destructive" });
+    const cat = getFileCategory(file.name);
+    if (!cat) {
+      toast({ title: "Formato não suportado", description: `Envie: ${ALL_ACCEPTED.join(", ")}`, variant: "destructive" });
       return;
     }
 
-    setMessages((prev) => [...prev, {
-      role: "user",
-      content: `📎 ${file.name}`,
-      fileName: file.name,
-    }]);
-    setImporting(true);
+    const userMsgContent = cat === "spreadsheet"
+      ? `📊 ${file.name}`
+      : cat === "image"
+        ? `🖼️ ${file.name}`
+        : `📄 ${file.name}`;
 
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
+    setMessages((prev) => [...prev, { role: "user", content: userMsgContent, fileName: file.name, fileType: cat }]);
 
-      const raw = await fetch("/api/clients/import", { method: "POST", body: formData });
-      if (!raw.ok) {
-        const err = await raw.json().catch(() => ({ error: "Erro desconhecido" }));
-        throw new Error(err.error ?? "Falha ao importar");
+    if (cat === "spreadsheet") {
+      setLoadState("importing");
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        const raw = await fetch("/api/clients/import", { method: "POST", body: fd });
+        if (!raw.ok) { const e = await raw.json().catch(() => ({})); throw new Error(e.error ?? "Falha ao importar"); }
+        const result: ImportResult = await raw.json();
+        const total = result.imported + result.errors;
+        const summary = result.imported === 0
+          ? "Nenhum cliente foi importado. Verifique os erros abaixo."
+          : result.errors === 0
+            ? `Importação concluída! ${result.imported} cliente${result.imported !== 1 ? "s" : ""} cadastrado${result.imported !== 1 ? "s" : ""} com sucesso.`
+            : `Importação parcial: ${result.imported} importado${result.imported !== 1 ? "s" : ""}, ${result.errors} erro${result.errors !== 1 ? "s" : ""}.`;
+        setMessages((prev) => [...prev, { role: "import", content: summary, importResult: result, fileName: file.name, fileType: "spreadsheet" }]);
+        if (result.imported > 0) {
+          queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+        }
+      } catch (err) {
+        toast({ title: "Erro ao importar planilha", description: err instanceof Error ? err.message : "Tente novamente", variant: "destructive" });
+        setMessages((prev) => [...prev, { role: "assistant", content: `Erro ao importar a planilha: ${err instanceof Error ? err.message : "Tente novamente."}` }]);
+      } finally {
+        setLoadState("idle");
       }
-      const result: ImportResult = await raw.json();
-
-      const total = result.imported + result.errors;
-      let summary = "";
-      if (result.imported === total && result.errors === 0) {
-        summary = `Importação concluída! ${result.imported} cliente${result.imported !== 1 ? "s" : ""} cadastrado${result.imported !== 1 ? "s" : ""} com sucesso.`;
-      } else if (result.imported === 0) {
-        summary = `Nenhum cliente foi importado. Verifique os erros abaixo.`;
-      } else {
-        summary = `Importação parcial: ${result.imported} importado${result.imported !== 1 ? "s" : ""}, ${result.errors} erro${result.errors !== 1 ? "s" : ""}.`;
-      }
-
-      setMessages((prev) => [...prev, {
-        role: "import",
-        content: summary,
-        importResult: result,
-        fileName: file.name,
-      }]);
-
-      if (result.imported > 0) {
+    } else {
+      // Word, PDF ou imagem → extração via IA
+      setLoadState("reading-doc");
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        const raw = await fetch("/api/clients/import-doc", { method: "POST", body: fd });
+        if (!raw.ok) { const e = await raw.json().catch(() => ({})); throw new Error(e.error ?? "Falha ao processar arquivo"); }
+        const result: DocImportResult = await raw.json();
+        const summary = `Ficha lida com sucesso! Cadastrei **${result.client.nome}** com os dados extraídos do arquivo.`;
+        setMessages((prev) => [...prev, { role: "doc-import", content: summary, docImportResult: result, fileName: file.name, fileType: cat }]);
         queryClient.invalidateQueries({ queryKey: ["/api/clients"] });
         queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });
+      } catch (err) {
+        toast({ title: "Erro ao processar arquivo", description: err instanceof Error ? err.message : "Tente novamente", variant: "destructive" });
+        setMessages((prev) => [...prev, { role: "assistant", content: `Erro ao processar o arquivo: ${err instanceof Error ? err.message : "Tente novamente."}` }]);
+      } finally {
+        setLoadState("idle");
       }
-    } catch (err) {
-      toast({ title: "Erro ao importar planilha", description: err instanceof Error ? err.message : "Tente novamente", variant: "destructive" });
-      setMessages((prev) => [...prev, {
-        role: "assistant",
-        content: `Erro ao importar a planilha: ${err instanceof Error ? err.message : "Tente novamente."}`,
-      }]);
-    } finally {
-      setImporting(false);
     }
   }
 
   function handleKey(e: React.KeyboardEvent) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   }
 
   if (!open) return null;
@@ -477,33 +544,18 @@ export function ClientAgentPanel({ open, onClose }: ClientAgentPanelProps) {
             <p className="text-sm font-semibold leading-tight">Assistente de Clientes</p>
             <p className="text-xs opacity-70 flex items-center gap-1">
               <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full inline-block" />
-              GPT-4o-mini
+              GPT-4o-mini · Vision
             </p>
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-white/70 hover:text-white hover:bg-white/10"
-            title="Limpar conversa"
-            onClick={() =>
-              setMessages([{
-                role: "assistant",
-                content: "Conversa reiniciada. O que você precisa?",
-              }])
-            }
-            data-testid="button-clear-agent-chat"
-          >
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-white/70 hover:text-white hover:bg-white/10" title="Limpar conversa"
+            onClick={() => setMessages([{ role: "assistant", content: "Conversa reiniciada. O que você precisa?" }])}
+            data-testid="button-clear-agent-chat">
             <Trash2 className="w-3.5 h-3.5" />
           </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 text-white/70 hover:text-white hover:bg-white/10"
-            onClick={onClose}
-            data-testid="button-close-agent-panel"
-          >
+          <Button variant="ghost" size="icon" className="h-7 w-7 text-white/70 hover:text-white hover:bg-white/10"
+            onClick={onClose} data-testid="button-close-agent-panel">
             <X className="w-4 h-4" />
           </Button>
         </div>
@@ -517,12 +569,11 @@ export function ClientAgentPanel({ open, onClose }: ClientAgentPanelProps) {
             { label: "Cadastrar", icon: Plus },
             { label: "Editar", icon: Edit3 },
             { label: "Relatórios", icon: FileText },
-            { label: "Importar Excel", icon: FileSpreadsheet },
+            { label: "Planilha", icon: FileSpreadsheet },
+            { label: "Word/PDF", icon: FileType },
+            { label: "Foto/Imagem", icon: FileImage },
           ].map((cap) => (
-            <span
-              key={cap.label}
-              className="inline-flex items-center gap-1 text-xs bg-background border border-border text-muted-foreground px-2 py-0.5 rounded-full"
-            >
+            <span key={cap.label} className="inline-flex items-center gap-1 text-xs bg-background border border-border text-muted-foreground px-2 py-0.5 rounded-full">
               <cap.icon className="w-3 h-3" />
               {cap.label}
             </span>
@@ -532,81 +583,53 @@ export function ClientAgentPanel({ open, onClose }: ClientAgentPanelProps) {
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 min-h-0">
-        {messages.map((msg, i) => (
-          <div key={i} className={cn("flex gap-2 items-start", msg.role === "user" ? "flex-row-reverse" : "")}>
-            <div className={cn(
-              "w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5",
-              msg.role === "assistant" || msg.role === "import"
-                ? "bg-primary"
-                : "bg-muted border border-border",
-            )}>
-              {msg.role === "user"
-                ? <User className="w-3.5 h-3.5 text-muted-foreground" />
-                : msg.role === "import"
-                  ? <FileSpreadsheet className="w-3.5 h-3.5 text-primary-foreground" />
-                  : <Bot className="w-3.5 h-3.5 text-primary-foreground" />
-              }
+        {messages.map((msg, i) => {
+          const isRight = msg.role === "user";
+          return (
+            <div key={i} className={cn("flex gap-2 items-start", isRight && "flex-row-reverse")}>
+              <div className={cn(
+                "w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5",
+                isRight ? "bg-muted border border-border" : "bg-primary",
+              )}>
+                {isRight
+                  ? <User className="w-3.5 h-3.5 text-muted-foreground" />
+                  : msg.role === "import" || msg.role === "doc-import"
+                    ? <ScanText className="w-3.5 h-3.5 text-primary-foreground" />
+                    : <Bot className="w-3.5 h-3.5 text-primary-foreground" />
+                }
+              </div>
+              <div className={cn(
+                "max-w-[88%] rounded-2xl px-3.5 py-2.5 shadow-sm",
+                isRight
+                  ? "bg-primary text-primary-foreground rounded-tr-sm"
+                  : "bg-card border border-border rounded-tl-sm",
+              )}>
+                {isRight
+                  ? <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                  : msg.role === "import"
+                    ? <ImportResultMessage msg={msg} />
+                    : msg.role === "doc-import"
+                      ? <DocImportResultMessage msg={msg} />
+                      : <AssistantMessage msg={msg} />
+                }
+              </div>
             </div>
-            <div className={cn(
-              "max-w-[88%] rounded-2xl px-3.5 py-2.5 shadow-sm",
-              msg.role === "assistant" || msg.role === "import"
-                ? "bg-card border border-border rounded-tl-sm"
-                : "bg-primary text-primary-foreground rounded-tr-sm",
-            )}>
-              {msg.role === "assistant"
-                ? <AssistantMessage msg={msg} />
-                : msg.role === "import"
-                  ? <ImportResultMessage msg={msg} />
-                  : <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-              }
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
-        {(loading || importing) && (
-          <div className="flex gap-2 items-start">
-            <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
-              {importing
-                ? <FileSpreadsheet className="w-3.5 h-3.5 text-primary-foreground" />
-                : <Bot className="w-3.5 h-3.5 text-primary-foreground" />
-              }
-            </div>
-            <div className="bg-card border border-border rounded-2xl rounded-tl-sm px-4 py-3 shadow-sm">
-              {importing ? (
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Importando planilha...</span>
-                </div>
-              ) : (
-                <div className="flex gap-1 items-center h-4">
-                  {[0, 1, 2].map((i) => (
-                    <div
-                      key={i}
-                      className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full animate-bounce"
-                      style={{ animationDelay: `${i * 0.15}s` }}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
+        {loadState !== "idle" && <LoadingBubble state={loadState} />}
         <div ref={bottomRef} />
       </div>
 
-      {/* Suggestions (first message only) */}
-      {messages.length === 1 && !loading && !importing && (
+      {/* Suggestions */}
+      {messages.length === 1 && loadState === "idle" && (
         <div className="px-4 pb-2 flex-shrink-0">
           <p className="text-xs text-muted-foreground mb-2">Sugestões:</p>
           <div className="flex flex-wrap gap-1.5">
             {SUGGESTIONS.map((s) => (
-              <button
-                key={s.label}
-                onClick={() => sendMessage(s.label)}
+              <button key={s.label} onClick={() => sendMessage(s.label)}
                 className="inline-flex items-center gap-1.5 text-xs bg-muted hover:bg-muted/80 border border-border text-foreground px-2.5 py-1 rounded-full transition-colors"
-                data-testid={`suggestion-${s.label.toLowerCase().replace(/\s+/g, "-")}`}
-              >
+                data-testid={`suggestion-${s.label.toLowerCase().replace(/\s+/g, "-")}`}>
                 <s.icon className="w-3 h-3 text-muted-foreground" />
                 {s.label}
               </button>
@@ -615,33 +638,25 @@ export function ClientAgentPanel({ open, onClose }: ClientAgentPanelProps) {
         </div>
       )}
 
-      {/* Input */}
+      {/* Input area */}
       <div className="border-t border-border p-3 flex-shrink-0">
         <div className="flex gap-2 items-end bg-muted/30 border border-border rounded-xl px-3 py-2 focus-within:border-primary/40 focus-within:ring-2 focus-within:ring-primary/10 transition-all">
-          {/* Hidden file input */}
           <input
             ref={fileInputRef}
             type="file"
-            accept=".xlsx,.xls,.csv"
+            accept={ALL_ACCEPTED.map((e) => `.${e}`).join(",")}
             className="hidden"
             onChange={handleFileChange}
             data-testid="input-import-file"
           />
-
-          {/* Paperclip button */}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
+          <Button type="button" variant="ghost" size="icon"
             className="h-7 w-7 flex-shrink-0 text-muted-foreground hover:text-foreground"
-            disabled={loading || importing}
+            disabled={loadState !== "idle"}
             onClick={() => fileInputRef.current?.click()}
-            title="Importar planilha Excel ou CSV"
-            data-testid="button-attach-file"
-          >
+            title="Anexar planilha, Word, PDF ou imagem"
+            data-testid="button-attach-file">
             <Paperclip className="w-3.5 h-3.5" />
           </Button>
-
           <Textarea
             ref={textareaRef}
             value={input}
@@ -652,32 +667,24 @@ export function ClientAgentPanel({ open, onClose }: ClientAgentPanelProps) {
             rows={1}
             data-testid="input-agent-message"
           />
-          <Button
-            size="icon"
-            className="h-7 w-7 flex-shrink-0"
-            disabled={!input.trim() || loading || importing}
+          <Button size="icon" className="h-7 w-7 flex-shrink-0"
+            disabled={!input.trim() || loadState !== "idle"}
             onClick={() => sendMessage()}
-            data-testid="button-send-agent-message"
-          >
-            {loading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+            data-testid="button-send-agent-message">
+            {loadState === "thinking" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
           </Button>
         </div>
 
-        {/* Import hint */}
-        <div className="flex items-center justify-between mt-1.5">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={loading || importing}
-            className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 transition-colors disabled:pointer-events-none"
-            data-testid="button-import-hint"
-          >
-            <FileSpreadsheet className="w-3 h-3" />
-            Importar planilha (.xlsx / .csv)
-          </button>
-          <p className="text-xs text-muted-foreground">
-            IA pode cometer erros
-          </p>
-        </div>
+        {/* Attach hint */}
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={loadState !== "idle"}
+          className="mt-1.5 w-full text-xs text-muted-foreground hover:text-primary flex items-center justify-center gap-1.5 transition-colors disabled:pointer-events-none"
+          data-testid="button-import-hint"
+        >
+          <Paperclip className="w-3 h-3" />
+          Anexar planilha · Word · PDF · foto da ficha
+        </button>
       </div>
     </div>
   );
