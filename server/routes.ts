@@ -540,6 +540,231 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
     }
   });
 
+  // ─── CLIENT EXPORT: PDF / Excel ────────────────────────────────────────────
+
+  app.get("/api/clients/export/pdf", async (req: Request, res: Response) => {
+    try {
+      const { status, search, titulo } = req.query as Record<string, string>;
+      const result = await storage.getClients({ status: status ?? "", search: search ?? "", limit: 2000 });
+      const clients = result.data;
+      const reportTitle = titulo ?? "Relatório de Clientes";
+      const now = new Date().toLocaleDateString("pt-BR", { day: "2-digit", month: "long", year: "numeric" });
+
+      const doc = new PDFDocument({ margin: 50, size: "A4" });
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="clientes-${Date.now()}.pdf"`);
+      doc.pipe(res);
+
+      const blue = "#1a4fa0";
+      const lightBlue = "#e8f0fc";
+      const gray = "#666666";
+      const PAGE_W = doc.page.width;
+      const MARGIN = 50;
+      const COL_W = PAGE_W - MARGIN * 2;
+
+      // Header bar
+      doc.rect(0, 0, PAGE_W, 75).fill(blue);
+      doc.fillColor("white").fontSize(20).font("Helvetica-Bold").text("GRÁFICA+", MARGIN, 18);
+      doc.fontSize(9).font("Helvetica").text("Sistema de Gestão", MARGIN, 42);
+      doc.fillColor("white").fontSize(13).font("Helvetica-Bold")
+        .text(reportTitle, PAGE_W - 280, 20, { width: 230, align: "right" });
+      doc.fontSize(8).font("Helvetica")
+        .text(`Gerado em ${now}`, PAGE_W - 280, 40, { width: 230, align: "right" });
+      doc.fillColor("white").fontSize(8)
+        .text(`${clients.length} cliente${clients.length !== 1 ? "s" : ""}${status ? ` · ${status}` : ""}`, PAGE_W - 280, 55, { width: 230, align: "right" });
+
+      doc.moveDown(3.5);
+
+      // Stats boxes
+      const statuses = ["ativo", "prospect", "inativo", "bloqueado"];
+      const statLabels: Record<string, string> = { ativo: "Ativos", prospect: "Prospects", inativo: "Inativos", bloqueado: "Bloqueados" };
+      const statColors: Record<string, string> = { ativo: "#059669", prospect: "#2563eb", inativo: "#6b7280", bloqueado: "#dc2626" };
+      const counts: Record<string, number> = { ativo: 0, prospect: 0, inativo: 0, bloqueado: 0 };
+      for (const c of clients) counts[c.status ?? ""] = (counts[c.status ?? ""] ?? 0) + 1;
+
+      const boxW = (COL_W - 18) / 4;
+      let bx = MARGIN;
+      const by = doc.y;
+      for (const s of statuses) {
+        doc.rect(bx, by, boxW, 48).fill(lightBlue);
+        doc.fillColor(statColors[s]).fontSize(18).font("Helvetica-Bold")
+          .text(String(counts[s] ?? 0), bx, by + 6, { width: boxW, align: "center" });
+        doc.fillColor(gray).fontSize(7).font("Helvetica")
+          .text(statLabels[s], bx, by + 30, { width: boxW, align: "center" });
+        bx += boxW + 6;
+      }
+      doc.y = by + 60;
+
+      // Table header
+      const COL = [200, 100, 100, 75, 75];
+      const HEADERS = ["Nome / Razão Social", "CNPJ / CPF", "Cidade / UF", "Telefone", "Status"];
+      let tx = MARGIN;
+      const ty = doc.y;
+      doc.rect(MARGIN, ty, COL_W, 20).fill(blue);
+      for (let i = 0; i < HEADERS.length; i++) {
+        doc.fillColor("white").fontSize(8).font("Helvetica-Bold")
+          .text(HEADERS[i], tx + 4, ty + 6, { width: COL[i] - 8, ellipsis: true });
+        tx += COL[i];
+      }
+      doc.y = ty + 20;
+
+      // Table rows
+      let pageNum = 1;
+      for (let ri = 0; ri < clients.length; ri++) {
+        const c = clients[ri];
+        const rowH = 18;
+
+        if (doc.y + rowH > doc.page.height - 60) {
+          doc.addPage();
+          pageNum++;
+          // mini header on new page
+          doc.rect(0, 0, PAGE_W, 30).fill(blue);
+          doc.fillColor("white").fontSize(9).font("Helvetica-Bold").text("GRÁFICA+ · " + reportTitle, MARGIN, 10);
+          doc.y = 45;
+          // re-draw table header
+          const ty2 = doc.y;
+          let tx2 = MARGIN;
+          doc.rect(MARGIN, ty2, COL_W, 20).fill(blue);
+          for (let i = 0; i < HEADERS.length; i++) {
+            doc.fillColor("white").fontSize(8).font("Helvetica-Bold")
+              .text(HEADERS[i], tx2 + 4, ty2 + 6, { width: COL[i] - 8, ellipsis: true });
+            tx2 += COL[i];
+          }
+          doc.y = ty2 + 20;
+        }
+
+        const ry = doc.y;
+        const rowBg = ri % 2 === 0 ? "#ffffff" : "#f8fafc";
+        doc.rect(MARGIN, ry, COL_W, rowH).fill(rowBg);
+
+        const nome = c.nomeFantasia ?? c.razaoSocial ?? "—";
+        const doc_num = c.cnpj ?? c.cpf ?? "—";
+        const cidade = c.cidade ? `${c.cidade}/${c.estado ?? ""}` : "—";
+        const tel = c.telefone ?? "—";
+        const statusLabel = c.status ?? "—";
+        const statusColor: Record<string, string> = { ativo: "#059669", prospect: "#2563eb", inativo: "#6b7280", bloqueado: "#dc2626" };
+        const rowData = [nome, doc_num, cidade, tel, statusLabel];
+        const rowColors = ["#1e293b", gray, gray, gray, statusColor[c.status ?? ""] ?? gray];
+
+        let cx = MARGIN;
+        for (let i = 0; i < rowData.length; i++) {
+          doc.fillColor(rowColors[i]).fontSize(7.5).font(i === 0 ? "Helvetica-Bold" : "Helvetica")
+            .text(rowData[i], cx + 4, ry + 5, { width: COL[i] - 8, ellipsis: true });
+          cx += COL[i];
+        }
+
+        // row border
+        doc.moveTo(MARGIN, ry + rowH).lineTo(MARGIN + COL_W, ry + rowH)
+          .strokeColor("#e2e8f0").lineWidth(0.5).stroke();
+        doc.y = ry + rowH;
+      }
+
+      // Footer
+      const fy = doc.page.height - 40;
+      doc.moveTo(MARGIN, fy).lineTo(PAGE_W - MARGIN, fy).strokeColor("#cbd5e1").lineWidth(0.5).stroke();
+      doc.fillColor(gray).fontSize(7).font("Helvetica")
+        .text(`Gráfica+ · ${reportTitle} · Página ${pageNum}`, MARGIN, fy + 6, { width: COL_W, align: "center" });
+
+      doc.end();
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
+  app.get("/api/clients/export/excel", async (req: Request, res: Response) => {
+    try {
+      const { status, search, titulo } = req.query as Record<string, string>;
+      const result = await storage.getClients({ status: status ?? "", search: search ?? "", limit: 10000 });
+      const clients = result.data;
+      const reportTitle = titulo ?? "Clientes";
+
+      const XLSX = await import("xlsx");
+
+      // ── Main sheet ──
+      const headers = [
+        "Nome / Razão Social", "Nome Fantasia", "CNPJ", "CPF",
+        "Tipo", "Status", "Segmento", "Potencial",
+        "Telefone", "WhatsApp", "E-mail", "Site",
+        "CEP", "Logradouro", "Número", "Complemento",
+        "Bairro", "Cidade", "UF",
+        "Inscrição Estadual", "Inscrição Municipal",
+        "Situação Cadastral", "Natureza Jurídica",
+        "Criado Em", "Último Contato",
+      ];
+
+      const rows = clients.map((c) => [
+        c.razaoSocial ?? "",
+        c.nomeFantasia ?? "",
+        c.cnpj ?? "",
+        c.cpf ?? "",
+        c.tipoPessoa === "fisica" ? "Pessoa Física" : "Pessoa Jurídica",
+        c.status ?? "",
+        c.segmento ?? "",
+        c.potencialCompra ?? "",
+        c.telefone ?? "",
+        c.whatsapp ?? "",
+        c.email ?? "",
+        c.site ?? "",
+        c.cep ?? "",
+        c.logradouro ?? "",
+        c.numero ?? "",
+        c.complemento ?? "",
+        c.bairro ?? "",
+        c.cidade ?? "",
+        c.estado ?? "",
+        c.inscricaoEstadual ?? "",
+        c.inscricaoMunicipal ?? "",
+        c.situacaoCadastral ?? "",
+        c.naturezaJuridica ?? "",
+        c.createdAt ? new Date(c.createdAt).toLocaleDateString("pt-BR") : "",
+        c.dataUltimoContato ? new Date(c.dataUltimoContato).toLocaleDateString("pt-BR") : "",
+      ]);
+
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+      // Column widths
+      ws["!cols"] = [
+        { wch: 35 }, { wch: 25 }, { wch: 18 }, { wch: 14 },
+        { wch: 14 }, { wch: 12 }, { wch: 18 }, { wch: 10 },
+        { wch: 16 }, { wch: 16 }, { wch: 28 }, { wch: 22 },
+        { wch: 10 }, { wch: 28 }, { wch: 8 }, { wch: 14 },
+        { wch: 16 }, { wch: 16 }, { wch: 5 },
+        { wch: 18 }, { wch: 18 },
+        { wch: 18 }, { wch: 22 },
+        { wch: 12 }, { wch: 14 },
+      ];
+
+      // ── Summary sheet ──
+      const counts: Record<string, number> = { ativo: 0, prospect: 0, inativo: 0, bloqueado: 0 };
+      for (const c of clients) counts[c.status ?? ""] = (counts[c.status ?? ""] ?? 0) + 1;
+
+      const summaryData = [
+        ["Relatório", reportTitle],
+        ["Gerado em", new Date().toLocaleDateString("pt-BR")],
+        ["Total de Clientes", clients.length],
+        [],
+        ["Status", "Quantidade"],
+        ["Ativos",    counts.ativo ?? 0],
+        ["Prospects", counts.prospect ?? 0],
+        ["Inativos",  counts.inativo ?? 0],
+        ["Bloqueados", counts.bloqueado ?? 0],
+      ];
+      const wsSummary = XLSX.utils.aoa_to_sheet(summaryData as any);
+      wsSummary["!cols"] = [{ wch: 20 }, { wch: 20 }];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Clientes");
+      XLSX.utils.book_append_sheet(wb, wsSummary, "Resumo");
+
+      const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="clientes-${Date.now()}.xlsx"`);
+      res.send(buf);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
   // ─── CONTACTS ──────────────────────────────────────────────────────────────
 
   app.get("/api/clients/:clientId/contacts", async (req: Request, res: Response) => {

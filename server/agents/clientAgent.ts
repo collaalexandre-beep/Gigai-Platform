@@ -9,7 +9,7 @@ const openai = new OpenAI({
 
 const SYSTEM_PROMPT = `Você é o assistente de gestão de clientes da Gráfica+. Sua personalidade é profissional, direta e prestativa.
 
-Você tem acesso a ferramentas para consultar, cadastrar, editar e remover clientes no sistema.
+Você tem acesso a ferramentas para consultar, cadastrar, editar, remover clientes e GERAR RELATÓRIOS em PDF e Excel.
 
 REGRAS GERAIS:
 - Responda sempre em português brasileiro
@@ -22,24 +22,25 @@ REGRAS GERAIS:
 FLUXO DE CADASTRO COM CNPJ (OBRIGATÓRIO E AUTOMÁTICO):
 Quando o usuário pedir para cadastrar/incluir/registrar um cliente com CNPJ:
 1. IMEDIATAMENTE chame "consultar_cnpj" para buscar dados na Receita Federal (sem perguntar nada)
-2. IMEDIATAMENTE após receber os dados, chame "criar_cliente" com TODOS os campos: razaoSocial, nomeFantasia, cnpj, inscricaoEstadual, situacaoCadastral, naturezaJuridica, dataAbertura, logradouro, numero, complemento, bairro, cidade, estado, cep, telefone, email
+2. IMEDIATAMENTE após receber os dados, chame "criar_cliente" com TODOS os campos disponíveis
 3. Confirme ao usuário o que foi cadastrado e destaque a inscrição estadual encontrada
 - NÃO pergunte se deve cadastrar — SE o usuário disse "cadastra", "inclui", "registra", "adiciona" → execute direto
-- Se a consulta CNPJ falhar, avise o usuário e pergunte se deseja cadastrar manualmente`;
+
+RELATÓRIOS:
+- Quando o usuário pedir relatório, exportar, baixar lista, gerar planilha ou PDF → use "gerar_relatorio"
+- Interprete filtros da linguagem natural: "ativos" → status=ativo, "de São Paulo" → search=São Paulo, etc.
+- Sempre confirme o que foi gerado com o total de clientes incluídos`;
 
 const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
   {
     type: "function",
     function: {
       name: "consultar_cnpj",
-      description: "Consulta dados de uma empresa na Receita Federal pelo CNPJ. Retorna razão social, nome fantasia, endereço completo, inscrição estadual, telefone, e-mail e situação cadastral. SEMPRE use esta ferramenta antes de cadastrar um cliente PJ.",
+      description: "Consulta dados de uma empresa na Receita Federal pelo CNPJ. SEMPRE use antes de cadastrar cliente PJ.",
       parameters: {
         type: "object",
         properties: {
-          cnpj: {
-            type: "string",
-            description: "CNPJ da empresa (com ou sem formatação, ex: 15.331.855/0001-72 ou 15331855000172)",
-          },
+          cnpj: { type: "string", description: "CNPJ (com ou sem formatação)" },
         },
         required: ["cnpj"],
       },
@@ -49,23 +50,13 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "buscar_clientes",
-      description: "Busca e lista clientes com filtros opcionais. Use para consultas, listagens e relatórios.",
+      description: "Busca e lista clientes com filtros opcionais.",
       parameters: {
         type: "object",
         properties: {
-          search: {
-            type: "string",
-            description: "Texto para buscar em nome, CNPJ, cidade ou e-mail",
-          },
-          status: {
-            type: "string",
-            enum: ["ativo", "inativo", "prospect", "bloqueado"],
-            description: "Filtrar por status",
-          },
-          limit: {
-            type: "number",
-            description: "Máximo de registros a retornar (padrão 20, máximo 100)",
-          },
+          search:  { type: "string", description: "Busca por nome, CNPJ, cidade ou e-mail" },
+          status:  { type: "string", enum: ["ativo", "inativo", "prospect", "bloqueado"] },
+          limit:   { type: "number", description: "Máximo de registros (padrão 20, máximo 100)" },
         },
         required: [],
       },
@@ -75,11 +66,11 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "obter_cliente",
-      description: "Obtém os dados completos de um cliente pelo ID",
+      description: "Obtém dados completos de um cliente pelo ID.",
       parameters: {
         type: "object",
         properties: {
-          id: { type: "string", description: "ID do cliente" },
+          id: { type: "string" },
         },
         required: ["id"],
       },
@@ -89,35 +80,35 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "criar_cliente",
-      description: "Cadastra um novo cliente no sistema. Para clientes PJ com CNPJ, use sempre consultar_cnpj primeiro para preencher todos os dados.",
+      description: "Cadastra um novo cliente. Para PJ com CNPJ, use consultar_cnpj primeiro.",
       parameters: {
         type: "object",
         properties: {
-          razaoSocial: { type: "string", description: "Razão social ou nome completo (obrigatório)" },
-          nomeFantasia: { type: "string", description: "Nome fantasia" },
-          tipoPessoa: { type: "string", enum: ["fisica", "juridica"], description: "Tipo de pessoa (padrão: juridica)" },
-          cnpj: { type: "string", description: "CNPJ formatado para pessoa jurídica" },
-          cpf: { type: "string", description: "CPF para pessoa física" },
-          inscricaoEstadual: { type: "string", description: "Inscrição estadual (obtida via consultar_cnpj)" },
-          inscricaoMunicipal: { type: "string", description: "Inscrição municipal" },
-          situacaoCadastral: { type: "string", description: "Situação cadastral na Receita Federal" },
-          naturezaJuridica: { type: "string", description: "Natureza jurídica" },
-          dataAbertura: { type: "string", description: "Data de abertura (YYYY-MM-DD)" },
-          telefone: { type: "string", description: "Telefone de contato" },
-          whatsapp: { type: "string", description: "Número WhatsApp" },
-          email: { type: "string", description: "E-mail" },
-          site: { type: "string", description: "Site da empresa" },
-          cep: { type: "string", description: "CEP" },
-          logradouro: { type: "string", description: "Logradouro (rua/av)" },
-          numero: { type: "string", description: "Número do endereço" },
-          complemento: { type: "string", description: "Complemento" },
-          bairro: { type: "string", description: "Bairro" },
-          cidade: { type: "string", description: "Cidade" },
-          estado: { type: "string", description: "UF (2 letras)" },
-          status: { type: "string", enum: ["ativo", "inativo", "prospect", "bloqueado"], description: "Status inicial (padrão: prospect)" },
-          observacoes: { type: "string", description: "Observações internas" },
-          segmento: { type: "string", description: "Segmento de mercado" },
-          potencialCompra: { type: "string", enum: ["baixo", "medio", "alto"], description: "Potencial de compra" },
+          razaoSocial:        { type: "string", description: "Razão social ou nome completo (obrigatório)" },
+          nomeFantasia:       { type: "string" },
+          tipoPessoa:         { type: "string", enum: ["fisica", "juridica"] },
+          cnpj:               { type: "string" },
+          cpf:                { type: "string" },
+          inscricaoEstadual:  { type: "string" },
+          inscricaoMunicipal: { type: "string" },
+          situacaoCadastral:  { type: "string" },
+          naturezaJuridica:   { type: "string" },
+          dataAbertura:       { type: "string" },
+          telefone:           { type: "string" },
+          whatsapp:           { type: "string" },
+          email:              { type: "string" },
+          site:               { type: "string" },
+          cep:                { type: "string" },
+          logradouro:         { type: "string" },
+          numero:             { type: "string" },
+          complemento:        { type: "string" },
+          bairro:             { type: "string" },
+          cidade:             { type: "string" },
+          estado:             { type: "string" },
+          status:             { type: "string", enum: ["ativo", "inativo", "prospect", "bloqueado"] },
+          observacoes:        { type: "string" },
+          segmento:           { type: "string" },
+          potencialCompra:    { type: "string", enum: ["baixo", "medio", "alto"] },
         },
         required: ["razaoSocial"],
       },
@@ -127,28 +118,28 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "atualizar_cliente",
-      description: "Atualiza campos de um cliente existente",
+      description: "Atualiza campos de um cliente existente.",
       parameters: {
         type: "object",
         properties: {
-          id: { type: "string", description: "ID do cliente a atualizar" },
-          razaoSocial: { type: "string" },
-          nomeFantasia: { type: "string" },
-          inscricaoEstadual: { type: "string" },
-          telefone: { type: "string" },
-          whatsapp: { type: "string" },
-          email: { type: "string" },
-          cep: { type: "string" },
-          logradouro: { type: "string" },
-          numero: { type: "string" },
-          complemento: { type: "string" },
-          bairro: { type: "string" },
-          cidade: { type: "string" },
-          estado: { type: "string" },
-          status: { type: "string", enum: ["ativo", "inativo", "prospect", "bloqueado"] },
-          observacoes: { type: "string" },
-          segmento: { type: "string" },
-          potencialCompra: { type: "string", enum: ["baixo", "medio", "alto"] },
+          id:               { type: "string", description: "ID do cliente (obrigatório)" },
+          razaoSocial:      { type: "string" },
+          nomeFantasia:     { type: "string" },
+          inscricaoEstadual:{ type: "string" },
+          telefone:         { type: "string" },
+          whatsapp:         { type: "string" },
+          email:            { type: "string" },
+          cep:              { type: "string" },
+          logradouro:       { type: "string" },
+          numero:           { type: "string" },
+          complemento:      { type: "string" },
+          bairro:           { type: "string" },
+          cidade:           { type: "string" },
+          estado:           { type: "string" },
+          status:           { type: "string", enum: ["ativo", "inativo", "prospect", "bloqueado"] },
+          observacoes:      { type: "string" },
+          segmento:         { type: "string" },
+          potencialCompra:  { type: "string", enum: ["baixo", "medio", "alto"] },
         },
         required: ["id"],
       },
@@ -158,11 +149,11 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "remover_cliente",
-      description: "Remove (soft delete) um cliente do sistema. Use somente após confirmação explícita do usuário.",
+      description: "Remove (soft delete) um cliente. Use somente após confirmação explícita.",
       parameters: {
         type: "object",
         properties: {
-          id: { type: "string", description: "ID do cliente a remover" },
+          id: { type: "string" },
         },
         required: ["id"],
       },
@@ -172,21 +163,48 @@ const TOOLS: OpenAI.Chat.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "estatisticas_clientes",
-      description: "Retorna estatísticas e relatórios dos clientes: contagem por status, por cidade, últimos cadastros, etc.",
+      description: "Estatísticas dos clientes: por status, por cidade, recentes ou sem contato.",
       parameters: {
         type: "object",
         properties: {
           tipo: {
             type: "string",
             enum: ["por_status", "por_cidade", "recentes", "sem_contato"],
-            description: "Tipo de relatório",
           },
-          dias: {
-            type: "number",
-            description: "Para 'sem_contato': quantos dias sem contato (padrão 30)",
-          },
+          dias: { type: "number", description: "Para sem_contato: dias sem contato (padrão 30)" },
         },
         required: ["tipo"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "gerar_relatorio",
+      description: "Gera um relatório de clientes para download em PDF ou Excel. Use quando o usuário pedir: relatório, exportar, baixar lista, gerar planilha, gerar PDF, etc.",
+      parameters: {
+        type: "object",
+        properties: {
+          formato: {
+            type: "string",
+            enum: ["pdf", "excel"],
+            description: "Formato do relatório: pdf ou excel",
+          },
+          titulo: {
+            type: "string",
+            description: "Título do relatório (ex: 'Clientes Ativos', 'Prospects de SP')",
+          },
+          status: {
+            type: "string",
+            enum: ["ativo", "inativo", "prospect", "bloqueado"],
+            description: "Filtrar por status (omitir para todos)",
+          },
+          search: {
+            type: "string",
+            description: "Filtrar por texto (nome, cidade, CNPJ)",
+          },
+        },
+        required: ["formato"],
       },
     },
   },
@@ -198,43 +216,23 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
       const { cnpj } = args as { cnpj: string };
       const result = await lookupCnpj(cnpj);
       if (!result.success || !result.data) {
-        return {
-          sucesso: false,
-          erro: result.error ?? "Consulta falhou em todos os provedores",
-          provider: result.provider,
-        };
+        return { sucesso: false, erro: result.error ?? "Consulta falhou em todos os provedores", provider: result.provider };
       }
       const d = result.data;
       return {
-        sucesso: true,
-        provider: result.provider,
-        cnpj: d.cnpj,
-        razaoSocial: d.razaoSocial,
-        nomeFantasia: d.nomeFantasia,
-        inscricaoEstadual: d.inscricaoEstadual,
-        situacaoCadastral: d.situacaoCadastral,
-        dataAbertura: d.dataAbertura,
-        naturezaJuridica: d.naturezaJuridica,
-        logradouro: d.logradouro,
-        numero: d.numero,
-        complemento: d.complemento,
-        bairro: d.bairro,
-        cidade: d.cidade,
-        estado: d.estado,
-        cep: d.cep,
-        telefone: d.telefone,
-        email: d.email,
+        sucesso: true, provider: result.provider,
+        cnpj: d.cnpj, razaoSocial: d.razaoSocial, nomeFantasia: d.nomeFantasia,
+        inscricaoEstadual: d.inscricaoEstadual, situacaoCadastral: d.situacaoCadastral,
+        dataAbertura: d.dataAbertura, naturezaJuridica: d.naturezaJuridica,
+        logradouro: d.logradouro, numero: d.numero, complemento: d.complemento,
+        bairro: d.bairro, cidade: d.cidade, estado: d.estado, cep: d.cep,
+        telefone: d.telefone, email: d.email,
       };
     }
 
     case "buscar_clientes": {
       const { search, status, limit = 20 } = args as { search?: string; status?: string; limit?: number };
-      const result = await storage.getClients({
-        search: search ?? "",
-        status: status ?? "",
-        page: 1,
-        limit: Math.min(Number(limit), 100),
-      });
+      const result = await storage.getClients({ search: search ?? "", status: status ?? "", page: 1, limit: Math.min(Number(limit), 100) });
       return {
         total: result.total,
         clientes: result.data.map((c) => ({
@@ -259,26 +257,14 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
       const client = await storage.getClient(id);
       if (!client) return { erro: "Cliente não encontrado" };
       return {
-        id: client.id,
-        tipoPessoa: client.tipoPessoa,
-        razaoSocial: client.razaoSocial,
-        nomeFantasia: client.nomeFantasia,
-        cnpj: client.cnpj,
-        cpf: client.cpf,
-        inscricaoEstadual: client.inscricaoEstadual,
-        telefone: client.telefone,
-        whatsapp: client.whatsapp,
-        email: client.email,
-        cidade: client.cidade,
-        estado: client.estado,
-        cep: client.cep,
-        logradouro: client.logradouro,
-        bairro: client.bairro,
-        status: client.status,
-        segmento: client.segmento,
-        potencialCompra: client.potencialCompra,
-        observacoes: client.observacoes,
-        criadoEm: client.createdAt,
+        id: client.id, tipoPessoa: client.tipoPessoa,
+        razaoSocial: client.razaoSocial, nomeFantasia: client.nomeFantasia,
+        cnpj: client.cnpj, cpf: client.cpf, inscricaoEstadual: client.inscricaoEstadual,
+        telefone: client.telefone, whatsapp: client.whatsapp, email: client.email,
+        cidade: client.cidade, estado: client.estado, cep: client.cep,
+        logradouro: client.logradouro, bairro: client.bairro, status: client.status,
+        segmento: client.segmento, potencialCompra: client.potencialCompra,
+        observacoes: client.observacoes, criadoEm: client.createdAt,
         ultimoContato: client.dataUltimoContato,
       };
     }
@@ -288,7 +274,7 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
       const client = await storage.createClient({
         razaoSocial: data.razaoSocial as string,
         tipoPessoa: (data.tipoPessoa as "fisica" | "juridica") ?? "juridica",
-        status: (data.status as "ativo" | "inativo" | "prospect" | "bloqueado") ?? "prospect",
+        status: (data.status as any) ?? "prospect",
         nomeFantasia: (data.nomeFantasia as string) ?? null,
         cnpj: (data.cnpj as string) ?? null,
         cpf: (data.cpf as string) ?? null,
@@ -335,17 +321,17 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
 
       if (tipo === "por_status") {
         const [ativos, inativos, prospects, bloqueados] = await Promise.all([
-          storage.getClients({ status: "ativo", limit: 1 }),
-          storage.getClients({ status: "inativo", limit: 1 }),
-          storage.getClients({ status: "prospect", limit: 1 }),
+          storage.getClients({ status: "ativo",     limit: 1 }),
+          storage.getClients({ status: "inativo",   limit: 1 }),
+          storage.getClients({ status: "prospect",  limit: 1 }),
           storage.getClients({ status: "bloqueado", limit: 1 }),
         ]);
         return {
           tipo: "por_status",
           dados: [
-            { status: "ativo", total: ativos.total },
-            { status: "prospect", total: prospects.total },
-            { status: "inativo", total: inativos.total },
+            { status: "ativo",     total: ativos.total },
+            { status: "prospect",  total: prospects.total },
+            { status: "inativo",   total: inativos.total },
             { status: "bloqueado", total: bloqueados.total },
           ],
         };
@@ -358,11 +344,11 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
           const key = c.cidade || "Não informada";
           cidades[key] = (cidades[key] ?? 0) + 1;
         }
-        const sorted = Object.entries(cidades)
-          .sort((a, b) => b[1] - a[1])
-          .slice(0, 10)
-          .map(([cidade, total]) => ({ cidade, total }));
-        return { tipo: "por_cidade", totalGeral: all.total, dados: sorted };
+        return {
+          tipo: "por_cidade",
+          totalGeral: all.total,
+          dados: Object.entries(cidades).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([cidade, total]) => ({ cidade, total })),
+        };
       }
 
       if (tipo === "recentes") {
@@ -370,10 +356,7 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
         return {
           tipo: "recentes",
           clientes: recentes.data.slice(0, 10).map((c) => ({
-            nome: c.nomeFantasia || c.razaoSocial,
-            status: c.status,
-            cidade: c.cidade,
-            criadoEm: c.createdAt,
+            nome: c.nomeFantasia || c.razaoSocial, status: c.status, cidade: c.cidade, criadoEm: c.createdAt,
           })),
         };
       }
@@ -382,23 +365,46 @@ async function executeTool(name: string, args: Record<string, unknown>): Promise
         const all = await storage.getClients({ status: "ativo", limit: 1000 });
         const cutoff = new Date();
         cutoff.setDate(cutoff.getDate() - Number(dias));
-        const semContato = all.data.filter(
-          (c) => !c.dataUltimoContato || new Date(c.dataUltimoContato) < cutoff
-        );
+        const semContato = all.data.filter((c) => !c.dataUltimoContato || new Date(c.dataUltimoContato) < cutoff);
         return {
-          tipo: "sem_contato",
-          dias,
-          total: semContato.length,
+          tipo: "sem_contato", dias, total: semContato.length,
           clientes: semContato.slice(0, 20).map((c) => ({
-            id: c.id,
-            nome: c.nomeFantasia || c.razaoSocial,
-            cidade: c.cidade,
-            ultimoContato: c.dataUltimoContato,
+            id: c.id, nome: c.nomeFantasia || c.razaoSocial, cidade: c.cidade, ultimoContato: c.dataUltimoContato,
           })),
         };
       }
 
       return { erro: "Tipo de estatística desconhecido" };
+    }
+
+    case "gerar_relatorio": {
+      const { formato, titulo, status, search } = args as {
+        formato: "pdf" | "excel";
+        titulo?: string;
+        status?: string;
+        search?: string;
+      };
+
+      // Count matching clients
+      const result = await storage.getClients({ status: status ?? "", search: search ?? "", limit: 1 });
+
+      const params = new URLSearchParams();
+      if (status) params.set("status", status);
+      if (search) params.set("search", search);
+      const reportTitle = titulo ?? (status ? `Clientes ${status.charAt(0).toUpperCase() + status.slice(1)}s` : "Todos os Clientes");
+      params.set("titulo", reportTitle);
+
+      const url = `/api/clients/export/${formato}?${params.toString()}`;
+      const ext = formato === "pdf" ? "PDF" : "Excel";
+
+      return {
+        sucesso: true,
+        url,
+        formato,
+        totalClientes: result.total,
+        titulo: reportTitle,
+        descricao: `Relatório ${ext} com ${result.total} cliente${result.total !== 1 ? "s" : ""}`,
+      };
     }
 
     default:

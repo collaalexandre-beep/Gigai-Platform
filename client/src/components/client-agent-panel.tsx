@@ -83,9 +83,9 @@ function FileCategoryIcon({ cat, className }: { cat: "spreadsheet" | "document" 
 
 const SUGGESTIONS = [
   { label: "Listar clientes ativos", icon: Search },
-  { label: "Clientes por cidade", icon: BarChart2 },
+  { label: "Gerar PDF de todos os clientes", icon: FileText },
+  { label: "Exportar clientes ativos em Excel", icon: FileSpreadsheet },
   { label: "Sem contato há 30 dias", icon: AlertTriangle },
-  { label: "Clientes recentes", icon: RefreshCw },
 ];
 
 // ─── Tool result renderers ───────────────────────────────────────────────────
@@ -164,7 +164,8 @@ function ToolBadge({ tool, mutated }: { tool: string; mutated?: boolean }) {
     criar_cliente:         { label: "Cadastrou cliente", icon: Plus },
     atualizar_cliente:     { label: "Atualizou cliente", icon: Edit3 },
     remover_cliente:       { label: "Removeu cliente", icon: Trash2 },
-    estatisticas_clientes: { label: "Gerou relatório", icon: BarChart2 },
+    estatisticas_clientes: { label: "Gerou estatísticas", icon: BarChart2 },
+    gerar_relatorio:       { label: "Gerou relatório", icon: Download },
   };
   const meta = LABELS[tool] ?? { label: tool, icon: Sparkles };
   const Icon = meta.icon;
@@ -181,12 +182,62 @@ function ToolBadge({ tool, mutated }: { tool: string; mutated?: boolean }) {
   );
 }
 
+interface ReportResult {
+  sucesso: boolean;
+  url: string;
+  formato: "pdf" | "excel";
+  totalClientes: number;
+  titulo: string;
+  descricao: string;
+}
+
+function ReportDownloadCard({ result }: { result: ReportResult }) {
+  const isPdf = result.formato === "pdf";
+  return (
+    <div className={cn(
+      "mt-2 rounded-xl border p-3 flex items-center gap-3",
+      isPdf
+        ? "bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-800"
+        : "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-800",
+    )}>
+      <div className={cn(
+        "w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0",
+        isPdf ? "bg-red-100 dark:bg-red-900/50" : "bg-emerald-100 dark:bg-emerald-900/50",
+      )}>
+        {isPdf
+          ? <FileText className="w-5 h-5 text-red-600 dark:text-red-400" />
+          : <FileSpreadsheet className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+        }
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-foreground truncate">{result.titulo}</p>
+        <p className="text-xs text-muted-foreground">{result.descricao}</p>
+      </div>
+      <a
+        href={result.url}
+        download
+        className={cn(
+          "flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors flex-shrink-0",
+          isPdf
+            ? "bg-red-600 hover:bg-red-700 text-white"
+            : "bg-emerald-600 hover:bg-emerald-700 text-white",
+        )}
+        data-testid="button-download-report"
+      >
+        <Download className="w-3.5 h-3.5" />
+        {isPdf ? "PDF" : "Excel"}
+      </a>
+    </div>
+  );
+}
+
 function AssistantMessage({ msg }: { msg: ChatMessage }) {
   const toolCalls = msg.toolCalls ?? [];
   const clientListResult = toolCalls.find((tc) => tc.tool === "buscar_clientes")?.result as
     { clientes?: { id: string; nome: string; cidade?: string; status: string }[] } | undefined;
   const statsResult = toolCalls.find((tc) => tc.tool === "estatisticas_clientes")?.result as
     { dados?: { status?: string; cidade?: string; total: number }[] } | undefined;
+  const reportResult = toolCalls.find((tc) => tc.tool === "gerar_relatorio")?.result as ReportResult | undefined;
   const hasMutations = toolCalls.some((tc) => ["criar_cliente", "atualizar_cliente", "remover_cliente"].includes(tc.tool));
 
   return (
@@ -199,6 +250,7 @@ function AssistantMessage({ msg }: { msg: ChatMessage }) {
         </div>
       )}
       <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+      {reportResult?.sucesso && <ReportDownloadCard result={reportResult} />}
       {clientListResult?.clientes && clientListResult.clientes.length > 0 && <ClientTable data={clientListResult.clientes} />}
       {statsResult?.dados && statsResult.dados.length > 0 && (
         <StatsChart data={statsResult.dados.map((d) => ({ label: d.status ?? d.cidade ?? "—", total: d.total }))} />
