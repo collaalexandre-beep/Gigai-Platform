@@ -1,4 +1,5 @@
 import { useLocation, Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import {
   Sidebar,
   SidebarContent,
@@ -76,6 +77,15 @@ export function AppSidebar() {
   const [location] = useLocation();
   const { user, logout } = useAuth();
 
+  const { data: pendingData } = useQuery<{ total: number }>({
+    queryKey: ["/api/purchase-requests", { status: "aguardando_aprovacao" }],
+    queryFn: () =>
+      fetch("/api/purchase-requests?status=aguardando_aprovacao&limit=1", { credentials: "include" })
+        .then((r) => r.json()),
+    refetchInterval: 60_000,
+  });
+  const pendingCount = pendingData?.total ?? 0;
+
   const isActive = (url: string) => {
     if (url === "/dashboard") return location === "/dashboard" || location === "/";
     return location.startsWith(url);
@@ -84,6 +94,7 @@ export function AppSidebar() {
   const renderMenuItems = (items: { title: string, url: string, icon: any }[]) => {
     return items.map((item) => {
       const active = isActive(item.url);
+      const showBadge = item.url === "/inventory/purchases" && pendingCount > 0;
       return (
         <SidebarMenuItem key={item.title}>
           <SidebarMenuButton
@@ -98,7 +109,12 @@ export function AppSidebar() {
             <Link href={item.url} className="flex items-center gap-2.5">
               <item.icon className="w-4 h-4 flex-shrink-0" />
               <span className="text-sm">{item.title}</span>
-              {active && (
+              {showBadge && (
+                <span className="ml-auto flex-shrink-0 min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-1">
+                  {pendingCount > 99 ? "99+" : pendingCount}
+                </span>
+              )}
+              {active && !showBadge && (
                 <ChevronRight className="w-3 h-3 ml-auto text-muted-foreground" />
               )}
             </Link>

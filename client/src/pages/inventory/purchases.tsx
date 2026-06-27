@@ -19,7 +19,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import {
-  Plus, PackageOpen, Search, Eye, Pencil, XCircle, X, FileText, ChevronDown,
+  Plus, PackageOpen, Search, Eye, Pencil, XCircle, X, FileText, ChevronDown, CheckCircle2,
 } from "lucide-react";
 
 type PurchaseRequest = {
@@ -172,6 +172,14 @@ export default function PurchasesPage() {
     },
   });
 
+  const approveMutation = useMutation({
+    mutationFn: async (id: string) => apiRequest("PATCH", `/api/purchase-requests/${id}`, { status: "aprovado" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-requests"] });
+      toast({ title: "Solicitação aprovada", description: "A solicitação foi aprovada e está em cotação." });
+    },
+  });
+
   const resetForm = () => {
     setFSolicitante(user?.nome || user?.username || "");
     setFTelefone(""); setFMaterial(""); setFQuantidade("");
@@ -310,6 +318,19 @@ export default function PurchasesPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
+                        {r.status === "aguardando_aprovacao" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 w-7 p-0 text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-950"
+                            onClick={() => approveMutation.mutate(r.id)}
+                            disabled={approveMutation.isPending}
+                            title="Aprovar"
+                            data-testid={`button-approve-${r.id}`}
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openViewDialog(r)} title="Visualizar">
                           <Eye className="h-3.5 w-3.5" />
                         </Button>
@@ -346,10 +367,6 @@ export default function PurchasesPage() {
                 onChange={(e) => setFSolicitante(e.target.value)}
                 className={!editingId ? "bg-muted cursor-default" : ""}
               />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="telefone">Telefone do solicitante</Label>
-              <Input id="telefone" value={fTelefone} onChange={(e) => setFTelefone(e.target.value)} placeholder="(11) 99999-9999" />
             </div>
             <div className="space-y-1.5 sm:col-span-2" ref={materialRef}>
               <Label htmlFor="material">Material *</Label>
