@@ -3231,5 +3231,209 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
     } catch (err) { handleError(res, err); }
   });
 
+  // ─── NF-e ROUTES ─────────────────────────────────────────────────────────────
+
+  // Import parseNfeXml
+  const { parseNfeXml } = await import("./nfe");
+
+  // Parse XML (do not save yet)
+  app.post("/api/nfe/parse", requireAuth, memUpload.single("xml"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: "Arquivo XML não enviado" });
+      const xmlContent = req.file.buffer.toString("utf-8");
+      const parsed = parseNfeXml(xmlContent);
+      let matchedSupplier = null;
+      if (parsed.fornecedorCnpj) {
+        const { data: sups } = await storage.getSuppliers({ search: parsed.fornecedorCnpj, limit: 1 });
+        if (sups.length > 0) matchedSupplier = sups[0];
+      }
+      let alreadyImported = false;
+      if (parsed.chaveAcesso) alreadyImported = await storage.checkNfeChaveExists(String(parsed.chaveAcesso));
+      const descriptions = parsed.items.map((i) => i.descricaoProduto);
+      const aliasMap = await storage.findAliasesByDescription(descriptions, matchedSupplier?.id);
+      const itemsWithMatch = parsed.items.map((item) => {
+        const alias = aliasMap.get(item.descricaoProduto.toLowerCase());
+        return {
+          ...item,
+          aliasId: alias?.id ?? null,
+          rawMaterialId: alias?.rawMaterialId ?? null,
+          fatorConversao: alias ? Number(alias.fatorConversao) : 1,
+          quantidadeInterna: alias ? item.quantidade * Number(alias.fatorConversao) : item.quantidade,
+          statusMatch: alias ? "mapeado" : "nao_mapeado",
+        };
+      });
+      res.json({ parsed: { ...parsed, items: itemsWithMatch }, matchedSupplier, alreadyImported, xmlContent });
+    } catch (err) { handleError(res, err); }
+  });
+
+  // List NF-e imports
+  app.get("/api/nfe/imports", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const page = req.query.page ? Number(req.query.page) : undefined;
+      const limit = req.query.limit ? Number(req.query.limit) : undefined;
+      const result = await storage.listNfeImports({ status, page, limit });
+      res.json(result);
+    } catch (err) { handleError(res, err); }
+  });
+
+  // Get single NF-e import with items
+  app.get("/api/nfe/imports/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const nfe = await storage.getNfeImportWithItems(String(req.params.id));
+      if (!nfe) return res.status(404).json({ error: "NF-e não encontrada" });
+      res.json(nfe);
+    } catch (err) { handleError(res, err); }
+  });
+
+  // Save NF-e import (after review)
+  app.post("/api/nfe/imports", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { header, items } = req.body;
+      const nfe = await storage.createNfeImport(header);
+      const nfeItems = items.map((item: any) => ({ ...item, nfeImportId: nfe.id }));
+      await storage.createNfeImportItems(nfeItems);
+      res.status(201).json(await storage.getNfeImportWithItems(nfe.id));
+    } catch (err) { handleError(res, err); }
+  });
+
+  // Update a single item (mapping)
+  app.patch("/api/nfe/imports/:nfeId/items/:itemId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const item = await storage.updateNfeImportItem(String(req.params.itemId), req.body);
+      res.json(item);
+    } catch (err) { handleError(res, err); }
+  });
+
+  // Confirm receipt: update stock + create accounts payable
+  app.post("/api/nfe/imports/:id/confirm", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const nfeId = String(req.params.id);
+      const nfe = await storage.getNfeImportWithItems(nfeId);
+      if (!nfe) return res.status(404).json({ error: "NF-e não encontrada" });
+      if (nfe.status !== "pendente") return res.status(400).json({ error: "NF-e já processada" });
+
+      const confirmed = await storage.confirmNfeImport(nfeId);
+
+      const { duplicatas, supplierId } = req.body as { duplicatas?: Array<{ numeroParcela: string | null; dataVencimento: string | null; valor: number }>; supplierId?: string };
+      if (duplicatas && duplicatas.length > 0) {
+        for (const dup of duplicatas) {
+          await storage.createAccountsPayable({
+            nfeImportId: nfe.id,
+            supplierId: supplierId || nfe.supplierId || null,
+            fornecedorNome: nfe.fornecedorNome,
+            fornecedorCnpj: nfe.fornecedorCnpj || null,
+            numeroDocumento: nfe.numeroNfe || null,
+            numeroParcela: dup.numeroParcela,
+            descricao: `NF-e ${nfe.numeroNfe ?? ""} ${dup.numeroParcela ? `- Parcela ${dup.numeroParcela}` : ""}`.trim(),
+            valorTotal: String(dup.valor),
+            dataEmissao: nfe.dataEmissao || null,
+            dataVencimento: dup.dataVencimento || null,
+            status: "pendente",
+          });
+        }
+      }
+
+      res.json(confirmed);
+    } catch (err) { handleError(res, err); }
+  });
+
+  // Cancel NF-e import
+  app.post("/api/nfe/imports/:id/cancel", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const result = await storage.cancelNfeImport(String(req.params.id));
+      if (!result) return res.status(404).json({ error: "NF-e não encontrada" });
+      res.json(result);
+    } catch (err) { handleError(res, err); }
+  });
+
+  // ─── SUPPLIER ALIASES ROUTES ──────────────────────────────────────────────────
+
+  app.get("/api/supplier-aliases", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const rawMaterialId = req.query.rawMaterialId as string | undefined;
+      const supplierId = req.query.supplierId as string | undefined;
+      const search = req.query.search as string | undefined;
+      const data = await storage.listSupplierAliases({ rawMaterialId, supplierId, search });
+      res.json({ data });
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.post("/api/supplier-aliases", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const alias = await storage.createSupplierAlias(req.body);
+      res.status(201).json(alias);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.patch("/api/supplier-aliases/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const alias = await storage.updateSupplierAlias(String(req.params.id), req.body);
+      if (!alias) return res.status(404).json({ error: "Alias não encontrado" });
+      res.json(alias);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.delete("/api/supplier-aliases/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteSupplierAlias(String(req.params.id));
+      res.json({ ok: true });
+    } catch (err) { handleError(res, err); }
+  });
+
+  // ─── ACCOUNTS PAYABLE ROUTES ──────────────────────────────────────────────────
+
+  app.get("/api/accounts-payable/summary", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const summary = await storage.getAccountsPayableSummary();
+      res.json(summary);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.get("/api/accounts-payable", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const supplierId = req.query.supplierId as string | undefined;
+      const nfeImportId = req.query.nfeImportId as string | undefined;
+      const vencimentoAte = req.query.vencimentoAte as string | undefined;
+      const page = req.query.page ? Number(req.query.page) : undefined;
+      const limit = req.query.limit ? Number(req.query.limit) : undefined;
+      const result = await storage.listAccountsPayable({ status, supplierId, nfeImportId, page, limit, vencimentoAte });
+      res.json(result);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.get("/api/accounts-payable/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const item = await storage.getAccountsPayable(String(req.params.id));
+      if (!item) return res.status(404).json({ error: "Conta não encontrada" });
+      res.json(item);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.post("/api/accounts-payable", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const item = await storage.createAccountsPayable(req.body);
+      res.status(201).json(item);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.patch("/api/accounts-payable/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const item = await storage.updateAccountsPayable(String(req.params.id), req.body);
+      if (!item) return res.status(404).json({ error: "Conta não encontrada" });
+      res.json(item);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.post("/api/accounts-payable/:id/pay", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const { pagoValor, pagoFormaPagamento } = req.body;
+      const item = await storage.payAccountsPayable(String(req.params.id), Number(pagoValor), pagoFormaPagamento ?? "");
+      if (!item) return res.status(404).json({ error: "Conta não encontrada" });
+      res.json(item);
+    } catch (err) { handleError(res, err); }
+  });
+
   return httpServer;
 }

@@ -661,6 +661,8 @@ export const rawMaterials = pgTable(
     fornecedor: text("fornecedor"),
     marca: text("marca"),
     observacoes: text("observacoes"),
+    estoqueAtual: decimal("estoque_atual", { precision: 14, scale: 4 }).notNull().default("0"),
+    estoqueMinimo: decimal("estoque_minimo", { precision: 14, scale: 4 }),
     ativo: boolean("ativo").notNull().default(true),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -1484,6 +1486,142 @@ export const insertAiAgentKnowledgeFileSchema = createInsertSchema(aiAgentKnowle
 });
 export type InsertAiAgentKnowledgeFile = z.infer<typeof insertAiAgentKnowledgeFileSchema>;
 export type AiAgentKnowledgeFile = typeof aiAgentKnowledgeFiles.$inferSelect;
+
+// ─── SUPPLIER PRODUCT ALIASES ─────────────────────────────────────────────────
+
+export const supplierProductAliases = pgTable(
+  "supplier_product_aliases",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    supplierId: varchar("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
+    supplierCodigo: text("supplier_codigo"),
+    supplierDescricao: text("supplier_descricao").notNull(),
+    rawMaterialId: varchar("raw_material_id").notNull().references(() => rawMaterials.id, { onDelete: "cascade" }),
+    fatorConversao: decimal("fator_conversao", { precision: 12, scale: 6 }).notNull().default("1"),
+    unidadeFornecedor: text("unidade_fornecedor"),
+    observacao: text("observacao"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_supplier_aliases_raw_material").on(t.rawMaterialId),
+    index("idx_supplier_aliases_supplier").on(t.supplierId),
+  ]
+);
+
+export const insertSupplierProductAliasSchema = createInsertSchema(supplierProductAliases).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertSupplierProductAlias = z.infer<typeof insertSupplierProductAliasSchema>;
+export type SupplierProductAlias = typeof supplierProductAliases.$inferSelect;
+
+// ─── NF-e IMPORTS ─────────────────────────────────────────────────────────────
+
+export const nfeImports = pgTable(
+  "nfe_imports",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    chaveAcesso: text("chave_acesso").unique(),
+    numeroNfe: text("numero_nfe"),
+    serie: text("serie"),
+    dataEmissao: date("data_emissao"),
+    fornecedorCnpj: text("fornecedor_cnpj"),
+    fornecedorNome: text("fornecedor_nome").notNull(),
+    fornecedorIe: text("fornecedor_ie"),
+    supplierId: varchar("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
+    valorTotal: decimal("valor_total", { precision: 14, scale: 2 }),
+    status: text("status").notNull().default("pendente"), // pendente | confirmado | cancelado
+    xmlContent: text("xml_content"),
+    observacao: text("observacao"),
+    confirmedAt: timestamp("confirmed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_nfe_imports_status").on(t.status),
+    index("idx_nfe_imports_fornecedor_cnpj").on(t.fornecedorCnpj),
+    index("idx_nfe_imports_data_emissao").on(t.dataEmissao),
+  ]
+);
+
+export const insertNfeImportSchema = createInsertSchema(nfeImports).omit({
+  id: true, createdAt: true, confirmedAt: true,
+});
+export type InsertNfeImport = z.infer<typeof insertNfeImportSchema>;
+export type NfeImport = typeof nfeImports.$inferSelect;
+
+// ─── NF-e IMPORT ITEMS ────────────────────────────────────────────────────────
+
+export const nfeImportItems = pgTable(
+  "nfe_import_items",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    nfeImportId: varchar("nfe_import_id").notNull().references(() => nfeImports.id, { onDelete: "cascade" }),
+    codigoProduto: text("codigo_produto"),
+    descricaoProduto: text("descricao_produto").notNull(),
+    ncm: text("ncm"),
+    cfop: text("cfop"),
+    unidadeComercial: text("unidade_comercial"),
+    quantidade: decimal("quantidade", { precision: 14, scale: 4 }).notNull(),
+    valorUnitario: decimal("valor_unitario", { precision: 14, scale: 6 }),
+    valorTotal: decimal("valor_total", { precision: 14, scale: 2 }),
+    rawMaterialId: varchar("raw_material_id").references(() => rawMaterials.id, { onDelete: "set null" }),
+    aliasId: varchar("alias_id").references(() => supplierProductAliases.id, { onDelete: "set null" }),
+    fatorConversao: decimal("fator_conversao", { precision: 12, scale: 6 }).notNull().default("1"),
+    quantidadeInterna: decimal("quantidade_interna", { precision: 14, scale: 4 }),
+    statusMatch: text("status_match").notNull().default("nao_mapeado"), // nao_mapeado | mapeado | ignorado
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_nfe_items_nfe_import").on(t.nfeImportId),
+    index("idx_nfe_items_raw_material").on(t.rawMaterialId),
+  ]
+);
+
+export const insertNfeImportItemSchema = createInsertSchema(nfeImportItems).omit({
+  id: true, createdAt: true,
+});
+export type InsertNfeImportItem = z.infer<typeof insertNfeImportItemSchema>;
+export type NfeImportItem = typeof nfeImportItems.$inferSelect;
+
+// ─── ACCOUNTS PAYABLE (CONTAS A PAGAR) ───────────────────────────────────────
+
+export const accountsPayable = pgTable(
+  "accounts_payable",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    nfeImportId: varchar("nfe_import_id").references(() => nfeImports.id, { onDelete: "set null" }),
+    supplierId: varchar("supplier_id").references(() => suppliers.id, { onDelete: "set null" }),
+    fornecedorNome: text("fornecedor_nome").notNull(),
+    fornecedorCnpj: text("fornecedor_cnpj"),
+    numeroDocumento: text("numero_documento"),
+    numeroParcela: text("numero_parcela"),
+    descricao: text("descricao"),
+    valorTotal: decimal("valor_total", { precision: 14, scale: 2 }).notNull(),
+    dataEmissao: date("data_emissao"),
+    dataVencimento: date("data_vencimento"),
+    status: text("status").notNull().default("pendente"), // pendente | pago | vencido | cancelado
+    formaPagamento: text("forma_pagamento"),
+    codigoBarras: text("codigo_barras"),
+    pagoEm: timestamp("pago_em"),
+    pagoValor: decimal("pago_valor", { precision: 14, scale: 2 }),
+    pagoFormaPagamento: text("pago_forma_pagamento"),
+    observacao: text("observacao"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_accounts_payable_status").on(t.status),
+    index("idx_accounts_payable_vencimento").on(t.dataVencimento),
+    index("idx_accounts_payable_nfe").on(t.nfeImportId),
+    index("idx_accounts_payable_supplier").on(t.supplierId),
+  ]
+);
+
+export const insertAccountsPayableSchema = createInsertSchema(accountsPayable).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+export type InsertAccountsPayable = z.infer<typeof insertAccountsPayableSchema>;
+export type AccountsPayable = typeof accountsPayable.$inferSelect;
 
 // ─── DASHBOARD STATS (view types) ────────────────────────────────────────────
 

@@ -34,6 +34,8 @@ import {
   Bot,
   ShieldCheck,
   UserCog,
+  Wallet,
+  ScanBarcode,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 
@@ -64,6 +66,11 @@ const vehicleItems = [
 const inventoryItems = [
   { title: "Compras", url: "/inventory/purchases", icon: PackageOpen },
   { title: "Fornecedores", url: "/inventory/suppliers", icon: Truck },
+  { title: "Recebimento NF-e", url: "/inventory/receiving", icon: ScanBarcode },
+];
+
+const financeiroItems = [
+  { title: "Contas a Pagar", url: "/financial/accounts-payable", icon: Wallet },
 ];
 
 const configItems = [
@@ -190,6 +197,17 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {renderMenuItems(inventoryItems)}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup className="mt-4">
+          <SidebarGroupLabel className="text-xs text-muted-foreground font-medium px-2 mb-1">
+            Financeiro
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {renderMenuItems(financeiroItems)}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

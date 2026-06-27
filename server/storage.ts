@@ -92,6 +92,18 @@ import {
   suppliers,
   type Supplier,
   type InsertSupplier,
+  supplierProductAliases,
+  type SupplierProductAlias,
+  type InsertSupplierProductAlias,
+  nfeImports,
+  type NfeImport,
+  type InsertNfeImport,
+  nfeImportItems,
+  type NfeImportItem,
+  type InsertNfeImportItem,
+  accountsPayable,
+  type AccountsPayable,
+  type InsertAccountsPayable,
   vehicleMaintenanceItems,
   vehicleMaintenanceHistory,
   vehicleIssueReports,
@@ -406,6 +418,33 @@ export interface IStorage {
   createSupplier(data: InsertSupplier): Promise<Supplier>;
   updateSupplier(id: string, data: Partial<InsertSupplier>): Promise<Supplier | undefined>;
   toggleSupplierActive(id: string): Promise<Supplier | undefined>;
+
+  // Supplier Product Aliases
+  listSupplierAliases(params?: { rawMaterialId?: string; supplierId?: string; search?: string }): Promise<(SupplierProductAlias & { rawMaterialNome?: string; supplierNome?: string })[]>;
+  getSupplierAlias(id: string): Promise<SupplierProductAlias | undefined>;
+  createSupplierAlias(data: InsertSupplierProductAlias): Promise<SupplierProductAlias>;
+  updateSupplierAlias(id: string, data: Partial<InsertSupplierProductAlias>): Promise<SupplierProductAlias | undefined>;
+  deleteSupplierAlias(id: string): Promise<void>;
+  findAliasesByDescription(descriptions: string[], supplierId?: string): Promise<Map<string, SupplierProductAlias>>;
+
+  // NF-e Imports
+  listNfeImports(params?: { status?: string; page?: number; limit?: number }): Promise<{ data: NfeImport[]; total: number }>;
+  getNfeImport(id: string): Promise<NfeImport | undefined>;
+  getNfeImportWithItems(id: string): Promise<(NfeImport & { items: NfeImportItem[] }) | undefined>;
+  createNfeImport(data: InsertNfeImport): Promise<NfeImport>;
+  createNfeImportItems(items: InsertNfeImportItem[]): Promise<NfeImportItem[]>;
+  updateNfeImportItem(id: string, data: Partial<InsertNfeImportItem>): Promise<NfeImportItem | undefined>;
+  confirmNfeImport(id: string): Promise<NfeImport | undefined>;
+  cancelNfeImport(id: string): Promise<NfeImport | undefined>;
+  checkNfeChaveExists(chaveAcesso: string): Promise<boolean>;
+
+  // Accounts Payable
+  listAccountsPayable(params?: { status?: string; supplierId?: string; nfeImportId?: string; page?: number; limit?: number; vencimentoAte?: string }): Promise<{ data: AccountsPayable[]; total: number }>;
+  getAccountsPayable(id: string): Promise<AccountsPayable | undefined>;
+  createAccountsPayable(data: InsertAccountsPayable): Promise<AccountsPayable>;
+  updateAccountsPayable(id: string, data: Partial<InsertAccountsPayable>): Promise<AccountsPayable | undefined>;
+  payAccountsPayable(id: string, pagoValor: number, pagoFormaPagamento: string): Promise<AccountsPayable | undefined>;
+  getAccountsPayableSummary(): Promise<{ totalPendente: number; totalVencido: number; totalPagoMes: number; countPendente: number; countVencido: number }>;
 }
 
 // ─── MAINTENANCE STATUS UTILITY ───────────────────────────────────────────────
@@ -2154,6 +2193,195 @@ export class DatabaseStorage implements IStorage {
       .where(eq(suppliers.id, id))
       .returning();
     return row;
+  }
+
+  // ─── SUPPLIER PRODUCT ALIASES ────────────────────────────────────────────────
+
+  async listSupplierAliases(params?: { rawMaterialId?: string; supplierId?: string; search?: string }): Promise<(SupplierProductAlias & { rawMaterialNome?: string; supplierNome?: string })[]> {
+    const conditions = [];
+    if (params?.rawMaterialId) conditions.push(eq(supplierProductAliases.rawMaterialId, params.rawMaterialId));
+    if (params?.supplierId) conditions.push(eq(supplierProductAliases.supplierId, params.supplierId));
+    if (params?.search) {
+      const q = `%${params.search}%`;
+      conditions.push(ilike(supplierProductAliases.supplierDescricao, q));
+    }
+    const where = conditions.length ? and(...conditions) : undefined;
+    const rows = await db
+      .select({
+        alias: supplierProductAliases,
+        rawMaterialNome: rawMaterials.nome,
+        supplierNome: suppliers.nome,
+      })
+      .from(supplierProductAliases)
+      .leftJoin(rawMaterials, eq(supplierProductAliases.rawMaterialId, rawMaterials.id))
+      .leftJoin(suppliers, eq(supplierProductAliases.supplierId, suppliers.id))
+      .where(where)
+      .orderBy(asc(supplierProductAliases.supplierDescricao));
+    return rows.map((r) => ({ ...r.alias, rawMaterialNome: r.rawMaterialNome ?? undefined, supplierNome: r.supplierNome ?? undefined }));
+  }
+
+  async getSupplierAlias(id: string): Promise<SupplierProductAlias | undefined> {
+    const [row] = await db.select().from(supplierProductAliases).where(eq(supplierProductAliases.id, id));
+    return row;
+  }
+
+  async createSupplierAlias(data: InsertSupplierProductAlias): Promise<SupplierProductAlias> {
+    const [row] = await db.insert(supplierProductAliases).values(data).returning();
+    return row;
+  }
+
+  async updateSupplierAlias(id: string, data: Partial<InsertSupplierProductAlias>): Promise<SupplierProductAlias | undefined> {
+    const [row] = await db.update(supplierProductAliases).set({ ...data, updatedAt: new Date() }).where(eq(supplierProductAliases.id, id)).returning();
+    return row;
+  }
+
+  async deleteSupplierAlias(id: string): Promise<void> {
+    await db.delete(supplierProductAliases).where(eq(supplierProductAliases.id, id));
+  }
+
+  async findAliasesByDescription(descriptions: string[], supplierId?: string): Promise<Map<string, SupplierProductAlias>> {
+    if (descriptions.length === 0) return new Map();
+    const conditions = [
+      sql`LOWER(${supplierProductAliases.supplierDescricao}) = ANY(ARRAY[${sql.raw(descriptions.map((d) => `'${d.toLowerCase().replace(/'/g, "''")}'`).join(","))}]::text[])`
+    ];
+    if (supplierId) {
+      conditions.push(or(eq(supplierProductAliases.supplierId, supplierId), isNull(supplierProductAliases.supplierId))!);
+    }
+    const rows = await db.select().from(supplierProductAliases).where(and(...conditions));
+    const map = new Map<string, SupplierProductAlias>();
+    for (const row of rows) {
+      map.set(row.supplierDescricao.toLowerCase(), row);
+    }
+    return map;
+  }
+
+  // ─── NF-e IMPORTS ────────────────────────────────────────────────────────────
+
+  async listNfeImports(params?: { status?: string; page?: number; limit?: number }): Promise<{ data: NfeImport[]; total: number }> {
+    const limit = params?.limit ?? 50;
+    const offset = ((params?.page ?? 1) - 1) * limit;
+    const conditions = [];
+    if (params?.status) conditions.push(eq(nfeImports.status, params.status));
+    const where = conditions.length ? and(...conditions) : undefined;
+    const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(nfeImports).where(where);
+    const data = await db.select().from(nfeImports).where(where).orderBy(desc(nfeImports.createdAt)).limit(limit).offset(offset);
+    return { data, total: Number(countResult?.count ?? 0) };
+  }
+
+  async getNfeImport(id: string): Promise<NfeImport | undefined> {
+    const [row] = await db.select().from(nfeImports).where(eq(nfeImports.id, id));
+    return row;
+  }
+
+  async getNfeImportWithItems(id: string): Promise<(NfeImport & { items: NfeImportItem[] }) | undefined> {
+    const nfe = await this.getNfeImport(id);
+    if (!nfe) return undefined;
+    const items = await db.select().from(nfeImportItems).where(eq(nfeImportItems.nfeImportId, id)).orderBy(asc(nfeImportItems.createdAt));
+    return { ...nfe, items };
+  }
+
+  async createNfeImport(data: InsertNfeImport): Promise<NfeImport> {
+    const [row] = await db.insert(nfeImports).values(data).returning();
+    return row;
+  }
+
+  async createNfeImportItems(items: InsertNfeImportItem[]): Promise<NfeImportItem[]> {
+    if (items.length === 0) return [];
+    const rows = await db.insert(nfeImportItems).values(items).returning();
+    return rows;
+  }
+
+  async updateNfeImportItem(id: string, data: Partial<InsertNfeImportItem>): Promise<NfeImportItem | undefined> {
+    const [row] = await db.update(nfeImportItems).set(data).where(eq(nfeImportItems.id, id)).returning();
+    return row;
+  }
+
+  async confirmNfeImport(id: string): Promise<NfeImport | undefined> {
+    const nfe = await this.getNfeImportWithItems(id);
+    if (!nfe || nfe.status !== "pendente") return undefined;
+
+    for (const item of nfe.items) {
+      if (item.statusMatch === "mapeado" && item.rawMaterialId && item.quantidadeInterna) {
+        const qty = Number(item.quantidadeInterna);
+        if (qty > 0) {
+          await db.execute(sql`UPDATE raw_materials SET estoque_atual = estoque_atual + ${qty}, updated_at = NOW() WHERE id = ${item.rawMaterialId}`);
+        }
+      }
+    }
+
+    const [row] = await db.update(nfeImports).set({ status: "confirmado", confirmedAt: new Date() }).where(eq(nfeImports.id, id)).returning();
+    return row;
+  }
+
+  async cancelNfeImport(id: string): Promise<NfeImport | undefined> {
+    const [row] = await db.update(nfeImports).set({ status: "cancelado" }).where(eq(nfeImports.id, id)).returning();
+    return row;
+  }
+
+  async checkNfeChaveExists(chaveAcesso: string): Promise<boolean> {
+    const [row] = await db.select({ id: nfeImports.id }).from(nfeImports).where(eq(nfeImports.chaveAcesso, chaveAcesso));
+    return !!row;
+  }
+
+  // ─── ACCOUNTS PAYABLE ────────────────────────────────────────────────────────
+
+  async listAccountsPayable(params?: { status?: string; supplierId?: string; nfeImportId?: string; page?: number; limit?: number; vencimentoAte?: string }): Promise<{ data: AccountsPayable[]; total: number }> {
+    const limit = params?.limit ?? 50;
+    const offset = ((params?.page ?? 1) - 1) * limit;
+    const conditions = [];
+    if (params?.status) conditions.push(eq(accountsPayable.status, params.status));
+    if (params?.supplierId) conditions.push(eq(accountsPayable.supplierId, params.supplierId));
+    if (params?.nfeImportId) conditions.push(eq(accountsPayable.nfeImportId, params.nfeImportId));
+    if (params?.vencimentoAte) conditions.push(lte(accountsPayable.dataVencimento, params.vencimentoAte));
+    const where = conditions.length ? and(...conditions) : undefined;
+    const [countResult] = await db.select({ count: sql<number>`count(*)` }).from(accountsPayable).where(where);
+    const data = await db.select().from(accountsPayable).where(where).orderBy(asc(accountsPayable.dataVencimento)).limit(limit).offset(offset);
+    return { data, total: Number(countResult?.count ?? 0) };
+  }
+
+  async getAccountsPayable(id: string): Promise<AccountsPayable | undefined> {
+    const [row] = await db.select().from(accountsPayable).where(eq(accountsPayable.id, id));
+    return row;
+  }
+
+  async createAccountsPayable(data: InsertAccountsPayable): Promise<AccountsPayable> {
+    const [row] = await db.insert(accountsPayable).values(data).returning();
+    return row;
+  }
+
+  async updateAccountsPayable(id: string, data: Partial<InsertAccountsPayable>): Promise<AccountsPayable | undefined> {
+    const [row] = await db.update(accountsPayable).set({ ...data, updatedAt: new Date() }).where(eq(accountsPayable.id, id)).returning();
+    return row;
+  }
+
+  async payAccountsPayable(id: string, pagoValor: number, pagoFormaPagamento: string): Promise<AccountsPayable | undefined> {
+    const [row] = await db.update(accountsPayable)
+      .set({ status: "pago", pagoValor: String(pagoValor), pagoFormaPagamento, pagoEm: new Date(), updatedAt: new Date() })
+      .where(eq(accountsPayable.id, id))
+      .returning();
+    return row;
+  }
+
+  async getAccountsPayableSummary(): Promise<{ totalPendente: number; totalVencido: number; totalPagoMes: number; countPendente: number; countVencido: number }> {
+    const today = new Date().toISOString().substring(0, 10);
+    const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().substring(0, 10);
+    const rows = await db.execute(sql`
+      SELECT
+        COALESCE(SUM(CASE WHEN status = 'pendente' AND (data_vencimento IS NULL OR data_vencimento >= ${today}) THEN valor_total::numeric ELSE 0 END), 0) AS total_pendente,
+        COALESCE(SUM(CASE WHEN status = 'pendente' AND data_vencimento < ${today} THEN valor_total::numeric ELSE 0 END), 0) AS total_vencido,
+        COALESCE(SUM(CASE WHEN status = 'pago' AND pago_em >= ${firstOfMonth} THEN COALESCE(pago_valor::numeric, valor_total::numeric) ELSE 0 END), 0) AS total_pago_mes,
+        COUNT(CASE WHEN status = 'pendente' AND (data_vencimento IS NULL OR data_vencimento >= ${today}) THEN 1 END) AS count_pendente,
+        COUNT(CASE WHEN status = 'pendente' AND data_vencimento < ${today} THEN 1 END) AS count_vencido
+      FROM accounts_payable
+    `);
+    const summary = (rows as unknown as any[])[0];
+    return {
+      totalPendente: Number(summary?.total_pendente ?? 0),
+      totalVencido: Number(summary?.total_vencido ?? 0),
+      totalPagoMes: Number(summary?.total_pago_mes ?? 0),
+      countPendente: Number(summary?.count_pendente ?? 0),
+      countVencido: Number(summary?.count_vencido ?? 0),
+    };
   }
 }
 

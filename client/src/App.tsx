@@ -49,6 +49,8 @@ import SuppliersPage from "@/pages/inventory/suppliers";
 import AiAgentPage from "@/pages/settings/ai-agent";
 import QuoteAgentPage from "@/pages/quotes/agent";
 import UsersAdminPage from "@/pages/admin/users";
+import ReceivingPage from "@/pages/inventory/receiving";
+import AccountsPayablePage from "@/pages/financial/accounts-payable";
 
 function PrintRouter() {
   return (
@@ -107,6 +109,8 @@ function AppRouter() {
       <Route path="/vehicles/:id" component={VehicleDetailPage} />
       <Route path="/inventory/purchases" component={PurchasesPage} />
       <Route path="/inventory/suppliers" component={SuppliersPage} />
+      <Route path="/inventory/receiving" component={ReceivingPage} />
+      <Route path="/financial/accounts-payable" component={AccountsPayablePage} />
       <Route path="/settings/ai-agent" component={AiAgentPage} />
       {user?.role === "admin" && (
         <Route path="/admin/users" component={UsersAdminPage} />
