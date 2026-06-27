@@ -390,6 +390,7 @@ export interface IStorage {
     limit?: number;
   }): Promise<{ data: PurchaseRequest[]; total: number }>;
   updatePurchaseRequest(id: string, data: Partial<PurchaseRequest>): Promise<PurchaseRequest>;
+  approvePurchaseRequest(id: string, params: { fornecedorId?: string; fornecedorNome?: string; aprovadoPor?: string }): Promise<PurchaseRequest>;
 
   // Suppliers
   getSuppliers(params?: {
@@ -2033,6 +2034,36 @@ export class DatabaseStorage implements IStorage {
     const [row] = await db
       .update(purchaseRequests)
       .set({ ...data, updatedAt: new Date() } as any)
+      .where(eq(purchaseRequests.id, id))
+      .returning();
+    return row;
+  }
+
+  async approvePurchaseRequest(id: string, params: { fornecedorId?: string; fornecedorNome?: string; aprovadoPor?: string }): Promise<PurchaseRequest> {
+    const year = new Date().getFullYear();
+    const [lastOC] = await db
+      .select({ n: purchaseRequests.ordemCompraNumero })
+      .from(purchaseRequests)
+      .where(sql`ordem_compra_numero IS NOT NULL AND ordem_compra_numero LIKE ${`OC-${year}-%`}`)
+      .orderBy(desc(purchaseRequests.ordemCompraNumero))
+      .limit(1);
+    let nextNum = 1;
+    if (lastOC?.n) {
+      const parts = lastOC.n.split("-");
+      if (parts.length === 3) nextNum = parseInt(parts[2]) + 1;
+    }
+    const ordemCompraNumero = `OC-${year}-${nextNum.toString().padStart(4, "0")}`;
+    const [row] = await db
+      .update(purchaseRequests)
+      .set({
+        status: "aprovado",
+        fornecedorId: params.fornecedorId || null,
+        fornecedorNome: params.fornecedorNome || null,
+        aprovadoPor: params.aprovadoPor || null,
+        aprovadoEm: new Date(),
+        ordemCompraNumero,
+        updatedAt: new Date(),
+      } as any)
       .where(eq(purchaseRequests.id, id))
       .returning();
     return row;

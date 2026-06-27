@@ -19,8 +19,9 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import {
-  Plus, PackageOpen, Search, Eye, Pencil, XCircle, X, FileText, ChevronDown, CheckCircle2,
+  Plus, PackageOpen, Search, Eye, Pencil, XCircle, X, FileText, ChevronDown, CheckCircle2, Printer,
 } from "lucide-react";
+import { Link } from "wouter";
 
 type PurchaseRequest = {
   id: string;
@@ -35,9 +36,15 @@ type PurchaseRequest = {
   urgencia: string | null;
   observacao: string | null;
   status: string;
+  fornecedorId: string | null;
+  fornecedorNome: string | null;
+  ordemCompraNumero: string | null;
+  aprovadoPor: string | null;
   createdAt: string;
   updatedAt: string;
 };
+
+type Supplier = { id: string; nome: string; telefone?: string | null; email?: string | null };
 
 const STATUS_VARIANTS: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
   aguardando_informacoes: { label: "Aguardando informações", variant: "secondary" },
@@ -93,6 +100,14 @@ export default function PurchasesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<PurchaseRequest | null>(null);
 
+  // Approval dialog state
+  const [openApprove, setOpenApprove] = useState(false);
+  const [approveTarget, setApproveTarget] = useState<PurchaseRequest | null>(null);
+  const [approveSupId, setApproveSupId] = useState("");
+  const [approveSupNome, setApproveSupNome] = useState("");
+  const [approveSupOpen, setApproveSupOpen] = useState(false);
+  const approveSupRef = useRef<HTMLDivElement>(null);
+
   // Form fields
   const [fSolicitante, setFSolicitante] = useState("");
   const [fTelefone, setFTelefone] = useState("");
@@ -107,18 +122,34 @@ export default function PurchasesPage() {
     ? rawMatsData
     : (rawMatsData as { data: RawMaterial[] })?.data ?? [];
 
+  const { data: suppliersData } = useQuery<{ data: Supplier[] } | Supplier[]>({
+    queryKey: ["/api/suppliers"],
+  });
+  const suppliers: Supplier[] = Array.isArray(suppliersData)
+    ? suppliersData
+    : (suppliersData as { data: Supplier[] })?.data ?? [];
+
+  const filteredSuppliers = suppliers.filter((s) =>
+    s.nome.toLowerCase().includes(approveSupNome.toLowerCase())
+  );
+
   const filteredMaterials = rawMaterials.filter((m) =>
     m.nome.toLowerCase().includes(fMaterial.toLowerCase())
   );
 
   useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (materialRef.current && !materialRef.current.contains(e.target as Node)) {
-        setMaterialOpen(false);
-      }
+    const handlerMat = (e: MouseEvent) => {
+      if (materialRef.current && !materialRef.current.contains(e.target as Node)) setMaterialOpen(false);
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    const handlerSup = (e: MouseEvent) => {
+      if (approveSupRef.current && !approveSupRef.current.contains(e.target as Node)) setApproveSupOpen(false);
+    };
+    document.addEventListener("mousedown", handlerMat);
+    document.addEventListener("mousedown", handlerSup);
+    return () => {
+      document.removeEventListener("mousedown", handlerMat);
+      document.removeEventListener("mousedown", handlerSup);
+    };
   }, []);
   const [fQuantidade, setFQuantidade] = useState("");
   const [fUnidade, setFUnidade] = useState("");
@@ -173,12 +204,30 @@ export default function PurchasesPage() {
   });
 
   const approveMutation = useMutation({
-    mutationFn: async (id: string) => apiRequest("PATCH", `/api/purchase-requests/${id}`, { status: "aprovado" }),
-    onSuccess: () => {
+    mutationFn: async ({ id, fornecedorId, fornecedorNome }: { id: string; fornecedorId?: string; fornecedorNome?: string }) =>
+      apiRequest("PATCH", `/api/purchase-requests/${id}/approve`, {
+        fornecedorId: fornecedorId || undefined,
+        fornecedorNome: fornecedorNome || undefined,
+        aprovadoPor: user?.nome || user?.username,
+      }),
+    onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-requests"] });
-      toast({ title: "Solicitação aprovada", description: "A solicitação foi aprovada e está em cotação." });
+      setOpenApprove(false);
+      toast({ title: "Ordem de compra gerada!", description: "Solicitação aprovada. Use o botão de impressão para gerar o PDF." });
     },
   });
+
+  const openApproveDialog = (r: PurchaseRequest) => {
+    setApproveTarget(r);
+    setApproveSupId("");
+    setApproveSupNome("");
+    setOpenApprove(true);
+  };
+
+  const handleApprove = () => {
+    if (!approveTarget) return;
+    approveMutation.mutate({ id: approveTarget.id, fornecedorId: approveSupId || undefined, fornecedorNome: approveSupId ? undefined : approveSupNome || undefined });
+  };
 
   const resetForm = () => {
     setFSolicitante(user?.nome || user?.username || "");
@@ -323,13 +372,19 @@ export default function PurchasesPage() {
                             size="sm"
                             variant="ghost"
                             className="h-7 w-7 p-0 text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-950"
-                            onClick={() => approveMutation.mutate(r.id)}
-                            disabled={approveMutation.isPending}
-                            title="Aprovar"
+                            onClick={() => openApproveDialog(r)}
+                            title="Aprovar e gerar ordem"
                             data-testid={`button-approve-${r.id}`}
                           >
                             <CheckCircle2 className="h-3.5 w-3.5" />
                           </Button>
+                        )}
+                        {r.ordemCompraNumero && (
+                          <Link href={`/inventory/purchases/${r.id}/print`}>
+                            <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950" title={`Imprimir OC ${r.ordemCompraNumero}`}>
+                              <Printer className="h-3.5 w-3.5" />
+                            </Button>
+                          </Link>
                         )}
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openViewDialog(r)} title="Visualizar">
                           <Eye className="h-3.5 w-3.5" />
@@ -449,6 +504,76 @@ export default function PurchasesPage() {
             <Button variant="outline" onClick={() => setOpenForm(false)}>Cancelar</Button>
             <Button onClick={handleSave} disabled={!fMaterial.trim() || createMutation.isPending || updateMutation.isPending}>
               {createMutation.isPending || updateMutation.isPending ? "Salvando..." : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Approval Dialog */}
+      <Dialog open={openApprove} onOpenChange={setOpenApprove}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-green-600" />
+              Aprovar e Gerar Ordem de Compra
+            </DialogTitle>
+          </DialogHeader>
+          {approveTarget && (
+            <div className="space-y-4 py-2">
+              <div className="rounded-md bg-muted p-3 text-sm space-y-1">
+                <p><span className="font-medium">Solicitação:</span> {approveTarget.codigo}</p>
+                <p><span className="font-medium">Material:</span> {approveTarget.material}</p>
+                {approveTarget.quantidade && (
+                  <p><span className="font-medium">Quantidade:</span> {approveTarget.quantidade} {approveTarget.unidade || ""}</p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Fornecedor <span className="text-muted-foreground text-xs">(opcional)</span></Label>
+                <div className="relative" ref={approveSupRef}>
+                  <div className="flex items-center border rounded-md px-3 py-2 gap-2 bg-background cursor-pointer" onClick={() => setApproveSupOpen(true)}>
+                    <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                    <input
+                      className="flex-1 bg-transparent outline-none text-sm"
+                      placeholder="Buscar fornecedor cadastrado..."
+                      value={approveSupNome}
+                      onChange={(e) => { setApproveSupNome(e.target.value); setApproveSupId(""); setApproveSupOpen(true); }}
+                      data-testid="input-approve-supplier"
+                    />
+                    {approveSupId && <span className="text-xs text-green-600 font-medium">✓</span>}
+                  </div>
+                  {approveSupOpen && filteredSuppliers.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md max-h-48 overflow-y-auto">
+                      {filteredSuppliers.map((s) => (
+                        <div
+                          key={s.id}
+                          className="px-3 py-2 text-sm cursor-pointer hover:bg-accent"
+                          onMouseDown={() => { setApproveSupId(s.id); setApproveSupNome(s.nome); setApproveSupOpen(false); }}
+                        >
+                          {s.nome}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {approveSupOpen && filteredSuppliers.length === 0 && approveSupNome && (
+                    <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md">
+                      <div className="px-3 py-2 text-sm text-muted-foreground">Nenhum fornecedor encontrado. O nome digitado será usado.</div>
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">Se não selecionar um fornecedor cadastrado, o nome digitado será salvo como texto livre.</p>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenApprove(false)}>Cancelar</Button>
+            <Button
+              onClick={handleApprove}
+              disabled={approveMutation.isPending}
+              className="bg-green-600 hover:bg-green-700 text-white"
+              data-testid="button-confirm-approve"
+            >
+              {approveMutation.isPending ? "Aprovando..." : "Aprovar e Gerar OC"}
             </Button>
           </DialogFooter>
         </DialogContent>

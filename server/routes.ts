@@ -2160,6 +2160,19 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
     } catch (err) { handleError(res, err); }
   });
 
+  app.patch("/api/purchase-requests/:id/approve", async (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      const { fornecedorId, fornecedorNome, aprovadoPor } = req.body as {
+        fornecedorId?: string;
+        fornecedorNome?: string;
+        aprovadoPor?: string;
+      };
+      const row = await storage.approvePurchaseRequest(id, { fornecedorId, fornecedorNome, aprovadoPor });
+      res.json(row);
+    } catch (err) { handleError(res, err); }
+  });
+
   // ─── SUPPLIERS ───────────────────────────────────────────────────────────────
 
   app.get("/api/suppliers", async (req: Request, res: Response) => {

@@ -44,6 +44,7 @@ import VehicleExitsPage from "@/pages/vehicles/exits/index";
 import VehicleExitFormPage from "@/pages/vehicles/exits/form";
 import VehicleExitDetailPage from "@/pages/vehicles/exits/detail";
 import PurchasesPage from "@/pages/inventory/purchases";
+import PurchasePrintPage from "@/pages/inventory/purchases/print";
 import SuppliersPage from "@/pages/inventory/suppliers";
 import AiAgentPage from "@/pages/settings/ai-agent";
 import QuoteAgentPage from "@/pages/quotes/agent";
@@ -54,6 +55,7 @@ function PrintRouter() {
     <Switch>
       <Route path="/quotes/:id/print" component={QuotePrintPage} />
       <Route path="/orders/:id/print" component={OrderPrintPage} />
+      <Route path="/inventory/purchases/:id/print" component={PurchasePrintPage} />
     </Switch>
   );
 }
