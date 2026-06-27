@@ -79,6 +79,8 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+type Seller = { id: string; nome: string; telefone?: string | null };
+
 export default function PurchasesPage() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
@@ -92,6 +94,13 @@ export default function PurchasesPage() {
   // Form fields
   const [fSolicitante, setFSolicitante] = useState("");
   const [fTelefone, setFTelefone] = useState("");
+
+  const { data: sellersData } = useQuery<{ data: Seller[] } | Seller[]>({
+    queryKey: ["/api/sellers"],
+  });
+  const sellers: Seller[] = Array.isArray(sellersData)
+    ? sellersData
+    : (sellersData as { data: Seller[] })?.data ?? [];
   const [fMaterial, setFMaterial] = useState("");
   const [fQuantidade, setFQuantidade] = useState("");
   const [fUnidade, setFUnidade] = useState("");
@@ -305,8 +314,25 @@ export default function PurchasesPage() {
           </DialogHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
             <div className="space-y-1.5">
-              <Label htmlFor="solicitante">Solicitante</Label>
-              <Input id="solicitante" value={fSolicitante} onChange={(e) => setFSolicitante(e.target.value)} placeholder="Nome completo" />
+              <Label htmlFor="solicitante">Solicitante *</Label>
+              <Select
+                value={fSolicitante}
+                onValueChange={(val) => {
+                  setFSolicitante(val);
+                  const seller = sellers.find((s) => s.nome === val);
+                  if (seller?.telefone) setFTelefone(seller.telefone);
+                  else if (!editingId) setFTelefone("");
+                }}
+              >
+                <SelectTrigger id="solicitante" data-testid="select-solicitante">
+                  <SelectValue placeholder="Selecione o solicitante..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {sellers.map((s) => (
+                    <SelectItem key={s.id} value={s.nome}>{s.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="telefone">Telefone do solicitante</Label>
