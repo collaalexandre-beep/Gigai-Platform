@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -17,8 +17,9 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/auth-context";
 import {
-  Plus, PackageOpen, Search, Eye, Pencil, XCircle, X, FileText,
+  Plus, PackageOpen, Search, Eye, Pencil, XCircle, X, FileText, ChevronDown,
 } from "lucide-react";
 
 type PurchaseRequest = {
@@ -79,10 +80,11 @@ function formatDate(iso: string): string {
   return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
-type Seller = { id: string; nome: string; telefone?: string | null };
+type RawMaterial = { id: string; nome: string; unidade?: string | null };
 
 export default function PurchasesPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [tipoFilter, setTipoFilter] = useState("");
@@ -94,14 +96,30 @@ export default function PurchasesPage() {
   // Form fields
   const [fSolicitante, setFSolicitante] = useState("");
   const [fTelefone, setFTelefone] = useState("");
-
-  const { data: sellersData } = useQuery<{ data: Seller[] } | Seller[]>({
-    queryKey: ["/api/sellers"],
-  });
-  const sellers: Seller[] = Array.isArray(sellersData)
-    ? sellersData
-    : (sellersData as { data: Seller[] })?.data ?? [];
   const [fMaterial, setFMaterial] = useState("");
+  const [materialOpen, setMaterialOpen] = useState(false);
+  const materialRef = useRef<HTMLDivElement>(null);
+
+  const { data: rawMatsData } = useQuery<{ data: RawMaterial[] } | RawMaterial[]>({
+    queryKey: ["/api/raw-materials"],
+  });
+  const rawMaterials: RawMaterial[] = Array.isArray(rawMatsData)
+    ? rawMatsData
+    : (rawMatsData as { data: RawMaterial[] })?.data ?? [];
+
+  const filteredMaterials = rawMaterials.filter((m) =>
+    m.nome.toLowerCase().includes(fMaterial.toLowerCase())
+  );
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (materialRef.current && !materialRef.current.contains(e.target as Node)) {
+        setMaterialOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
   const [fQuantidade, setFQuantidade] = useState("");
   const [fUnidade, setFUnidade] = useState("");
   const [fOs, setFOs] = useState("");
@@ -155,12 +173,17 @@ export default function PurchasesPage() {
   });
 
   const resetForm = () => {
-    setFSolicitante(""); setFTelefone(""); setFMaterial(""); setFQuantidade("");
+    setFSolicitante(user?.nome || user?.username || "");
+    setFTelefone(""); setFMaterial(""); setFQuantidade("");
     setFUnidade(""); setFOs(""); setFTipo("estoque"); setFUrgencia("normal"); setFObs("");
     setEditingId(null);
   };
 
-  const openNew = () => { resetForm(); setOpenForm(true); };
+  const openNew = () => {
+    resetForm();
+    setFSolicitante(user?.nome || user?.username || "");
+    setOpenForm(true);
+  };
 
   const openEdit = (r: PurchaseRequest) => {
     setEditingId(r.id);
@@ -314,33 +337,61 @@ export default function PurchasesPage() {
           </DialogHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-2">
             <div className="space-y-1.5">
-              <Label htmlFor="solicitante">Solicitante *</Label>
-              <Select
+              <Label htmlFor="solicitante">Solicitante</Label>
+              <Input
+                id="solicitante"
+                data-testid="input-solicitante"
                 value={fSolicitante}
-                onValueChange={(val) => {
-                  setFSolicitante(val);
-                  const seller = sellers.find((s) => s.nome === val);
-                  if (seller?.telefone) setFTelefone(seller.telefone);
-                  else if (!editingId) setFTelefone("");
-                }}
-              >
-                <SelectTrigger id="solicitante" data-testid="select-solicitante">
-                  <SelectValue placeholder="Selecione o solicitante..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {sellers.map((s) => (
-                    <SelectItem key={s.id} value={s.nome}>{s.nome}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                readOnly={!editingId}
+                onChange={(e) => setFSolicitante(e.target.value)}
+                className={!editingId ? "bg-muted cursor-default" : ""}
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="telefone">Telefone do solicitante</Label>
               <Input id="telefone" value={fTelefone} onChange={(e) => setFTelefone(e.target.value)} placeholder="(11) 99999-9999" />
             </div>
-            <div className="space-y-1.5 sm:col-span-2">
+            <div className="space-y-1.5 sm:col-span-2" ref={materialRef}>
               <Label htmlFor="material">Material *</Label>
-              <Input id="material" value={fMaterial} onChange={(e) => setFMaterial(e.target.value)} placeholder="Ex: Tinta vinílica vermelha" />
+              <div className="relative">
+                <Input
+                  id="material"
+                  data-testid="input-material"
+                  value={fMaterial}
+                  onChange={(e) => { setFMaterial(e.target.value); setMaterialOpen(true); }}
+                  onFocus={() => setMaterialOpen(true)}
+                  placeholder="Digite ou escolha um material..."
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  onClick={() => setMaterialOpen((v) => !v)}
+                  tabIndex={-1}
+                >
+                  <ChevronDown className="w-4 h-4" />
+                </button>
+                {materialOpen && filteredMaterials.length > 0 && (
+                  <div className="absolute z-50 w-full mt-1 bg-popover border rounded-md shadow-md max-h-48 overflow-y-auto">
+                    {filteredMaterials.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground flex items-center justify-between"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setFMaterial(m.nome);
+                          if (m.unidade && !fUnidade) setFUnidade(m.unidade);
+                          setMaterialOpen(false);
+                        }}
+                      >
+                        <span>{m.nome}</span>
+                        {m.unidade && <span className="text-xs text-muted-foreground ml-2">{m.unidade}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="quantidade">Quantidade</Label>
