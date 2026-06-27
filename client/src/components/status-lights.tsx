@@ -1,4 +1,4 @@
-import { DollarSign, Factory, Package, Truck, Users } from "lucide-react";
+import { DollarSign, Factory, Package, Truck, Users, ShoppingCart } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { useQuery } from "@tanstack/react-query";
@@ -66,6 +66,16 @@ export function StatusLightsBar() {
     refetchOnWindowFocus: true,
   });
 
+  const { data: purchasePending } = useQuery<{ total: number }>({
+    queryKey: ["/api/purchase-requests", { status: "aguardando_aprovacao" }],
+    queryFn: () =>
+      fetch("/api/purchase-requests?status=aguardando_aprovacao&limit=1", { credentials: "include" })
+        .then((r) => r.json()),
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
+  const pendingCount = purchasePending?.total ?? 0;
+
   const ocorrenciasAbertas = vehicles.filter(v => v.ocorrenciaAberta);
   const hasOcorrencia = ocorrenciasAbertas.length > 0 || (maintSummary?.hasOpenIssues ?? false);
   const hasManutVermelho = maintSummary?.hasVermelho ?? false;
@@ -87,10 +97,24 @@ export function StatusLightsBar() {
     veiculoDetailParts.push(`${maintSummary!.countAmarelo} manutenção${maintSummary!.countAmarelo > 1 ? "ções" : ""} próxima${maintSummary!.countAmarelo > 1 ? "s" : ""} do vencimento`);
   }
 
+  let comprasStatus: LightStatus = "verde";
+  let comprasDetail = "";
+  if (pendingCount > 0) {
+    comprasStatus = "amarelo";
+    comprasDetail = `${pendingCount} solicitação${pendingCount > 1 ? "ões" : ""} aguardando aprovação`;
+  }
+
   const lights: StatusLight[] = [
-    { id: "financeiro", label: "Financeiro", status: "verde", icon: DollarSign },
-    { id: "producao",   label: "Produção",   status: "verde", icon: Factory    },
-    { id: "estoque",    label: "Estoque",    status: "verde", icon: Package    },
+    { id: "financeiro", label: "Financeiro", status: "verde",        icon: DollarSign  },
+    { id: "producao",   label: "Produção",   status: "verde",        icon: Factory     },
+    {
+      id: "compras",
+      label: "Compras",
+      status: comprasStatus,
+      detail: comprasDetail,
+      icon: ShoppingCart,
+      href: "/inventory/purchases",
+    },
     {
       id: "veiculos",
       label: "Veículos",
