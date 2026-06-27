@@ -1,0 +1,1 @@
+- [Auth system](auth-system.md) — session-based auth with crypto.scrypt (Node built-in, no bcrypt); admin seeded via seed-admin.ts on first boot if users table empty.

@@ -16,7 +16,6 @@ import {
   Users,
   UserCheck,
   Kanban,
-  Settings,
   Printer,
   ChevronRight,
   Clock,
@@ -32,7 +31,10 @@ import {
   PackageOpen,
   Truck,
   Bot,
+  ShieldCheck,
+  UserCog,
 } from "lucide-react";
+import { useAuth } from "@/contexts/auth-context";
 
 const navItems = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
@@ -72,6 +74,7 @@ const configItems = [
 
 export function AppSidebar() {
   const [location] = useLocation();
+  const { user, logout } = useAuth();
 
   const isActive = (url: string) => {
     if (url === "/dashboard") return location === "/dashboard" || location === "/";
@@ -182,22 +185,61 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {renderMenuItems(configItems)}
+              {user?.role === "admin" && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    className={
+                      isActive("/admin/users")
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                        : "text-sidebar-foreground"
+                    }
+                    data-testid="nav-usuarios"
+                  >
+                    <Link href="/admin/users" className="flex items-center gap-2.5">
+                      <UserCog className="w-4 h-4 flex-shrink-0" />
+                      <span className="text-sm">Usuários</span>
+                      {isActive("/admin/users") && (
+                        <ChevronRight className="w-3 h-3 ml-auto text-muted-foreground" />
+                      )}
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter className="px-2 py-3 border-t border-sidebar-border">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild className="text-sidebar-foreground">
-              <Link href="/settings" className="flex items-center gap-2.5">
-                <Settings className="w-4 h-4" />
-                <span className="text-sm">Configurações</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+        <div className="px-2 py-2 rounded-lg bg-sidebar-accent/50">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-7 h-7 rounded-full bg-sidebar-primary flex items-center justify-center flex-shrink-0">
+              <span className="text-xs font-bold text-sidebar-primary-foreground">
+                {(user?.nome || user?.username || "?").slice(0, 1).toUpperCase()}
+              </span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-sidebar-foreground truncate leading-none">
+                {user?.nome || user?.username}
+              </p>
+              <div className="flex items-center gap-1 mt-0.5">
+                {user?.role === "admin" && <ShieldCheck className="w-2.5 h-2.5 text-primary flex-shrink-0" />}
+                <p className="text-xs text-muted-foreground truncate">
+                  {user?.role === "admin" ? "Administrador" : user?.role === "gerente" ? "Gerente" : "Operador"}
+                </p>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={logout}
+            data-testid="button-logout"
+            className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-xs text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            Sair
+          </button>
+        </div>
       </SidebarFooter>
     </Sidebar>
   );

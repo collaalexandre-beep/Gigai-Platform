@@ -1,6 +1,32 @@
-import type { Express, Request, Response } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { hashPassword, verifyPassword } from "./auth";
+
+// ─── Session type augmentation ─────────────────────────────────────────────
+declare module "express-session" {
+  interface SessionData {
+    userId?: string;
+  }
+}
+
+// ─── Auth middleware ────────────────────────────────────────────────────────
+async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const userId = req.session?.userId;
+  if (!userId) return res.status(401).json({ error: "Não autenticado" });
+  const user = await storage.getUser(userId);
+  if (!user || !user.ativo) return res.status(401).json({ error: "Sessão inválida" });
+  (req as any).currentUser = user;
+  next();
+}
+
+async function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  await requireAuth(req, res, async () => {
+    const user = (req as any).currentUser;
+    if (user.role !== "admin") return res.status(403).json({ error: "Acesso restrito a administradores" });
+    next();
+  });
+}
 import { lookupCnpj, validateCnpj } from "./cnpj";
 import { z } from "zod";
 import PDFDocument from "pdfkit";
@@ -159,6 +185,92 @@ export async function registerRoutes(
   // ─── STATIC FILE SERVING (vehicle photos) ──────────────────────────────────
   const uploadsDir = path.join(process.cwd(), "uploads");
   app.use("/uploads", express.static(uploadsDir));
+
+  // ─── AUTH ───────────────────────────────────────────────────────────────────
+
+  app.post("/api/auth/login", async (req: Request, res: Response) => {
+    try {
+      const { username, password } = req.body;
+      if (!username || !password) return res.status(400).json({ error: "Usuário e senha são obrigatórios" });
+      const user = await storage.getUserByUsername(username.trim());
+      if (!user) return res.status(401).json({ error: "Usuário ou senha incorretos" });
+      if (!user.ativo) return res.status(403).json({ error: "Usuário inativo. Contate o administrador." });
+      const valid = await verifyPassword(password, user.password);
+      if (!valid) return res.status(401).json({ error: "Usuário ou senha incorretos" });
+      req.session.userId = user.id;
+      const { password: _pw, ...safeUser } = user;
+      return res.json({ user: safeUser });
+    } catch (err) { return handleError(res, err); }
+  });
+
+  app.post("/api/auth/logout", (req: Request, res: Response) => {
+    req.session.destroy(() => {});
+    res.json({ ok: true });
+  });
+
+  app.get("/api/auth/me", async (req: Request, res: Response) => {
+    const userId = req.session?.userId;
+    if (!userId) return res.status(401).json({ error: "Não autenticado" });
+    const user = await storage.getUser(userId);
+    if (!user || !user.ativo) return res.status(401).json({ error: "Sessão inválida" });
+    const { password: _pw, ...safeUser } = user;
+    return res.json(safeUser);
+  });
+
+  // ─── USERS (admin only) ─────────────────────────────────────────────────────
+
+  app.get("/api/users", requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      const list = await storage.listUsers();
+      return res.json(list.map(({ password: _pw, ...u }) => u));
+    } catch (err) { return handleError(res, err); }
+  });
+
+  app.post("/api/users", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const { username, password, nome, email, role, ativo } = req.body;
+      if (!username || !password) return res.status(400).json({ error: "Login e senha são obrigatórios" });
+      const existing = await storage.getUserByUsername(username.trim());
+      if (existing) return res.status(409).json({ error: "Nome de usuário já existe" });
+      const hashed = await hashPassword(password);
+      const user = await storage.createUser({
+        username: username.trim(),
+        password: hashed,
+        nome: nome || null,
+        email: email || null,
+        role: role || "operador",
+        ativo: ativo !== false,
+      });
+      const { password: _pw, ...safeUser } = user;
+      return res.status(201).json(safeUser);
+    } catch (err) { return handleError(res, err); }
+  });
+
+  app.patch("/api/users/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const id = getParam(req, "id");
+      const { password, nome, email, role, ativo } = req.body;
+      const data: Record<string, unknown> = {};
+      if (nome !== undefined) data.nome = nome;
+      if (email !== undefined) data.email = email;
+      if (role !== undefined) data.role = role;
+      if (ativo !== undefined) data.ativo = ativo;
+      if (password) data.password = await hashPassword(password);
+      const user = await storage.updateUser(id, data as any);
+      const { password: _pw, ...safeUser } = user;
+      return res.json(safeUser);
+    } catch (err) { return handleError(res, err); }
+  });
+
+  app.delete("/api/users/:id", requireAdmin, async (req: Request, res: Response) => {
+    try {
+      const id = getParam(req, "id");
+      const me = (req as any).currentUser;
+      if (me.id === id) return res.status(400).json({ error: "Não é possível remover o próprio usuário" });
+      await storage.deleteUser(id);
+      return res.json({ ok: true });
+    } catch (err) { return handleError(res, err); }
+  });
 
   // ─── CNPJ LOOKUP ───────────────────────────────────────────────────────────
 

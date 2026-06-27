@@ -8,7 +8,9 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { StatusLightsBar } from "@/components/status-lights";
+import { AuthProvider, useAuth } from "@/contexts/auth-context";
 import NotFound from "@/pages/not-found";
+import LoginPage from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import ClientsPage from "@/pages/clients/index";
 import ClientDetailPage from "@/pages/clients/detail";
@@ -34,7 +36,7 @@ import OrderDetailPage from "@/pages/orders/detail";
 import OrderPrintPage from "@/pages/orders/print";
 import CompaniesPage from "@/pages/companies/index";
 import CompanyFormPage from "@/pages/companies/form";
-import WhatsappPage from "@/pages/whatsapp/index";
+import WhatsappPage from "@/pages/whatsapp";
 import VehiclesPage from "@/pages/vehicles/index";
 import VehicleFormPage from "@/pages/vehicles/form";
 import VehicleDetailPage from "@/pages/vehicles/detail";
@@ -45,6 +47,7 @@ import PurchasesPage from "@/pages/inventory/purchases";
 import SuppliersPage from "@/pages/inventory/suppliers";
 import AiAgentPage from "@/pages/settings/ai-agent";
 import QuoteAgentPage from "@/pages/quotes/agent";
+import UsersAdminPage from "@/pages/admin/users";
 
 function PrintRouter() {
   return (
@@ -56,6 +59,7 @@ function PrintRouter() {
 }
 
 function AppRouter() {
+  const { user } = useAuth();
   return (
     <Switch>
       <Route path="/" component={() => <Redirect to="/dashboard" />} />
@@ -102,6 +106,9 @@ function AppRouter() {
       <Route path="/inventory/purchases" component={PurchasesPage} />
       <Route path="/inventory/suppliers" component={SuppliersPage} />
       <Route path="/settings/ai-agent" component={AiAgentPage} />
+      {user?.role === "admin" && (
+        <Route path="/admin/users" component={UsersAdminPage} />
+      )}
       <Route component={NotFound} />
     </Switch>
   );
@@ -109,7 +116,25 @@ function AppRouter() {
 
 function AppContent() {
   const [location] = useLocation();
+  const { user, isLoading } = useAuth();
   const isPrintPage = location.endsWith("/print");
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <>
+        <LoginPage />
+        <Toaster />
+      </>
+    );
+  }
 
   const sidebarStyle = {
     "--sidebar-width": "15rem",
@@ -154,7 +179,9 @@ export default function App() {
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <TooltipProvider>
-          <AppContent />
+          <AuthProvider>
+            <AppContent />
+          </AuthProvider>
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>
