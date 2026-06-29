@@ -398,7 +398,21 @@ export default function RawMaterialFormPage() {
   const [, setLocation] = useLocation();
   const isEditing = !!id;
 
-  const { data: rawMaterial, isLoading } = useQuery<RawMaterial>({
+  // Tenta achar o item no cache da lista (evita fetch separado e problemas de sessão)
+  const fromListCache = (): RawMaterial | undefined => {
+    const allListData = queryClient.getQueriesData<{ data: RawMaterial[]; total: number }>({
+      queryKey: ["/api/raw-materials"],
+    });
+    for (const [, qData] of allListData) {
+      if (qData?.data) {
+        const found = qData.data.find((m) => m.id === id);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  };
+
+  const { data: rawMaterial } = useQuery<RawMaterial>({
     queryKey: ["/api/raw-materials", id],
     queryFn: async () => {
       const res = await fetch(`/api/raw-materials/${id}`, { credentials: "include" });
@@ -406,26 +420,14 @@ export default function RawMaterialFormPage() {
       return res.json();
     },
     enabled: isEditing,
-    staleTime: 0, // sempre busca dado fresco ao abrir edição
+    initialData: isEditing ? fromListCache : undefined,
   });
 
-  // Mostra spinner enquanto carrega para modo edição
-  if (isEditing && isLoading) {
+  // Em modo edição: aguarda o dado (do cache ou do fetch)
+  if (isEditing && !rawMaterial) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  // Modo edição: aguarda dado antes de renderizar o form (evita defaultValues vazios)
-  if (isEditing && !rawMaterial) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
-        <p className="text-muted-foreground">Matéria-prima não encontrada.</p>
-        <Button variant="outline" onClick={() => setLocation("/raw-materials")}>
-          <ChevronLeft className="w-4 h-4 mr-1" /> Voltar
-        </Button>
       </div>
     );
   }
