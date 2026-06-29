@@ -63,7 +63,14 @@ import {
   insertVehicleIssueReportSchema,
   insertSupplierSchema,
   insertPurchaseRequestSchema,
+  rawMaterials,
+  purchaseRequests,
+  nfeImports,
+  nfeImportItems,
+  accountsPayable,
 } from "@shared/schema";
+import { db } from "./db";
+import { eq, and } from "drizzle-orm";
 import { calcMaintenanceItemStatus } from "./storage";
 import { generateProductSuggestion, suggestQuoteItem, generateSpecialQuote, adjustSpecialQuote, extractFromAdjustment, parseQuoteList } from "./ai";
 import { VEH_STEP_LABELS } from "./vehicle-wa";
@@ -3442,6 +3449,174 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
       const item = await storage.payAccountsPayable(String(req.params.id), Number(pagoValor), pagoFormaPagamento ?? "");
       if (!item) return res.status(404).json({ error: "Conta não encontrada" });
       res.json(item);
+    } catch (err) { handleError(res, err); }
+  });
+
+  // ─── CENTRAL DE SUPRIMENTOS — ATENÇÃO OPERACIONAL ─────────────────────────
+  app.get("/api/supplies/attention", requireAuth, async (_req: Request, res: Response) => {
+    try {
+      const items: Array<{
+        id: string;
+        type: "urgent" | "risk" | "attention" | "opportunity" | "info";
+        title: string;
+        description: string;
+        module: "estoque" | "compras" | "xml" | "financeiro" | "fornecedor";
+        entityId?: string;
+        entityType?: string;
+        actionLabel?: string;
+        actionUrl?: string;
+        priorityScore: number;
+        createdAt?: string;
+      }> = [];
+
+      // 1. ESTOQUE CRÍTICO
+      const materials = await db
+        .select()
+        .from(rawMaterials)
+        .where(eq(rawMaterials.ativo, true));
+
+      for (const mat of materials) {
+        const atual = Number(mat.estoqueAtual ?? 0);
+        const minimo = Number(mat.estoqueMinimo ?? 0);
+        if (minimo <= 0) continue;
+        if (atual <= 0) {
+          items.push({
+            id: `estoque-zero-${mat.id}`,
+            type: "urgent",
+            title: `Estoque zerado: ${mat.nome}`,
+            description: `Estoque atual: ${atual} ${mat.unidadeCompra || "un"}. Estoque mínimo: ${minimo} ${mat.unidadeCompra || "un"}.`,
+            module: "estoque",
+            entityId: mat.id,
+            entityType: "rawMaterial",
+            actionLabel: "Ver matéria-prima",
+            actionUrl: `/raw-materials/${mat.id}/edit`,
+            priorityScore: 100,
+            createdAt: mat.updatedAt?.toISOString(),
+          });
+        } else if (atual <= minimo) {
+          items.push({
+            id: `estoque-baixo-${mat.id}`,
+            type: "risk",
+            title: `Estoque abaixo do mínimo: ${mat.nome}`,
+            description: `Atual: ${atual} ${mat.unidadeCompra || "un"} | Mínimo: ${minimo} ${mat.unidadeCompra || "un"}.`,
+            module: "estoque",
+            entityId: mat.id,
+            entityType: "rawMaterial",
+            actionLabel: "Ver matéria-prima",
+            actionUrl: `/raw-materials/${mat.id}/edit`,
+            priorityScore: 80,
+            createdAt: mat.updatedAt?.toISOString(),
+          });
+        }
+      }
+
+      // 2. SOLICITAÇÕES DE COMPRA AGUARDANDO APROVAÇÃO
+      const pendingRequests = await db
+        .select()
+        .from(purchaseRequests)
+        .where(eq(purchaseRequests.status, "aguardando_aprovacao"));
+
+      for (const req of pendingRequests) {
+        const isUrgent = req.urgencia === "alta" || req.urgencia === "urgente";
+        items.push({
+          id: `compra-${req.id}`,
+          type: isUrgent ? "risk" : "attention",
+          title: `Solicitação aguardando aprovação: ${req.material}`,
+          description: `Solicitante: ${req.solicitanteNome || "Não informado"} | Urgência: ${req.urgencia || "normal"}${req.quantidade ? ` | Qtd: ${req.quantidade} ${req.unidade || ""}` : ""}.`,
+          module: "compras",
+          entityId: req.id,
+          entityType: "purchaseRequest",
+          actionLabel: "Ver solicitação",
+          actionUrl: `/inventory/purchases`,
+          priorityScore: isUrgent ? 75 : 50,
+          createdAt: req.createdAt?.toISOString(),
+        });
+      }
+
+      // 3. NF-e PENDENTES
+      const pendingNfe = await db
+        .select()
+        .from(nfeImports)
+        .where(eq(nfeImports.status, "pendente"));
+
+      for (const nfe of pendingNfe) {
+        const unmappedItems = await db
+          .select()
+          .from(nfeImportItems)
+          .where(and(
+            eq(nfeImportItems.nfeImportId, nfe.id),
+            eq(nfeImportItems.statusMatch, "nao_mapeado")
+          ));
+
+        const hasUnmapped = unmappedItems.length > 0;
+        items.push({
+          id: `nfe-${nfe.id}`,
+          type: hasUnmapped ? "risk" : "attention",
+          title: `NF-e pendente: ${nfe.fornecedorNome}`,
+          description: hasUnmapped
+            ? `${unmappedItems.length} item(ns) não mapeado(s) na NF-e nº ${nfe.numeroNfe || "s/n"}.`
+            : `NF-e nº ${nfe.numeroNfe || "s/n"} aguarda conferência.`,
+          module: "xml",
+          entityId: nfe.id,
+          entityType: "nfeImport",
+          actionLabel: "Conferir NF-e",
+          actionUrl: `/inventory/receiving`,
+          priorityScore: hasUnmapped ? 70 : 45,
+          createdAt: nfe.createdAt?.toISOString(),
+        });
+      }
+
+      // 4. CONTAS A PAGAR VENCIDAS OU PRÓXIMAS DO VENCIMENTO
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const in3Days = new Date(today);
+      in3Days.setDate(in3Days.getDate() + 3);
+
+      const pendingPayables = await db
+        .select()
+        .from(accountsPayable)
+        .where(eq(accountsPayable.status, "pendente"));
+
+      for (const payable of pendingPayables) {
+        if (!payable.dataVencimento) continue;
+        const venc = new Date(payable.dataVencimento);
+        venc.setHours(0, 0, 0, 0);
+
+        if (venc < today) {
+          const diasVencida = Math.round((today.getTime() - venc.getTime()) / 86400000);
+          items.push({
+            id: `pagar-vencida-${payable.id}`,
+            type: "urgent",
+            title: `Conta vencida: ${payable.fornecedorNome}`,
+            description: `Venceu há ${diasVencida} dia(s) | Valor: R$ ${Number(payable.valorTotal).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}${payable.numeroDocumento ? ` | Doc: ${payable.numeroDocumento}` : ""}.`,
+            module: "financeiro",
+            entityId: payable.id,
+            entityType: "accountsPayable",
+            actionLabel: "Ver contas a pagar",
+            actionUrl: `/financial/accounts-payable`,
+            priorityScore: 90 + Math.min(diasVencida, 10),
+            createdAt: payable.createdAt?.toISOString(),
+          });
+        } else if (venc <= in3Days) {
+          const diasRestantes = Math.round((venc.getTime() - today.getTime()) / 86400000);
+          items.push({
+            id: `pagar-proxima-${payable.id}`,
+            type: "attention",
+            title: `Conta vence em breve: ${payable.fornecedorNome}`,
+            description: `Vence em ${diasRestantes === 0 ? "hoje" : `${diasRestantes} dia(s)`} | Valor: R$ ${Number(payable.valorTotal).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}${payable.numeroDocumento ? ` | Doc: ${payable.numeroDocumento}` : ""}.`,
+            module: "financeiro",
+            entityId: payable.id,
+            entityType: "accountsPayable",
+            actionLabel: "Ver contas a pagar",
+            actionUrl: `/financial/accounts-payable`,
+            priorityScore: 60 + (3 - diasRestantes) * 5,
+            createdAt: payable.createdAt?.toISOString(),
+          });
+        }
+      }
+
+      items.sort((a, b) => b.priorityScore - a.priorityScore);
+      res.json(items);
     } catch (err) { handleError(res, err); }
   });
 

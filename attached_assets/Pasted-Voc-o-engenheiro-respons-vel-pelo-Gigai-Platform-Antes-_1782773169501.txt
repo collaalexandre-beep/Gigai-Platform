@@ -1,0 +1,137 @@
+Você é o engenheiro responsável pelo Gigai Platform.
+
+Antes de implementar, leia a documentação criada na pasta `/docs`, especialmente:
+
+* `docs/00-manifesto-gigai.md`
+* `docs/02-principios-de-arquitetura.md`
+* `docs/05-inteligencia-operacional.md`
+* `docs/06-motores-de-inteligencia.md`
+* `docs/modulos/suprimentos.md`
+
+Objetivo desta tarefa:
+
+Criar a primeira versão da **Central de Atenção de Suprimentos**, preservando o layout atual e reaproveitando o que já existe no sistema.
+
+Importante:
+
+* Não refatore o projeto inteiro.
+* Não altere o layout global.
+* Não remova funcionalidades existentes.
+* Não altere rotas existentes sem necessidade.
+* Não crie tabelas novas nesta fase, a menos que seja absolutamente necessário.
+* Use os dados e tabelas já existentes.
+* Trabalhe de forma incremental e segura.
+
+Arquivos/tabelas já existentes que devem ser considerados:
+
+* `shared/schema.ts`
+* `rawMaterials`
+* `purchaseRequests`
+* `suppliers`
+* `supplierProductAliases`
+* `nfeImports`
+* `nfeImportItems`
+* `accountsPayable`
+
+Páginas existentes relacionadas:
+
+* `client/src/pages/raw-materials/index.tsx`
+* `client/src/pages/raw-materials/form.tsx`
+* `client/src/pages/inventory/purchases.tsx`
+* `client/src/pages/inventory/receiving.tsx`
+* `client/src/pages/inventory/suppliers.tsx`
+* `client/src/pages/financial/accounts-payable.tsx`
+
+Criar uma nova tela chamada:
+
+**Central de Suprimentos**
+
+Ela deve funcionar como uma tela de atenção operacional, e não como dashboard fixo.
+
+Criar um endpoint novo:
+
+`GET /api/supplies/attention`
+
+Esse endpoint deve retornar uma lista de itens de atenção com este formato aproximado:
+
+```ts
+{
+  id: string;
+  type: "urgent" | "risk" | "attention" | "opportunity" | "info";
+  title: string;
+  description: string;
+  module: "estoque" | "compras" | "xml" | "financeiro" | "fornecedor";
+  entityId?: string;
+  entityType?: string;
+  actionLabel?: string;
+  actionUrl?: string;
+  priorityScore: number;
+  createdAt?: string;
+}
+```
+
+Regras iniciais para gerar itens de atenção:
+
+1. Estoque crítico:
+
+   * Buscar materiais ativos em `rawMaterials`.
+   * Se estoque atual for menor ou igual ao estoque mínimo, gerar alerta.
+   * Se estoque for zero ou negativo, classificar como `urgent`.
+   * Se estoque estiver abaixo do mínimo, classificar como `risk`.
+
+2. Solicitações de compra:
+
+   * Buscar `purchaseRequests` com status aguardando aprovação.
+   * Gerar item `attention`.
+   * Se a urgência for alta ou urgente, elevar para `risk`.
+
+3. XML/NF-e:
+
+   * Buscar `nfeImports` com status pendente.
+   * Se houver itens não mapeados em `nfeImportItems`, gerar item `risk`.
+   * Se XML estiver pendente mas sem divergência crítica, gerar item `attention`.
+   * O objetivo é mostrar apenas o que precisa de conferência humana.
+
+4. Contas a pagar:
+
+   * Buscar `accountsPayable` pendentes.
+   * Se vencidas, gerar `urgent`.
+   * Se vencem nos próximos 3 dias, gerar `attention`.
+   * Não gerar alerta apenas por existir conta a pagar futura.
+
+5. Fornecedores:
+
+   * Nesta fase, mostrar apenas informações básicas se houver dados relevantes já disponíveis.
+   * Não criar lógica complexa de promoção ainda.
+
+A tela deve ter:
+
+* título: “Central de Suprimentos”
+* subtítulo: “O que precisa da sua atenção agora”
+* cards de resumo no topo:
+
+  * Urgentes
+  * Riscos
+  * Atenção
+  * Oportunidades
+* lista principal ordenada por prioridade
+* badges visuais por tipo
+* botão de ação quando houver `actionUrl`
+* estado vazio dizendo: “Nenhum ponto crítico no momento.”
+
+Preservar o padrão visual atual do sistema com Tailwind/Radix/componentes existentes.
+
+Adicionar link para essa tela no menu/navegação onde fizer mais sentido, preferencialmente dentro da área de estoque/compras/suprimentos.
+
+Critérios de aceite:
+
+* A aplicação deve continuar funcionando.
+* A tela deve carregar sem erro.
+* O endpoint deve retornar JSON válido.
+* A tela deve exibir alertas reais com base nos dados existentes.
+* Nenhuma funcionalidade existente deve quebrar.
+* Não implementar IA real ainda.
+* Não implementar negociação automática ainda.
+* Não implementar marketplace ainda.
+
+Esta é apenas a primeira versão operacional da Central de Atenção de Suprimentos.

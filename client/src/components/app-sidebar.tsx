@@ -36,6 +36,7 @@ import {
   UserCog,
   Wallet,
   ScanBarcode,
+  Bell,
 } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 
@@ -64,6 +65,7 @@ const vehicleItems = [
 ];
 
 const inventoryItems = [
+  { title: "Central de Suprimentos", url: "/supplies/attention", icon: Bell },
   { title: "Compras", url: "/inventory/purchases", icon: PackageOpen },
   { title: "Fornecedores", url: "/inventory/suppliers", icon: Truck },
   { title: "Recebimento NF-e", url: "/inventory/receiving", icon: ScanBarcode },
