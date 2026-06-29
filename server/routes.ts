@@ -3465,6 +3465,9 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
         entityType?: string;
         actionLabel?: string;
         actionUrl?: string;
+        secondaryActionLabel?: string;
+        secondaryActionUrl?: string;
+        nextStep?: string;
         priorityScore: number;
         createdAt?: string;
       }> = [];
@@ -3478,32 +3481,57 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
       for (const mat of materials) {
         const atual = Number(mat.estoqueAtual ?? 0);
         const minimo = Number(mat.estoqueMinimo ?? 0);
+        const un = mat.unidadeCompra || "un";
         if (minimo <= 0) continue;
+
         if (atual <= 0) {
           items.push({
             id: `estoque-zero-${mat.id}`,
             type: "urgent",
             title: `Estoque zerado: ${mat.nome}`,
-            description: `Estoque atual: ${atual} ${mat.unidadeCompra || "un"}. Estoque mínimo: ${minimo} ${mat.unidadeCompra || "un"}.`,
+            description: `Estoque atual: 0 ${un}. Estoque mínimo configurado: ${minimo} ${un}. Recomenda-se avaliar reposição imediatamente.`,
             module: "estoque",
             entityId: mat.id,
             entityType: "rawMaterial",
             actionLabel: "Ver matéria-prima",
             actionUrl: `/raw-materials/${mat.id}/edit`,
+            secondaryActionLabel: "Criar solicitação de compra",
+            secondaryActionUrl: `/inventory/purchases`,
+            nextStep: "Criar solicitação de compra com urgência",
             priorityScore: 100,
             createdAt: mat.updatedAt?.toISOString(),
           });
-        } else if (atual <= minimo) {
+        } else if (atual === minimo) {
+          items.push({
+            id: `estoque-limite-${mat.id}`,
+            type: "attention",
+            title: `Estoque no limite mínimo: ${mat.nome}`,
+            description: `Estoque atual: ${atual} ${un}. Estoque mínimo configurado: ${minimo} ${un}. Recomenda-se avaliar reposição.`,
+            module: "estoque",
+            entityId: mat.id,
+            entityType: "rawMaterial",
+            actionLabel: "Ver matéria-prima",
+            actionUrl: `/raw-materials/${mat.id}/edit`,
+            secondaryActionLabel: "Criar solicitação de compra",
+            secondaryActionUrl: `/inventory/purchases`,
+            nextStep: "Avaliar reposição preventiva",
+            priorityScore: 60,
+            createdAt: mat.updatedAt?.toISOString(),
+          });
+        } else if (atual < minimo) {
           items.push({
             id: `estoque-baixo-${mat.id}`,
             type: "risk",
             title: `Estoque abaixo do mínimo: ${mat.nome}`,
-            description: `Atual: ${atual} ${mat.unidadeCompra || "un"} | Mínimo: ${minimo} ${mat.unidadeCompra || "un"}.`,
+            description: `Estoque atual: ${atual} ${un}. Estoque mínimo configurado: ${minimo} ${un}. Recomenda-se avaliar reposição.`,
             module: "estoque",
             entityId: mat.id,
             entityType: "rawMaterial",
             actionLabel: "Ver matéria-prima",
             actionUrl: `/raw-materials/${mat.id}/edit`,
+            secondaryActionLabel: "Criar solicitação de compra",
+            secondaryActionUrl: `/inventory/purchases`,
+            nextStep: "Criar solicitação de compra",
             priorityScore: 80,
             createdAt: mat.updatedAt?.toISOString(),
           });
@@ -3518,16 +3546,18 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
 
       for (const req of pendingRequests) {
         const isUrgent = req.urgencia === "alta" || req.urgencia === "urgente";
+        const urgenciaLabel = req.urgencia === "alta" ? "Alta" : req.urgencia === "urgente" ? "Urgente" : req.urgencia === "normal" ? "Normal" : req.urgencia || "Normal";
         items.push({
           id: `compra-${req.id}`,
           type: isUrgent ? "risk" : "attention",
           title: `Solicitação aguardando aprovação: ${req.material}`,
-          description: `Solicitante: ${req.solicitanteNome || "Não informado"} | Urgência: ${req.urgencia || "normal"}${req.quantidade ? ` | Qtd: ${req.quantidade} ${req.unidade || ""}` : ""}.`,
+          description: `Solicitante: ${req.solicitanteNome || "Não informado"}. Urgência: ${urgenciaLabel}.${req.quantidade ? ` Quantidade: ${req.quantidade} ${req.unidade || ""}.` : ""}`,
           module: "compras",
           entityId: req.id,
           entityType: "purchaseRequest",
-          actionLabel: "Ver solicitação",
+          actionLabel: "Ver solicitações",
           actionUrl: `/inventory/purchases`,
+          nextStep: isUrgent ? "Aprovar ou escalar solicitação urgente" : "Avaliar e aprovar solicitação",
           priorityScore: isUrgent ? 75 : 50,
           createdAt: req.createdAt?.toISOString(),
         });
@@ -3554,13 +3584,14 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
           type: hasUnmapped ? "risk" : "attention",
           title: `NF-e pendente: ${nfe.fornecedorNome}`,
           description: hasUnmapped
-            ? `${unmappedItems.length} item(ns) não mapeado(s) na NF-e nº ${nfe.numeroNfe || "s/n"}.`
-            : `NF-e nº ${nfe.numeroNfe || "s/n"} aguarda conferência.`,
+            ? `NF-e nº ${nfe.numeroNfe || "s/n"} possui ${unmappedItems.length} item(ns) não mapeado(s). Necessária conferência antes de confirmar o recebimento.`
+            : `NF-e nº ${nfe.numeroNfe || "s/n"} aguarda conferência e confirmação de recebimento.`,
           module: "xml",
           entityId: nfe.id,
           entityType: "nfeImport",
           actionLabel: "Conferir NF-e",
           actionUrl: `/inventory/receiving`,
+          nextStep: hasUnmapped ? "Mapear itens e conferir XML" : "Conferir XML",
           priorityScore: hasUnmapped ? 70 : 45,
           createdAt: nfe.createdAt?.toISOString(),
         });
@@ -3581,6 +3612,8 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
         if (!payable.dataVencimento) continue;
         const venc = new Date(payable.dataVencimento);
         venc.setHours(0, 0, 0, 0);
+        const valorFmt = `R$ ${Number(payable.valorTotal).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
+        const docInfo = payable.numeroDocumento ? ` Documento: ${payable.numeroDocumento}.` : "";
 
         if (venc < today) {
           const diasVencida = Math.round((today.getTime() - venc.getTime()) / 86400000);
@@ -3588,12 +3621,13 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
             id: `pagar-vencida-${payable.id}`,
             type: "urgent",
             title: `Conta vencida: ${payable.fornecedorNome}`,
-            description: `Venceu há ${diasVencida} dia(s) | Valor: R$ ${Number(payable.valorTotal).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}${payable.numeroDocumento ? ` | Doc: ${payable.numeroDocumento}` : ""}.`,
+            description: `Venceu há ${diasVencida} dia(s). Valor: ${valorFmt}.${docInfo}`,
             module: "financeiro",
             entityId: payable.id,
             entityType: "accountsPayable",
             actionLabel: "Ver contas a pagar",
             actionUrl: `/financial/accounts-payable`,
+            nextStep: "Ver contas a pagar e registrar pagamento",
             priorityScore: 90 + Math.min(diasVencida, 10),
             createdAt: payable.createdAt?.toISOString(),
           });
@@ -3603,12 +3637,13 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
             id: `pagar-proxima-${payable.id}`,
             type: "attention",
             title: `Conta vence em breve: ${payable.fornecedorNome}`,
-            description: `Vence em ${diasRestantes === 0 ? "hoje" : `${diasRestantes} dia(s)`} | Valor: R$ ${Number(payable.valorTotal).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}${payable.numeroDocumento ? ` | Doc: ${payable.numeroDocumento}` : ""}.`,
+            description: `Vence ${diasRestantes === 0 ? "hoje" : `em ${diasRestantes} dia(s)`}. Valor: ${valorFmt}.${docInfo}`,
             module: "financeiro",
             entityId: payable.id,
             entityType: "accountsPayable",
             actionLabel: "Ver contas a pagar",
             actionUrl: `/financial/accounts-payable`,
+            nextStep: "Ver contas a pagar",
             priorityScore: 60 + (3 - diasRestantes) * 5,
             createdAt: payable.createdAt?.toISOString(),
           });
