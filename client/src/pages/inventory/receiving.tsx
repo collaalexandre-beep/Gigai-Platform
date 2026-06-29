@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -6,25 +6,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  Upload, FileText, CheckCircle2, XCircle, AlertTriangle, Search,
-  PackageCheck, Eye, X, ArrowLeft, ChevronRight, Save, Ban, Info,
+  Upload, PackageCheck, Eye, ArrowLeft, CheckCircle2, AlertTriangle, Ban, Info,
 } from "lucide-react";
-import { Link } from "wouter";
 
 type RawMaterial = { id: string; nome: string; unidadeCompra: string };
-type Supplier = { id: string; nome: string; cnpjCpf?: string | null };
 
 type ParsedItem = {
   codigoProduto: string | null;
@@ -69,10 +59,12 @@ type NfeImport = {
   createdAt: string;
 };
 
+type MatchedSupplier = { id: string; nome: string } | null;
+
 const STATUS_VARIANTS: Record<string, { label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = {
-  pendente: { label: "Pendente", variant: "secondary" },
+  pendente:   { label: "Pendente",   variant: "secondary" },
   confirmado: { label: "Confirmado", variant: "default" },
-  cancelado: { label: "Cancelado", variant: "destructive" },
+  cancelado:  { label: "Cancelado",  variant: "destructive" },
 };
 
 const fmt = (v: number | string | null | undefined) =>
@@ -83,7 +75,7 @@ const fmtQty = (v: number) =>
 
 const fmtDate = (d: string | null | undefined) => {
   if (!d) return "—";
-  const parts = d.substring(0, 10).split("-");
+  const parts = String(d).substring(0, 10).split("-");
   return `${parts[2]}/${parts[1]}/${parts[0]}`;
 };
 
@@ -95,20 +87,18 @@ export default function ReceivingPage() {
   const [viewId, setViewId] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
+
   const [parsedData, setParsedData] = useState<{
     parsed: ParsedNfe;
-    matchedSupplier: Supplier | null;
-    alreadyImported: boolean;
+    matchedSupplier: MatchedSupplier;
     xmlContent: string;
   } | null>(null);
   const [items, setItems] = useState<ParsedItem[]>([]);
   const [duplicatas, setDuplicatas] = useState<ParsedDup[]>([]);
-  const [supplierId, setSupplierId] = useState<string | null>(null);
-  const [showPayDialog, setShowPayDialog] = useState(false);
-  const [payTarget, setPayTarget] = useState<any | null>(null);
-  const [payValor, setPayValor] = useState("");
-  const [payForma, setPayForma] = useState("boleto");
+
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // ── Queries ──────────────────────────────────────────────────────────────────
 
   const { data: listData, isLoading: listLoading } = useQuery<{ data: NfeImport[]; total: number }>({
     queryKey: ["/api/nfe/imports"],
@@ -123,23 +113,19 @@ export default function ReceivingPage() {
     ? rawMatsData
     : (rawMatsData as any)?.data ?? [];
 
-  const { data: suppliersData } = useQuery<{ data: Supplier[] } | Supplier[]>({
-    queryKey: ["/api/suppliers"],
-  });
-  const suppliers: Supplier[] = Array.isArray(suppliersData)
-    ? suppliersData
-    : (suppliersData as any)?.data ?? [];
-
   const { data: viewData } = useQuery<NfeImport & { items: any[] }>({
     queryKey: ["/api/nfe/imports", viewId],
     queryFn: () => fetch(`/api/nfe/imports/${viewId}`, { credentials: "include" }).then((r) => r.json()),
     enabled: step === "view" && !!viewId,
   });
 
-  const saveAndConfirmMutation = useMutation({
+  // ── Mutations ─────────────────────────────────────────────────────────────────
+
+  const confirmMutation = useMutation({
     mutationFn: async () => {
       if (!parsedData) throw new Error("Sem dados");
-      const { parsed, xmlContent } = parsedData;
+      const { parsed, xmlContent, matchedSupplier } = parsedData;
+
       const header = {
         chaveAcesso: parsed.chaveAcesso,
         numeroNfe: parsed.numeroNfe,
@@ -148,10 +134,11 @@ export default function ReceivingPage() {
         fornecedorCnpj: parsed.fornecedorCnpj,
         fornecedorNome: parsed.fornecedorNome,
         fornecedorIe: parsed.fornecedorIe,
-        supplierId: supplierId || null,
+        supplierId: matchedSupplier?.id ?? null,
         valorTotal: String(parsed.valorTotal),
         xmlContent,
       };
+
       const itemsToSave = items.map((i) => ({
         codigoProduto: i.codigoProduto,
         descricaoProduto: i.descricaoProduto,
@@ -167,23 +154,28 @@ export default function ReceivingPage() {
         quantidadeInterna: String(i.quantidadeInterna),
         statusMatch: i.statusMatch,
       }));
-      const saved = await apiRequest("POST", "/api/nfe/imports", { header, items: itemsToSave });
-      const nfe = await saved.json();
-      const confirmed = await apiRequest("POST", `/api/nfe/imports/${nfe.id}/confirm`, {
+
+      // Save the NF-e
+      const savedRes = await apiRequest("POST", "/api/nfe/imports", { header, items: itemsToSave });
+      const nfe = await savedRes.json();
+
+      // Confirm (updates stock + creates accounts payable)
+      const confirmedRes = await apiRequest("POST", `/api/nfe/imports/${nfe.id}/confirm`, {
         duplicatas,
-        supplierId: supplierId || null,
+        supplierId: matchedSupplier?.id ?? null,
       });
-      return confirmed.json();
+      return confirmedRes.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/nfe/imports"] });
       queryClient.invalidateQueries({ queryKey: ["/api/raw-materials"] });
       queryClient.invalidateQueries({ queryKey: ["/api/accounts-payable"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/accounts-payable/summary"] });
       toast({ title: "Recebimento confirmado!", description: "Estoque atualizado e contas a pagar geradas." });
       setStep("list");
       setParsedData(null);
     },
-    onError: () => toast({ title: "Erro", description: "Falha ao confirmar recebimento.", variant: "destructive" }),
+    onError: (e: any) => toast({ title: "Erro ao confirmar", description: e?.message ?? "Tente novamente.", variant: "destructive" }),
   });
 
   const saveAliasMutation = useMutation({
@@ -193,20 +185,14 @@ export default function ReceivingPage() {
       fatorConversao: string;
       unidadeFornecedor: string | null;
       supplierId?: string | null;
-    }) => {
-      const r = await apiRequest("POST", "/api/supplier-aliases", {
-        ...data,
-        supplierId: supplierId || null,
-      });
-      return r.json();
-    },
-    onSuccess: () => {
-      toast({ title: "Alias salvo", description: "Este produto será reconhecido automaticamente nas próximas notas." });
-    },
+    }) => (await apiRequest("POST", "/api/supplier-aliases", data)).json(),
+    onSuccess: () => toast({ title: "Alias salvo", description: "Reconhecido automaticamente nas próximas notas." }),
   });
 
+  // ── File handling ─────────────────────────────────────────────────────────────
+
   const handleFile = async (file: File) => {
-    if (!file.name.endsWith(".xml") && !file.name.endsWith(".XML")) {
+    if (!file.name.toLowerCase().endsWith(".xml")) {
       toast({ title: "Arquivo inválido", description: "Selecione um arquivo XML de NF-e.", variant: "destructive" });
       return;
     }
@@ -215,34 +201,39 @@ export default function ReceivingPage() {
       const form = new FormData();
       form.append("xml", file);
       const res = await fetch("/api/nfe/parse", { method: "POST", credentials: "include", body: form });
-      if (!res.ok) throw new Error("Falha ao processar XML");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Falha ao processar XML");
+      }
       const data = await res.json();
       if (data.alreadyImported) {
         toast({ title: "NF-e duplicada", description: "Esta chave de acesso já foi importada.", variant: "destructive" });
-        setUploading(false);
         return;
       }
-      setParsedData(data);
-      setItems(data.parsed.items);
-      setDuplicatas(data.parsed.duplicatas);
-      setSupplierId(data.matchedSupplier?.id ?? null);
+      if (!data.parsed.items || data.parsed.items.length === 0) {
+        toast({ title: "Aviso", description: "Nenhum item encontrado no XML. Verifique se o arquivo é uma NF-e válida.", variant: "destructive" });
+      }
+      setParsedData({ parsed: data.parsed, matchedSupplier: data.matchedSupplier, xmlContent: data.xmlContent });
+      setItems(data.parsed.items ?? []);
+      setDuplicatas(data.parsed.duplicatas ?? []);
       setStep("review");
-    } catch {
-      toast({ title: "Erro", description: "Não foi possível processar o XML.", variant: "destructive" });
+    } catch (e: any) {
+      toast({ title: "Erro", description: e.message ?? "Não foi possível processar o XML.", variant: "destructive" });
     } finally {
       setUploading(false);
     }
   };
+
+  // ── Item helpers ──────────────────────────────────────────────────────────────
 
   const updateItem = (idx: number, patch: Partial<ParsedItem>) => {
     setItems((prev) => {
       const next = [...prev];
       const updated = { ...next[idx], ...patch };
       if (patch.rawMaterialId !== undefined || patch.fatorConversao !== undefined) {
-        const rm = rawMaterials.find((r) => r.id === (patch.rawMaterialId ?? next[idx].rawMaterialId));
         const fc = patch.fatorConversao ?? next[idx].fatorConversao;
         updated.quantidadeInterna = updated.quantidade * fc;
-        if (rm || patch.rawMaterialId) updated.statusMatch = "mapeado";
+        if (patch.rawMaterialId) updated.statusMatch = "mapeado";
       }
       next[idx] = updated;
       return next;
@@ -250,14 +241,13 @@ export default function ReceivingPage() {
   };
 
   const updateDup = (idx: number, patch: Partial<ParsedDup>) => {
-    setDuplicatas((prev) => {
-      const next = [...prev];
-      next[idx] = { ...next[idx], ...patch };
-      return next;
-    });
+    setDuplicatas((prev) => { const n = [...prev]; n[idx] = { ...n[idx], ...patch }; return n; });
   };
 
   const pendingCount = items.filter((i) => i.statusMatch === "nao_mapeado").length;
+  const mappedCount  = items.filter((i) => i.statusMatch === "mapeado").length;
+
+  // ── RENDER: list ──────────────────────────────────────────────────────────────
 
   if (step === "list") {
     return (
@@ -268,8 +258,7 @@ export default function ReceivingPage() {
             <p className="text-muted-foreground text-sm mt-1">Importe notas fiscais XML para dar entrada no estoque</p>
           </div>
           <Button onClick={() => setStep("upload")} data-testid="button-new-import">
-            <Upload className="w-4 h-4 mr-2" />
-            Importar NF-e
+            <Upload className="w-4 h-4 mr-2" /> Importar NF-e
           </Button>
         </div>
 
@@ -289,13 +278,15 @@ export default function ReceivingPage() {
               {listLoading ? (
                 <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">Carregando...</TableCell></TableRow>
               ) : !listData?.data?.length ? (
-                <TableRow><TableCell colSpan={6} className="text-center py-16 text-muted-foreground">
-                  <div className="flex flex-col items-center gap-2">
-                    <PackageCheck className="w-10 h-10 opacity-30" />
-                    <p>Nenhuma NF-e importada ainda</p>
-                    <Button variant="outline" size="sm" onClick={() => setStep("upload")}>Importar primeira NF-e</Button>
-                  </div>
-                </TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-16 text-muted-foreground">
+                    <div className="flex flex-col items-center gap-3">
+                      <PackageCheck className="w-10 h-10 opacity-30" />
+                      <p>Nenhuma NF-e importada ainda</p>
+                      <Button variant="outline" size="sm" onClick={() => setStep("upload")}>Importar primeira NF-e</Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
               ) : listData.data.map((nfe) => {
                 const sv = STATUS_VARIANTS[nfe.status] ?? { label: nfe.status, variant: "secondary" as const };
                 return (
@@ -313,7 +304,8 @@ export default function ReceivingPage() {
                       <Badge variant={sv.variant} className="text-xs">{sv.label}</Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => { setViewId(nfe.id); setStep("view"); }}>
+                      <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
+                        onClick={() => { setViewId(nfe.id); setStep("view"); }}>
                         <Eye className="h-3.5 w-3.5" />
                       </Button>
                     </TableCell>
@@ -327,11 +319,15 @@ export default function ReceivingPage() {
     );
   }
 
+  // ── RENDER: upload ────────────────────────────────────────────────────────────
+
   if (step === "upload") {
     return (
       <div className="p-6 space-y-6 max-w-2xl mx-auto">
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" onClick={() => setStep("list")}><ArrowLeft className="w-4 h-4 mr-1" /> Voltar</Button>
+          <Button variant="ghost" size="sm" onClick={() => setStep("list")}>
+            <ArrowLeft className="w-4 h-4 mr-1" /> Voltar
+          </Button>
           <h1 className="text-xl font-bold">Importar NF-e</h1>
         </div>
 
@@ -344,11 +340,12 @@ export default function ReceivingPage() {
           onClick={() => fileRef.current?.click()}
           data-testid="drop-zone-xml"
         >
-          <input ref={fileRef} type="file" accept=".xml" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+          <input ref={fileRef} type="file" accept=".xml,.XML" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
           {uploading ? (
             <div className="flex flex-col items-center gap-3">
               <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent" />
-              <p className="text-muted-foreground">Processando XML...</p>
+              <p className="text-muted-foreground">Processando XML…</p>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3">
@@ -357,7 +354,7 @@ export default function ReceivingPage() {
                 <p className="font-medium text-lg">Arraste o arquivo XML aqui</p>
                 <p className="text-muted-foreground text-sm mt-1">ou clique para selecionar</p>
               </div>
-              <Badge variant="outline" className="text-xs">Arquivo XML de NF-e (NF-e / nfeProc)</Badge>
+              <Badge variant="outline" className="text-xs">Arquivo XML de NF-e (nfeProc / NFe)</Badge>
             </div>
           )}
         </div>
@@ -365,7 +362,15 @@ export default function ReceivingPage() {
     );
   }
 
-  if (step === "view" && viewData) {
+  // ── RENDER: view ──────────────────────────────────────────────────────────────
+
+  if (step === "view") {
+    if (!viewData) return (
+      <div className="p-6">
+        <Button variant="ghost" size="sm" onClick={() => setStep("list")}><ArrowLeft className="w-4 h-4 mr-1" /> Voltar</Button>
+        <p className="mt-4 text-muted-foreground">Carregando…</p>
+      </div>
+    );
     const sv = STATUS_VARIANTS[viewData.status] ?? { label: viewData.status, variant: "secondary" as const };
     return (
       <div className="p-6 space-y-6">
@@ -383,17 +388,16 @@ export default function ReceivingPage() {
         </div>
 
         <Separator />
-        <h3 className="font-semibold">Itens</h3>
+        <h3 className="font-semibold">Itens ({(viewData as any).items?.length ?? 0})</h3>
         <div className="border rounded-lg overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Produto NF-e</TableHead>
-                <TableHead>Qtd. NF-e</TableHead>
+                <TableHead>Qtd</TableHead>
                 <TableHead>Un.</TableHead>
                 <TableHead>Valor Unit.</TableHead>
-                <TableHead>Mat. Interna</TableHead>
-                <TableHead>Qtd. Interna</TableHead>
+                <TableHead>Qtd Interna</TableHead>
                 <TableHead>Status</TableHead>
               </TableRow>
             </TableHeader>
@@ -407,11 +411,10 @@ export default function ReceivingPage() {
                   <TableCell className="text-sm">{fmtQty(Number(item.quantidade))}</TableCell>
                   <TableCell className="text-xs text-muted-foreground">{item.unidadeComercial ?? "—"}</TableCell>
                   <TableCell className="text-sm">{fmt(item.valorUnitario)}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground">{item.rawMaterialId ? "Mapeado" : "—"}</TableCell>
                   <TableCell className="text-sm">{item.quantidadeInterna ? fmtQty(Number(item.quantidadeInterna)) : "—"}</TableCell>
                   <TableCell>
-                    {item.statusMatch === "mapeado" && <Badge className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Mapeado</Badge>}
-                    {item.statusMatch === "ignorado" && <Badge variant="outline" className="text-xs">Ignorado</Badge>}
+                    {item.statusMatch === "mapeado"     && <Badge className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">Mapeado</Badge>}
+                    {item.statusMatch === "ignorado"    && <Badge variant="outline" className="text-xs">Ignorado</Badge>}
                     {item.statusMatch === "nao_mapeado" && <Badge variant="secondary" className="text-xs">Não mapeado</Badge>}
                   </TableCell>
                 </TableRow>
@@ -423,77 +426,102 @@ export default function ReceivingPage() {
     );
   }
 
+  // ── RENDER: review ────────────────────────────────────────────────────────────
+
   if (step === "review" && parsedData) {
-    const { parsed } = parsedData;
+    const { parsed, matchedSupplier } = parsedData;
+
     return (
-      <div className="p-6 space-y-6">
-        <div className="flex items-center justify-between">
+      <div className="p-6 space-y-5">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" onClick={() => { setStep("upload"); setParsedData(null); }}>
               <ArrowLeft className="w-4 h-4 mr-1" /> Voltar
             </Button>
             <div>
-              <h1 className="text-xl font-bold">Revisar NF-e {parsed.numeroNfe ?? ""}</h1>
+              <h1 className="text-xl font-bold">
+                NF-e {parsed.numeroNfe ? `${parsed.numeroNfe}/${parsed.serie ?? "1"}` : "(sem número)"}
+              </h1>
               <p className="text-muted-foreground text-sm">{parsed.fornecedorNome} — {fmt(parsed.valorTotal)}</p>
             </div>
           </div>
-          <div className="flex gap-2">
-            <Button
-              variant="default"
-              onClick={() => saveAndConfirmMutation.mutate()}
-              disabled={saveAndConfirmMutation.isPending}
-              data-testid="button-confirm-receipt"
-            >
-              <PackageCheck className="w-4 h-4 mr-2" />
-              {saveAndConfirmMutation.isPending ? "Confirmando..." : "Confirmar Recebimento"}
-            </Button>
-          </div>
+          <Button
+            onClick={() => confirmMutation.mutate()}
+            disabled={confirmMutation.isPending}
+            data-testid="button-confirm-receipt"
+          >
+            <PackageCheck className="w-4 h-4 mr-2" />
+            {confirmMutation.isPending ? "Confirmando…" : "Confirmar Recebimento"}
+          </Button>
         </div>
 
+        {/* Aviso de itens não mapeados */}
         {pendingCount > 0 && (
           <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-200 text-sm">
             <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>{pendingCount} {pendingCount === 1 ? "item não mapeado" : "itens não mapeados"} — mapeie ou ignore antes de confirmar.</span>
+            <span>
+              {pendingCount} {pendingCount === 1 ? "item não mapeado" : "itens não mapeados"} — não entrarão no estoque. Mapeie ou ignore cada um antes de confirmar.
+            </span>
           </div>
         )}
 
-        {/* Supplier */}
-        <div className="p-4 border rounded-lg space-y-3">
-          <h3 className="font-semibold text-sm">Fornecedor</h3>
+        {/* Info NF-e */}
+        <div className="p-4 border rounded-lg bg-muted/30">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-            <div><span className="text-muted-foreground block text-xs">Razão Social</span><strong>{parsed.fornecedorNome}</strong></div>
-            <div><span className="text-muted-foreground block text-xs">CNPJ</span>{parsed.fornecedorCnpj ?? "—"}</div>
-            <div><span className="text-muted-foreground block text-xs">NF-e nº</span>{parsed.numeroNfe ?? "—"}/{parsed.serie ?? "1"}</div>
-            <div><span className="text-muted-foreground block text-xs">Emissão</span>{fmtDate(parsed.dataEmissao)}</div>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Vincular ao fornecedor cadastrado</Label>
-            <Select value={supplierId ?? "__none__"} onValueChange={(v) => setSupplierId(v === "__none__" ? null : v)}>
-              <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">Não vincular</SelectItem>
-                {suppliers.map((s) => <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <div>
+              <span className="text-muted-foreground block text-xs mb-0.5">Fornecedor</span>
+              <strong>{parsed.fornecedorNome}</strong>
+              {matchedSupplier && (
+                <Badge variant="outline" className="ml-2 text-xs py-0">cadastrado</Badge>
+              )}
+            </div>
+            <div>
+              <span className="text-muted-foreground block text-xs mb-0.5">CNPJ</span>
+              <span className="font-mono">{parsed.fornecedorCnpj ?? "—"}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground block text-xs mb-0.5">NF-e / Série</span>
+              {parsed.numeroNfe ?? "—"} / {parsed.serie ?? "1"}
+            </div>
+            <div>
+              <span className="text-muted-foreground block text-xs mb-0.5">Emissão</span>
+              {fmtDate(parsed.dataEmissao)}
+            </div>
           </div>
         </div>
 
-        {/* Items */}
+        {/* Itens */}
         <div className="space-y-2">
-          <h3 className="font-semibold text-sm">Itens da Nota ({items.length})</h3>
-          <div className="border rounded-lg divide-y">
-            {items.map((item, idx) => (
-              <ItemRow
-                key={idx}
-                item={item}
-                idx={idx}
-                rawMaterials={rawMaterials}
-                supplierId={supplierId}
-                onUpdate={(patch) => updateItem(idx, patch)}
-                onSaveAlias={(d) => saveAliasMutation.mutate(d)}
-              />
-            ))}
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-sm">
+              Itens da Nota ({items.length})
+              {mappedCount > 0 && (
+                <span className="ml-2 text-xs font-normal text-green-600 dark:text-green-400">
+                  {mappedCount} mapeado{mappedCount > 1 ? "s" : ""}
+                </span>
+              )}
+            </h3>
           </div>
+
+          {items.length === 0 ? (
+            <div className="p-8 border rounded-lg text-center text-muted-foreground text-sm">
+              Nenhum item encontrado no XML desta nota.
+            </div>
+          ) : (
+            <div className="border rounded-lg divide-y">
+              {items.map((item, idx) => (
+                <ItemRow
+                  key={idx}
+                  item={item}
+                  rawMaterials={rawMaterials}
+                  supplierId={matchedSupplier?.id ?? null}
+                  onUpdate={(patch) => updateItem(idx, patch)}
+                  onSaveAlias={(d) => saveAliasMutation.mutate(d)}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Duplicatas / Contas a Pagar */}
@@ -504,24 +532,27 @@ export default function ReceivingPage() {
               <div key={idx} className="grid grid-cols-3 gap-3 items-center">
                 <div className="space-y-1">
                   <Label className="text-xs">Parcela</Label>
-                  <Input className="h-8 text-sm" value={dup.numeroParcela ?? ""} onChange={(e) => updateDup(idx, { numeroParcela: e.target.value })} placeholder="001" />
+                  <Input className="h-8 text-sm" value={dup.numeroParcela ?? ""}
+                    onChange={(e) => updateDup(idx, { numeroParcela: e.target.value })} placeholder="001" />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Vencimento</Label>
-                  <Input type="date" className="h-8 text-sm" value={dup.dataVencimento ?? ""} onChange={(e) => updateDup(idx, { dataVencimento: e.target.value })} />
+                  <Input type="date" className="h-8 text-sm" value={dup.dataVencimento ?? ""}
+                    onChange={(e) => updateDup(idx, { dataVencimento: e.target.value })} />
                 </div>
                 <div className="space-y-1">
                   <Label className="text-xs">Valor (R$)</Label>
-                  <Input className="h-8 text-sm" value={dup.valor} onChange={(e) => updateDup(idx, { valor: Number(e.target.value) })} type="number" step="0.01" />
+                  <Input className="h-8 text-sm" type="number" step="0.01" value={dup.valor}
+                    onChange={(e) => updateDup(idx, { valor: Number(e.target.value) })} />
                 </div>
               </div>
             ))}
-            <Button
-              variant="outline"
-              size="sm"
-              className="text-xs"
-              onClick={() => setDuplicatas((prev) => [...prev, { numeroParcela: String(prev.length + 1).padStart(3, "0"), dataVencimento: null, valor: 0 }])}
-            >
+            <Button variant="outline" size="sm" className="text-xs"
+              onClick={() => setDuplicatas((p) => [...p, {
+                numeroParcela: String(p.length + 1).padStart(3, "0"),
+                dataVencimento: null,
+                valor: 0,
+              }])}>
               + Adicionar parcela
             </Button>
           </div>
@@ -533,22 +564,24 @@ export default function ReceivingPage() {
   return null;
 }
 
+// ── ItemRow ───────────────────────────────────────────────────────────────────
+
 function ItemRow({
-  item, idx, rawMaterials, supplierId, onUpdate, onSaveAlias,
+  item, rawMaterials, supplierId, onUpdate, onSaveAlias,
 }: {
   item: ParsedItem;
-  idx: number;
   rawMaterials: RawMaterial[];
   supplierId: string | null;
   onUpdate: (patch: Partial<ParsedItem>) => void;
   onSaveAlias: (d: any) => void;
 }) {
-  const [expanded, setExpanded] = useState(item.statusMatch === "nao_mapeado");
-  const [search, setSearch] = useState("");
+  const [expanded, setExpanded]   = useState(item.statusMatch === "nao_mapeado");
+  const [search, setSearch]       = useState("");
   const [saveAlias, setSaveAlias] = useState(false);
-  const filtered = rawMaterials.filter((r) =>
-    r.nome.toLowerCase().includes(search.toLowerCase())
-  );
+
+  const filtered = search
+    ? rawMaterials.filter((r) => r.nome.toLowerCase().includes(search.toLowerCase()))
+    : [];
   const selectedRm = rawMaterials.find((r) => r.id === item.rawMaterialId);
 
   const handleConfirm = () => {
@@ -564,13 +597,12 @@ function ItemRow({
     setExpanded(false);
   };
 
+  const MatchIcon = item.statusMatch === "mapeado" ? CheckCircle2 : item.statusMatch === "ignorado" ? Ban : AlertTriangle;
   const matchColor = {
-    mapeado: "text-green-600 dark:text-green-400",
-    ignorado: "text-muted-foreground",
+    mapeado:     "text-green-600 dark:text-green-400",
+    ignorado:    "text-muted-foreground",
     nao_mapeado: "text-yellow-600 dark:text-yellow-400",
   }[item.statusMatch];
-
-  const MatchIcon = item.statusMatch === "mapeado" ? CheckCircle2 : item.statusMatch === "ignorado" ? Ban : AlertTriangle;
 
   return (
     <div className="p-3 space-y-2">
@@ -579,32 +611,40 @@ function ItemRow({
           <div className="flex items-center gap-2">
             <MatchIcon className={`w-4 h-4 shrink-0 ${matchColor}`} />
             <span className="font-medium text-sm truncate">{item.descricaoProduto}</span>
-            {item.codigoProduto && <span className="text-xs text-muted-foreground font-mono">[{item.codigoProduto}]</span>}
+            {item.codigoProduto && (
+              <span className="text-xs text-muted-foreground font-mono shrink-0">[{item.codigoProduto}]</span>
+            )}
           </div>
           <div className="text-xs text-muted-foreground mt-0.5 ml-6">
-            NF-e: {item.quantidade} {item.unidadeComercial ?? ""} × {fmt(item.valorUnitario)} = {fmt(item.valorTotal)}
+            {item.quantidade} {item.unidadeComercial ?? ""} × {fmt(item.valorUnitario)} = <strong>{fmt(item.valorTotal)}</strong>
             {item.statusMatch === "mapeado" && selectedRm && (
               <span className="ml-2 text-green-600 dark:text-green-400">
-                → {selectedRm.nome}: {item.quantidadeInterna.toFixed(4).replace(/\.?0+$/, "")} {selectedRm.unidadeCompra}
-                {item.fatorConversao !== 1 && <span> (fator {item.fatorConversao})</span>}
+                → {selectedRm.nome}: {fmtQty(item.quantidadeInterna)} {selectedRm.unidadeCompra}
+                {item.fatorConversao !== 1 && ` (fator ${item.fatorConversao})`}
               </span>
             )}
           </div>
         </div>
+
         <div className="flex gap-1 shrink-0">
           {item.statusMatch !== "ignorado" && (
-            <Button
-              size="sm" variant="ghost" className="h-7 text-xs px-2"
-              onClick={() => setExpanded((e) => !e)}
-            >
-              {expanded ? "Fechar" : "Mapear"}
+            <Button size="sm" variant="ghost" className="h-7 text-xs px-2"
+              onClick={() => setExpanded((e) => !e)}>
+              {expanded ? "Fechar" : item.statusMatch === "mapeado" ? "Editar" : "Mapear"}
             </Button>
           )}
           <Button
             size="sm" variant="ghost"
-            className={`h-7 text-xs px-2 ${item.statusMatch === "ignorado" ? "text-muted-foreground" : "text-red-500"}`}
-            onClick={() => onUpdate({ statusMatch: item.statusMatch === "ignorado" ? "nao_mapeado" : "ignorado", rawMaterialId: null })}
-          >
+            className={`h-7 text-xs px-2 ${item.statusMatch === "ignorado" ? "" : "text-red-500 hover:text-red-600"}`}
+            onClick={() => {
+              if (item.statusMatch === "ignorado") {
+                onUpdate({ statusMatch: "nao_mapeado", rawMaterialId: null });
+                setExpanded(true);
+              } else {
+                onUpdate({ statusMatch: "ignorado", rawMaterialId: null });
+                setExpanded(false);
+              }
+            }}>
             {item.statusMatch === "ignorado" ? "Desfazer" : "Ignorar"}
           </Button>
         </div>
@@ -612,60 +652,60 @@ function ItemRow({
 
       {expanded && item.statusMatch !== "ignorado" && (
         <div className="ml-6 space-y-3 p-3 rounded-lg bg-muted/40 border">
+          {/* Busca de matéria-prima */}
           <div className="space-y-1.5">
             <Label className="text-xs">Matéria-prima interna</Label>
             <Input
               className="h-8 text-sm"
-              placeholder="Buscar matéria-prima..."
-              value={search || selectedRm?.nome || ""}
-              onChange={(e) => { setSearch(e.target.value); onUpdate({ rawMaterialId: null, statusMatch: "nao_mapeado" }); }}
+              placeholder="Digite para buscar…"
+              value={selectedRm && !search ? selectedRm.nome : search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                if (e.target.value === "") onUpdate({ rawMaterialId: null, statusMatch: "nao_mapeado" });
+              }}
             />
             {search && filtered.length > 0 && (
-              <div className="border rounded-md bg-popover shadow-md max-h-36 overflow-y-auto">
-                {filtered.slice(0, 8).map((rm) => (
-                  <div
-                    key={rm.id}
-                    className="px-3 py-1.5 text-sm cursor-pointer hover:bg-accent"
+              <div className="border rounded-md bg-popover shadow-md max-h-40 overflow-y-auto">
+                {filtered.slice(0, 10).map((rm) => (
+                  <div key={rm.id} className="px-3 py-1.5 text-sm cursor-pointer hover:bg-accent"
                     onClick={() => {
                       onUpdate({ rawMaterialId: rm.id, statusMatch: "mapeado", quantidadeInterna: item.quantidade * item.fatorConversao });
                       setSearch("");
-                    }}
-                  >
+                    }}>
                     {rm.nome} <span className="text-xs text-muted-foreground">({rm.unidadeCompra})</span>
                   </div>
                 ))}
               </div>
             )}
+            {search && filtered.length === 0 && (
+              <p className="text-xs text-muted-foreground px-1">Nenhuma matéria-prima encontrada</p>
+            )}
           </div>
 
+          {/* Fator de conversão */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label className="text-xs">
+              <Label className="text-xs flex items-center gap-1">
                 Fator de conversão
-                <Info className="inline w-3 h-3 ml-1 text-muted-foreground" title="1 unidade do fornecedor = X unidades internas" />
+                <Info className="w-3 h-3 text-muted-foreground" title="1 unidade do fornecedor = X unidades internas" />
               </Label>
-              <Input
-                type="number"
-                step="0.000001"
-                className="h-8 text-sm"
+              <Input type="number" step="0.000001" className="h-8 text-sm"
                 value={item.fatorConversao}
-                onChange={(e) => onUpdate({ fatorConversao: Number(e.target.value), quantidadeInterna: item.quantidade * Number(e.target.value) })}
-              />
+                onChange={(e) => onUpdate({
+                  fatorConversao: Number(e.target.value),
+                  quantidadeInterna: item.quantidade * Number(e.target.value),
+                })} />
               {selectedRm && (
                 <p className="text-xs text-muted-foreground">
-                  {item.quantidade} {item.unidadeComercial} × {item.fatorConversao} = {(item.quantidade * item.fatorConversao).toFixed(4).replace(/\.?0+$/, "")} {selectedRm.unidadeCompra}
+                  {item.quantidade} {item.unidadeComercial} × {item.fatorConversao} ={" "}
+                  {fmtQty(item.quantidade * item.fatorConversao)} {selectedRm.unidadeCompra}
                 </p>
               )}
             </div>
-            <div className="flex items-end pb-0.5">
+            <div className="flex items-end pb-1">
               <label className="flex items-center gap-2 text-xs cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={saveAlias}
-                  onChange={(e) => setSaveAlias(e.target.checked)}
-                  className="rounded"
-                />
-                Salvar alias para próximas notas
+                <input type="checkbox" checked={saveAlias} onChange={(e) => setSaveAlias(e.target.checked)} className="rounded" />
+                Salvar para próximas notas
               </label>
             </div>
           </div>
