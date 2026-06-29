@@ -8,11 +8,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Upload, PackageCheck, Eye, ArrowLeft, CheckCircle2, AlertTriangle, Ban, Info,
+  Upload, PackageCheck, Eye, ArrowLeft, CheckCircle2, AlertTriangle, Ban, Info, Plus, X,
 } from "lucide-react";
+
+const RAW_MATERIAL_CATEGORIES: { value: string; label: string }[] = [
+  { value: "chapas",                label: "Chapas" },
+  { value: "impressao",             label: "Impressão" },
+  { value: "estruturas",            label: "Estruturas" },
+  { value: "iluminacao",            label: "Iluminação" },
+  { value: "fixacao",               label: "Fixação" },
+  { value: "adesivos",              label: "Adesivos" },
+  { value: "tintas",                label: "Tintas" },
+  { value: "acabamento",            label: "Acabamento" },
+  { value: "instalacao",            label: "Instalação" },
+  { value: "servicos_terceirizados",label: "Serviços terceirizados" },
+  { value: "outros",                label: "Outros" },
+];
 
 type RawMaterial = { id: string; nome: string; unidadeCompra: string };
 
@@ -95,6 +112,7 @@ export default function ReceivingPage() {
   } | null>(null);
   const [items, setItems] = useState<ParsedItem[]>([]);
   const [duplicatas, setDuplicatas] = useState<ParsedDup[]>([]);
+  const [localRawMaterials, setLocalRawMaterials] = useState<RawMaterial[]>([]);
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -235,6 +253,7 @@ export default function ReceivingPage() {
       setParsedData({ parsed: data.parsed, matchedSupplier: data.matchedSupplier, xmlContent: data.xmlContent });
       setItems(data.parsed.items ?? []);
       setDuplicatas(data.parsed.duplicatas ?? []);
+      setLocalRawMaterials(rawMaterials); // snapshot atual para uso local + novos criados inline
       setStep("review");
     } catch (e: any) {
       toast({ title: "Erro ao processar XML", description: e.message ?? "Não foi possível processar o XML.", variant: "destructive" });
@@ -533,10 +552,15 @@ export default function ReceivingPage() {
                 <ItemRow
                   key={idx}
                   item={item}
-                  rawMaterials={rawMaterials}
+                  rawMaterials={localRawMaterials}
                   supplierId={matchedSupplier?.id ?? null}
+                  fornecedorNome={parsed.fornecedorNome}
                   onUpdate={(patch) => updateItem(idx, patch)}
                   onSaveAlias={(d) => saveAliasMutation.mutate(d)}
+                  onRawMaterialCreated={(rm) => {
+                    setLocalRawMaterials((prev) => [...prev, rm]);
+                    queryClient.invalidateQueries({ queryKey: ["/api/raw-materials"] });
+                  }}
                 />
               ))}
             </div>
@@ -586,17 +610,30 @@ export default function ReceivingPage() {
 // ── ItemRow ───────────────────────────────────────────────────────────────────
 
 function ItemRow({
-  item, rawMaterials, supplierId, onUpdate, onSaveAlias,
+  item, rawMaterials, supplierId, fornecedorNome, onUpdate, onSaveAlias, onRawMaterialCreated,
 }: {
   item: ParsedItem;
   rawMaterials: RawMaterial[];
   supplierId: string | null;
+  fornecedorNome: string;
   onUpdate: (patch: Partial<ParsedItem>) => void;
   onSaveAlias: (d: any) => void;
+  onRawMaterialCreated: (rm: RawMaterial) => void;
 }) {
+  const { toast } = useToast();
   const [expanded, setExpanded]   = useState(item.statusMatch === "nao_mapeado");
   const [search, setSearch]       = useState("");
   const [saveAlias, setSaveAlias] = useState(false);
+  const [createMode, setCreateMode] = useState(false);
+
+  // Form state for new raw material
+  const [newNome, setNewNome]           = useState(item.descricaoProduto.substring(0, 80));
+  const [newCategoria, setNewCategoria] = useState("outros");
+  const [newUnidade, setNewUnidade]     = useState(item.unidadeComercial ?? "UN");
+  const [newCusto, setNewCusto]         = useState(String(item.valorUnitario > 0 ? item.valorUnitario : ""));
+  const [newFornecedor, setNewFornecedor] = useState(fornecedorNome);
+  const [newEstMin, setNewEstMin]       = useState("");
+  const [creating, setCreating]         = useState(false);
 
   const filtered = search
     ? rawMaterials.filter((r) => r.nome.toLowerCase().includes(search.toLowerCase()))
@@ -614,6 +651,48 @@ function ItemRow({
       });
     }
     setExpanded(false);
+  };
+
+  const handleCreateRawMaterial = async () => {
+    if (!newNome.trim() || !newCategoria || !newUnidade.trim()) {
+      toast({ title: "Campos obrigatórios", description: "Nome, categoria e unidade são obrigatórios.", variant: "destructive" });
+      return;
+    }
+    setCreating(true);
+    try {
+      const payload: Record<string, unknown> = {
+        nome: newNome.trim(),
+        categoria: newCategoria,
+        unidadeCompra: newUnidade.trim(),
+        unidadeUso: newUnidade.trim(),
+        fornecedor: newFornecedor.trim() || null,
+      };
+      if (newCusto) payload.custoUnitario = newCusto;
+      if (newEstMin) payload.estoqueMinimo = newEstMin;
+
+      const res = await apiRequest("POST", "/api/raw-materials", payload);
+      const created = await res.json();
+
+      if (!res.ok) throw new Error(created.error ?? "Erro ao criar matéria-prima");
+
+      toast({ title: "Matéria-prima criada!", description: `"${created.nome}" adicionada ao cadastro.` });
+      onRawMaterialCreated({ id: created.id, nome: created.nome, unidadeCompra: created.unidadeCompra });
+      onUpdate({ rawMaterialId: created.id, statusMatch: "mapeado", quantidadeInterna: item.quantidade * item.fatorConversao });
+      setCreateMode(false);
+      setSearch("");
+      // Automatically save alias
+      onSaveAlias({
+        rawMaterialId: created.id,
+        supplierDescricao: item.descricaoProduto,
+        fatorConversao: String(item.fatorConversao),
+        unidadeFornecedor: item.unidadeComercial,
+        supplierId,
+      });
+    } catch (e: any) {
+      toast({ title: "Erro", description: e.message ?? "Não foi possível criar.", variant: "destructive" });
+    } finally {
+      setCreating(false);
+    }
   };
 
   const MatchIcon = item.statusMatch === "mapeado" ? CheckCircle2 : item.statusMatch === "ignorado" ? Ban : AlertTriangle;
@@ -648,7 +727,7 @@ function ItemRow({
         <div className="flex gap-1 shrink-0">
           {item.statusMatch !== "ignorado" && (
             <Button size="sm" variant="ghost" className="h-7 text-xs px-2"
-              onClick={() => setExpanded((e) => !e)}>
+              onClick={() => { setExpanded((e) => !e); setCreateMode(false); }}>
               {expanded ? "Fechar" : item.statusMatch === "mapeado" ? "Editar" : "Mapear"}
             </Button>
           )}
@@ -662,6 +741,7 @@ function ItemRow({
               } else {
                 onUpdate({ statusMatch: "ignorado", rawMaterialId: null });
                 setExpanded(false);
+                setCreateMode(false);
               }
             }}>
             {item.statusMatch === "ignorado" ? "Desfazer" : "Ignorar"}
@@ -671,68 +751,163 @@ function ItemRow({
 
       {expanded && item.statusMatch !== "ignorado" && (
         <div className="ml-6 space-y-3 p-3 rounded-lg bg-muted/40 border">
-          {/* Busca de matéria-prima */}
-          <div className="space-y-1.5">
-            <Label className="text-xs">Matéria-prima interna</Label>
-            <Input
-              className="h-8 text-sm"
-              placeholder="Digite para buscar…"
-              value={selectedRm && !search ? selectedRm.nome : search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                if (e.target.value === "") onUpdate({ rawMaterialId: null, statusMatch: "nao_mapeado" });
-              }}
-            />
-            {search && filtered.length > 0 && (
-              <div className="border rounded-md bg-popover shadow-md max-h-40 overflow-y-auto">
-                {filtered.slice(0, 10).map((rm) => (
-                  <div key={rm.id} className="px-3 py-1.5 text-sm cursor-pointer hover:bg-accent"
-                    onClick={() => {
-                      onUpdate({ rawMaterialId: rm.id, statusMatch: "mapeado", quantidadeInterna: item.quantidade * item.fatorConversao });
-                      setSearch("");
-                    }}>
-                    {rm.nome} <span className="text-xs text-muted-foreground">({rm.unidadeCompra})</span>
+
+          {/* ── Modo: busca de matéria-prima existente ── */}
+          {!createMode && (
+            <>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Matéria-prima interna</Label>
+                <Input
+                  className="h-8 text-sm"
+                  placeholder="Digite para buscar…"
+                  value={selectedRm && !search ? selectedRm.nome : search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    if (e.target.value === "") onUpdate({ rawMaterialId: null, statusMatch: "nao_mapeado" });
+                  }}
+                />
+                {search && filtered.length > 0 && (
+                  <div className="border rounded-md bg-popover shadow-md max-h-40 overflow-y-auto">
+                    {filtered.slice(0, 10).map((rm) => (
+                      <div key={rm.id} className="px-3 py-1.5 text-sm cursor-pointer hover:bg-accent"
+                        onClick={() => {
+                          onUpdate({ rawMaterialId: rm.id, statusMatch: "mapeado", quantidadeInterna: item.quantidade * item.fatorConversao });
+                          setSearch("");
+                        }}>
+                        {rm.nome} <span className="text-xs text-muted-foreground">({rm.unidadeCompra})</span>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
+                {/* Botão "Criar nova" quando não há resultados */}
+                {search && filtered.length === 0 && (
+                  <div className="flex items-center justify-between px-1 pt-0.5">
+                    <p className="text-xs text-muted-foreground">Nenhuma encontrada para "{search}"</p>
+                    <Button size="sm" variant="outline" className="h-6 text-xs px-2 gap-1"
+                      onClick={() => { setNewNome(search || item.descricaoProduto.substring(0, 80)); setCreateMode(true); setSearch(""); }}>
+                      <Plus className="w-3 h-3" /> Criar nova
+                    </Button>
+                  </div>
+                )}
+                {/* Botão "Criar nova" quando campo está vazio e não há seleção */}
+                {!search && !selectedRm && (
+                  <Button size="sm" variant="ghost" className="h-6 text-xs px-2 gap-1 text-muted-foreground"
+                    onClick={() => setCreateMode(true)}>
+                    <Plus className="w-3 h-3" /> Criar nova matéria-prima
+                  </Button>
+                )}
               </div>
-            )}
-            {search && filtered.length === 0 && (
-              <p className="text-xs text-muted-foreground px-1">Nenhuma matéria-prima encontrada</p>
-            )}
-          </div>
 
-          {/* Fator de conversão */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs flex items-center gap-1">
-                Fator de conversão
-                <Info className="w-3 h-3 text-muted-foreground" title="1 unidade do fornecedor = X unidades internas" />
-              </Label>
-              <Input type="number" step="0.000001" className="h-8 text-sm"
-                value={item.fatorConversao}
-                onChange={(e) => onUpdate({
-                  fatorConversao: Number(e.target.value),
-                  quantidadeInterna: item.quantidade * Number(e.target.value),
-                })} />
-              {selectedRm && (
-                <p className="text-xs text-muted-foreground">
-                  {item.quantidade} {item.unidadeComercial} × {item.fatorConversao} ={" "}
-                  {fmtQty(item.quantidade * item.fatorConversao)} {selectedRm.unidadeCompra}
-                </p>
+              {/* Fator de conversão */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs flex items-center gap-1">
+                    Fator de conversão
+                    <Info className="w-3 h-3 text-muted-foreground" title="1 unidade do fornecedor = X unidades internas" />
+                  </Label>
+                  <Input type="number" step="0.000001" className="h-8 text-sm"
+                    value={item.fatorConversao}
+                    onChange={(e) => onUpdate({
+                      fatorConversao: Number(e.target.value),
+                      quantidadeInterna: item.quantidade * Number(e.target.value),
+                    })} />
+                  {selectedRm && (
+                    <p className="text-xs text-muted-foreground">
+                      {item.quantidade} {item.unidadeComercial} × {item.fatorConversao} ={" "}
+                      {fmtQty(item.quantidade * item.fatorConversao)} {selectedRm.unidadeCompra}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-end pb-1">
+                  <label className="flex items-center gap-2 text-xs cursor-pointer">
+                    <input type="checkbox" checked={saveAlias} onChange={(e) => setSaveAlias(e.target.checked)} className="rounded" />
+                    Salvar para próximas notas
+                  </label>
+                </div>
+              </div>
+
+              {item.rawMaterialId && (
+                <Button size="sm" className="h-7 text-xs" onClick={handleConfirm}>
+                  <CheckCircle2 className="w-3 h-3 mr-1" /> Confirmar mapeamento
+                </Button>
               )}
-            </div>
-            <div className="flex items-end pb-1">
-              <label className="flex items-center gap-2 text-xs cursor-pointer">
-                <input type="checkbox" checked={saveAlias} onChange={(e) => setSaveAlias(e.target.checked)} className="rounded" />
-                Salvar para próximas notas
-              </label>
-            </div>
-          </div>
+            </>
+          )}
 
-          {item.rawMaterialId && (
-            <Button size="sm" className="h-7 text-xs" onClick={handleConfirm}>
-              <CheckCircle2 className="w-3 h-3 mr-1" /> Confirmar mapeamento
-            </Button>
+          {/* ── Modo: criar nova matéria-prima ── */}
+          {createMode && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-primary flex items-center gap-1">
+                  <Plus className="w-3 h-3" /> Nova matéria-prima
+                </span>
+                <Button size="sm" variant="ghost" className="h-6 w-6 p-0"
+                  onClick={() => setCreateMode(false)}>
+                  <X className="w-3 h-3" />
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                {/* Nome */}
+                <div className="col-span-2 space-y-1">
+                  <Label className="text-xs">Nome <span className="text-red-500">*</span></Label>
+                  <Input className="h-8 text-sm" value={newNome} onChange={(e) => setNewNome(e.target.value)} placeholder="Nome da matéria-prima" />
+                </div>
+
+                {/* Categoria */}
+                <div className="space-y-1">
+                  <Label className="text-xs">Categoria <span className="text-red-500">*</span></Label>
+                  <Select value={newCategoria} onValueChange={setNewCategoria}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {RAW_MATERIAL_CATEGORIES.map((c) => (
+                        <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Unidade */}
+                <div className="space-y-1">
+                  <Label className="text-xs">Unidade de compra <span className="text-red-500">*</span></Label>
+                  <Input className="h-8 text-sm" value={newUnidade} onChange={(e) => setNewUnidade(e.target.value)} placeholder="UN, M2, KG…" />
+                </div>
+
+                {/* Custo unitário */}
+                <div className="space-y-1">
+                  <Label className="text-xs">Custo unitário (R$)</Label>
+                  <Input type="number" step="0.0001" className="h-8 text-sm" value={newCusto} onChange={(e) => setNewCusto(e.target.value)} placeholder="0,00" />
+                </div>
+
+                {/* Estoque mínimo */}
+                <div className="space-y-1">
+                  <Label className="text-xs">Estoque mínimo</Label>
+                  <Input type="number" step="0.0001" className="h-8 text-sm" value={newEstMin} onChange={(e) => setNewEstMin(e.target.value)} placeholder="0" />
+                </div>
+
+                {/* Fornecedor */}
+                <div className="col-span-2 space-y-1">
+                  <Label className="text-xs">Fornecedor</Label>
+                  <Input className="h-8 text-sm" value={newFornecedor} onChange={(e) => setNewFornecedor(e.target.value)} placeholder="Nome do fornecedor" />
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                O alias desta descrição será salvo automaticamente para reconhecimento em próximas notas.
+              </p>
+
+              <div className="flex gap-2">
+                <Button size="sm" className="h-7 text-xs" onClick={handleCreateRawMaterial} disabled={creating}>
+                  <Plus className="w-3 h-3 mr-1" />
+                  {creating ? "Criando…" : "Criar e mapear"}
+                </Button>
+                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setCreateMode(false)} disabled={creating}>
+                  Cancelar
+                </Button>
+              </div>
+            </div>
           )}
         </div>
       )}
