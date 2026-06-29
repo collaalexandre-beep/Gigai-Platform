@@ -1,0 +1,118 @@
+Implemente a primeira versão do ciclo de vida do Processo de Compra no Gigai Platform.
+
+Antes de alterar código, leia:
+
+* `docs/05-inteligencia-operacional.md`
+* `docs/06-motores-de-inteligencia.md`
+* `docs/modulos/suprimentos.md`
+
+Contexto atual:
+
+A Central de Suprimentos já identifica alertas de estoque e permite criar uma solicitação de compra pré-preenchida. A solicitação aparece na tela de Compras.
+
+Agora precisamos permitir que essa solicitação avance em um fluxo operacional simples.
+
+Objetivo:
+
+Transformar a solicitação de compra em um processo com status claros e ações básicas, sem refatorar o sistema inteiro.
+
+Escopo desta etapa:
+
+1. Revisar a estrutura atual de `purchaseRequests` em `shared/schema.ts`.
+
+2. Usar os campos existentes sempre que possível.
+
+3. Não criar tabelas novas nesta etapa, salvo se for absolutamente necessário.
+
+4. Padronizar os status do processo de compra, usando os status já existentes se possível:
+
+* `aguardando_aprovacao`
+* `aprovado`
+* `rejeitado`
+* `cancelado`
+* `pedido_enviado`
+* `aguardando_entrega`
+* `recebido`
+* `concluido`
+
+Se o sistema já usa nomes diferentes, mapear de forma segura sem quebrar dados existentes.
+
+5. Na tela de Compras (`/inventory/purchases`), adicionar ações conforme o status:
+
+Para `aguardando_aprovacao`:
+
+* Aprovar
+* Rejeitar
+* Cancelar
+
+Para `aprovado`:
+
+* Enviar pedido ao fornecedor
+* Cancelar
+
+Para `pedido_enviado`:
+
+* Marcar como aguardando entrega
+
+Para `aguardando_entrega`:
+
+* Marcar como recebido
+* Registrar recebimento parcial se já houver estrutura segura; caso contrário, deixar para etapa futura.
+
+Para `recebido`:
+
+* Concluir processo
+
+6. Cada ação deve pedir confirmação antes de alterar status.
+
+7. Após alterar status, atualizar a lista de compras e invalidar/recarregar as queries relacionadas.
+
+8. A Central de Suprimentos deve refletir os status:
+
+* Solicitação aguardando aprovação:
+  próximo passo: `Avaliar e aprovar solicitação`
+
+* Solicitação aprovada:
+  próximo passo: `Enviar pedido ao fornecedor`
+
+* Pedido enviado:
+  próximo passo: `Aguardar confirmação/entrega`
+
+* Aguardando entrega:
+  próximo passo: `Acompanhar recebimento`
+
+* Recebido:
+  próximo passo: `Concluir processo`
+
+9. Evitar duplicidade:
+   Se uma solicitação já estiver aberta para um material, a Central deve continuar agrupando em um único card.
+
+10. Preservar:
+
+* layout global
+* menu lateral
+* rotas existentes
+* telas existentes
+* funcionalidades existentes
+
+11. Não implementar ainda:
+
+* envio automático por WhatsApp
+* cotação com múltiplos fornecedores
+* negociação automática
+* marketplace
+* integração bancária
+* baixa automática por XML
+
+Critérios de aceite:
+
+* A tela de Compras continua carregando.
+* Solicitações criadas pela Central aparecem na tela de Compras.
+* É possível aprovar uma solicitação.
+* É possível avançar para pedido enviado.
+* É possível avançar para aguardando entrega.
+* É possível marcar como recebido.
+* A Central de Suprimentos muda o próximo passo conforme o status.
+* Não é possível criar solicitação duplicada para o mesmo material enquanto houver processo aberto.
+* Nenhuma funcionalidade existente quebra.
+* A aplicação continua compilando.

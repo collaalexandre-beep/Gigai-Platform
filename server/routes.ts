@@ -2159,7 +2159,7 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
       // Proteção contra duplicidade: verifica se já existe solicitação aberta para o mesmo material
       const OPEN_STATUSES = [
         "aguardando_informacoes", "aguardando_aprovacao", "aprovado",
-        "em_cotacao", "comprado", "aguardando_entrega",
+        "em_cotacao", "pedido_enviado", "comprado", "aguardando_entrega",
       ];
       const existing = await db
         .select()
@@ -2191,6 +2191,37 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
     try {
       const id = String(req.params.id);
       const row = await storage.updatePurchaseRequest(id, { status: "cancelado" } as any);
+      res.json(row);
+    } catch (err) { handleError(res, err); }
+  });
+
+  app.patch("/api/purchase-requests/:id/reject", async (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      const row = await storage.updatePurchaseRequest(id, { status: "rejeitado" } as any);
+      if (!row) return res.status(404).json({ error: "Solicitação não encontrada" });
+      res.json(row);
+    } catch (err) { handleError(res, err); }
+  });
+
+  const VALID_TRANSITIONS: Record<string, string[]> = {
+    aprovado:           ["pedido_enviado", "cancelado"],
+    pedido_enviado:     ["aguardando_entrega"],
+    aguardando_entrega: ["recebido"],
+    recebido:           ["concluido"],
+  };
+
+  app.patch("/api/purchase-requests/:id/transition", async (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      const { status } = req.body as { status: string };
+      const existing = await storage.getPurchaseRequest(id);
+      if (!existing) return res.status(404).json({ error: "Solicitação não encontrada" });
+      const allowed = VALID_TRANSITIONS[existing.status] ?? [];
+      if (!allowed.includes(status)) {
+        return res.status(422).json({ error: `Transição inválida: ${existing.status} → ${status}` });
+      }
+      const row = await storage.updatePurchaseRequest(id, { status } as any);
       res.json(row);
     } catch (err) { handleError(res, err); }
   });
@@ -3493,7 +3524,7 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
       // 1. ESTOQUE CRÍTICO
       const OPEN_PR_STATUSES = [
         "aguardando_informacoes", "aguardando_aprovacao", "aprovado",
-        "em_cotacao", "comprado", "aguardando_entrega",
+        "em_cotacao", "pedido_enviado", "comprado", "aguardando_entrega",
       ];
 
       // Busca todas as solicitações abertas com dados completos para agrupamento inteligente
@@ -3523,10 +3554,12 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
       const prNextStep: Record<string, string> = {
         aguardando_informacoes: "Completar informações da solicitação",
         aguardando_aprovacao: "Avaliar e aprovar solicitação",
-        aprovado: "Acompanhar pedido de compra",
+        aprovado: "Enviar pedido ao fornecedor",
+        pedido_enviado: "Aguardar confirmação/entrega",
         em_cotacao: "Acompanhar cotação",
         comprado: "Acompanhar entrega",
         aguardando_entrega: "Acompanhar recebimento",
+        recebido: "Concluir processo",
       };
 
       const materials = await db

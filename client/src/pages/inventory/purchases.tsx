@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import {
   Plus, PackageOpen, Search, Eye, Pencil, XCircle, X, FileText, ChevronDown, CheckCircle2, Printer, Bell,
+  Send, Truck, PackageCheck, ThumbsDown, CircleCheckBig, AlertTriangle,
 } from "lucide-react";
 import { Link, useSearch, useLocation } from "wouter";
 
@@ -51,9 +52,12 @@ const STATUS_VARIANTS: Record<string, { label: string; variant: "default" | "sec
   aguardando_aprovacao:   { label: "Aguardando aprovação",    variant: "secondary" },
   aprovado:               { label: "Aprovado",                    variant: "default" },
   em_cotacao:             { label: "Em cotação",                  variant: "default" },
+  pedido_enviado:         { label: "Pedido enviado",             variant: "default" },
   comprado:               { label: "Comprado",                    variant: "default" },
   aguardando_entrega:     { label: "Aguardando entrega",        variant: "secondary" },
   recebido:               { label: "Recebido",                    variant: "default" },
+  concluido:              { label: "Concluído",                   variant: "outline" },
+  rejeitado:              { label: "Rejeitado",                   variant: "destructive" },
   cancelado:              { label: "Cancelado",                   variant: "destructive" },
 };
 
@@ -62,9 +66,12 @@ const STATUS_OPTIONS = [
   { value: "aguardando_aprovacao",   label: "Aguardando aprovação" },
   { value: "aprovado",               label: "Aprovado" },
   { value: "em_cotacao",             label: "Em cotação" },
+  { value: "pedido_enviado",         label: "Pedido enviado" },
   { value: "comprado",               label: "Comprado" },
   { value: "aguardando_entrega",     label: "Aguardando entrega" },
   { value: "recebido",               label: "Recebido" },
+  { value: "concluido",              label: "Concluído" },
+  { value: "rejeitado",              label: "Rejeitado" },
   { value: "cancelado",              label: "Cancelado" },
 ];
 
@@ -220,8 +227,51 @@ export default function PurchasesPage() {
     mutationFn: async (id: string) => apiRequest("PATCH", `/api/purchase-requests/${id}/cancel`, {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/supplies/attention"] });
       toast({ title: "Solicitação cancelada" });
     },
+  });
+
+  // Estado do dialog de confirmação de transição
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean;
+    title: string;
+    description: string;
+    onConfirm: () => void;
+    variant?: "default" | "destructive";
+  }>({ open: false, title: "", description: "", onConfirm: () => {}, variant: "default" });
+
+  const openConfirm = (
+    title: string,
+    description: string,
+    onConfirm: () => void,
+    variant: "default" | "destructive" = "default"
+  ) => setConfirmDialog({ open: true, title, description, onConfirm, variant });
+
+  const closeConfirm = () => setConfirmDialog((d) => ({ ...d, open: false }));
+
+  const transitionMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) =>
+      apiRequest("PATCH", `/api/purchase-requests/${id}/transition`, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/supplies/attention"] });
+      closeConfirm();
+      toast({ title: "Status atualizado", description: "Processo de compra avançado com sucesso." });
+    },
+    onError: () => toast({ title: "Erro", description: "Não foi possível atualizar o status.", variant: "destructive" }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async (id: string) =>
+      apiRequest("PATCH", `/api/purchase-requests/${id}/reject`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/supplies/attention"] });
+      closeConfirm();
+      toast({ title: "Solicitação rejeitada" });
+    },
+    onError: () => toast({ title: "Erro", variant: "destructive" }),
   });
 
   const approveMutation = useMutation({
@@ -398,7 +448,11 @@ export default function PurchasesPage() {
               rows.map((r) => {
                 const statusMeta = STATUS_VARIANTS[r.status];
                 return (
-                  <TableRow key={r.id} data-testid={`row-purchase-${r.id}`} className={r.status === "cancelado" ? "opacity-50" : ""}>
+                  <TableRow
+                    key={r.id}
+                    data-testid={`row-purchase-${r.id}`}
+                    className={["cancelado", "rejeitado", "concluido"].includes(r.status) ? "opacity-60" : ""}
+                  >
                     <TableCell className="font-mono text-xs font-semibold">{r.codigo}</TableCell>
                     <TableCell className="text-xs">{formatDate(r.createdAt)}</TableCell>
                     <TableCell className="text-sm">{r.solicitanteNome || "—"}</TableCell>
@@ -414,16 +468,71 @@ export default function PurchasesPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        {r.status === "aguardando_aprovacao" && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
+                        {/* aguardando_aprovacao: aprovar, rejeitar, cancelar */}
+                        {r.status === "aguardando_aprovacao" && (<>
+                          <Button size="sm" variant="ghost"
                             className="h-7 w-7 p-0 text-green-600 hover:text-green-700 hover:bg-green-50 dark:hover:bg-green-950"
-                            onClick={() => openApproveDialog(r)}
-                            title="Aprovar e gerar ordem"
-                            data-testid={`button-approve-${r.id}`}
-                          >
+                            onClick={() => openApproveDialog(r)} title="Aprovar e gerar ordem"
+                            data-testid={`button-approve-${r.id}`}>
                             <CheckCircle2 className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button size="sm" variant="ghost"
+                            className="h-7 w-7 p-0 text-orange-500 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950"
+                            onClick={() => openConfirm(
+                              "Rejeitar solicitação",
+                              `Confirma a rejeição da solicitação ${r.codigo} (${r.material})?`,
+                              () => rejectMutation.mutate(r.id),
+                              "destructive"
+                            )} title="Rejeitar" data-testid={`button-reject-${r.id}`}>
+                            <ThumbsDown className="h-3.5 w-3.5" />
+                          </Button>
+                        </>)}
+                        {/* aprovado: enviar pedido ao fornecedor */}
+                        {r.status === "aprovado" && (
+                          <Button size="sm" variant="ghost"
+                            className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950"
+                            onClick={() => openConfirm(
+                              "Enviar pedido ao fornecedor",
+                              `Confirma que o pedido de ${r.material} foi enviado ao fornecedor?`,
+                              () => transitionMutation.mutate({ id: r.id, status: "pedido_enviado" })
+                            )} title="Pedido enviado ao fornecedor" data-testid={`button-send-${r.id}`}>
+                            <Send className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {/* pedido_enviado: marcar aguardando entrega */}
+                        {r.status === "pedido_enviado" && (
+                          <Button size="sm" variant="ghost"
+                            className="h-7 w-7 p-0 text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-950"
+                            onClick={() => openConfirm(
+                              "Aguardando entrega",
+                              `Confirma que o material ${r.material} está aguardando entrega?`,
+                              () => transitionMutation.mutate({ id: r.id, status: "aguardando_entrega" })
+                            )} title="Marcar como aguardando entrega" data-testid={`button-awaiting-${r.id}`}>
+                            <Truck className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {/* aguardando_entrega: marcar como recebido */}
+                        {r.status === "aguardando_entrega" && (
+                          <Button size="sm" variant="ghost"
+                            className="h-7 w-7 p-0 text-teal-600 hover:text-teal-700 hover:bg-teal-50 dark:hover:bg-teal-950"
+                            onClick={() => openConfirm(
+                              "Confirmar recebimento",
+                              `Confirma o recebimento do material ${r.material}?`,
+                              () => transitionMutation.mutate({ id: r.id, status: "recebido" })
+                            )} title="Marcar como recebido" data-testid={`button-received-${r.id}`}>
+                            <PackageCheck className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {/* recebido: concluir processo */}
+                        {r.status === "recebido" && (
+                          <Button size="sm" variant="ghost"
+                            className="h-7 w-7 p-0 text-green-700 hover:text-green-800 hover:bg-green-50 dark:hover:bg-green-950"
+                            onClick={() => openConfirm(
+                              "Concluir processo",
+                              `Confirma a conclusão do processo de compra de ${r.material}?`,
+                              () => transitionMutation.mutate({ id: r.id, status: "concluido" })
+                            )} title="Concluir processo" data-testid={`button-conclude-${r.id}`}>
+                            <CircleCheckBig className="h-3.5 w-3.5" />
                           </Button>
                         )}
                         {r.ordemCompraNumero && (
@@ -436,12 +545,22 @@ export default function PurchasesPage() {
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openViewDialog(r)} title="Visualizar">
                           <Eye className="h-3.5 w-3.5" />
                         </Button>
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => openEdit(r)} title="Editar" disabled={r.status === "cancelado"}>
+                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0"
+                          onClick={() => openEdit(r)} title="Editar"
+                          disabled={["cancelado","rejeitado","concluido"].includes(r.status)}>
                           <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                        <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-500" onClick={() => cancelMutation.mutate(r.id)} title="Cancelar" disabled={r.status === "cancelado"}>
-                          <XCircle className="h-3.5 w-3.5" />
-                        </Button>
+                        {!["cancelado","rejeitado","concluido","recebido"].includes(r.status) && (
+                          <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-500"
+                            onClick={() => openConfirm(
+                              "Cancelar solicitação",
+                              `Confirma o cancelamento da solicitação ${r.codigo}?`,
+                              () => cancelMutation.mutate(r.id),
+                              "destructive"
+                            )} title="Cancelar" data-testid={`button-cancel-${r.id}`}>
+                            <XCircle className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -621,6 +740,30 @@ export default function PurchasesPage() {
               data-testid="button-confirm-approve"
             >
               {approveMutation.isPending ? "Aprovando..." : "Aprovar e Gerar OC"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmation Dialog */}
+      <Dialog open={confirmDialog.open} onOpenChange={closeConfirm}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className={`w-5 h-5 ${confirmDialog.variant === "destructive" ? "text-red-500" : "text-primary"}`} />
+              {confirmDialog.title}
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground py-2">{confirmDialog.description}</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeConfirm}>Cancelar</Button>
+            <Button
+              variant={confirmDialog.variant === "destructive" ? "destructive" : "default"}
+              onClick={confirmDialog.onConfirm}
+              disabled={transitionMutation.isPending || rejectMutation.isPending || cancelMutation.isPending}
+              data-testid="button-confirm-action"
+            >
+              {(transitionMutation.isPending || rejectMutation.isPending || cancelMutation.isPending) ? "Processando..." : "Confirmar"}
             </Button>
           </DialogFooter>
         </DialogContent>
