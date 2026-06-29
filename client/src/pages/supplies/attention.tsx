@@ -23,6 +23,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 type AttentionType = "urgent" | "risk" | "attention" | "opportunity" | "info";
 type AttentionModule = "estoque" | "compras" | "xml" | "financeiro" | "fornecedor";
 
+interface StockMetadata {
+  materialNome: string;
+  quantidadeSugerida: number;
+  unidade: string;
+  urgencia: string;
+  justificativa: string;
+}
+
 interface AttentionItem {
   id: string;
   type: AttentionType;
@@ -38,6 +46,7 @@ interface AttentionItem {
   nextStep?: string;
   priorityScore: number;
   createdAt?: string;
+  metadata?: StockMetadata;
 }
 
 const typeConfig: Record<AttentionType, {
@@ -193,7 +202,21 @@ function AttentionCard({ item }: { item: AttentionItem }) {
                 size="sm"
                 variant="ghost"
                 className="text-xs h-7 whitespace-nowrap text-muted-foreground hover:text-foreground"
-                onClick={() => setLocation(item.secondaryActionUrl!)}
+                onClick={() => {
+                  if (item.module === "estoque" && item.metadata) {
+                    const p = new URLSearchParams({
+                      new: "1",
+                      material: item.metadata.materialNome,
+                      quantidade: String(item.metadata.quantidadeSugerida),
+                      unidade: item.metadata.unidade,
+                      urgencia: item.metadata.urgencia,
+                      obs: item.metadata.justificativa,
+                    });
+                    setLocation(`/inventory/purchases?${p.toString()}`);
+                  } else {
+                    setLocation(item.secondaryActionUrl!);
+                  }
+                }}
                 data-testid={`attention-secondary-${item.id}`}
               >
                 {item.secondaryActionLabel}

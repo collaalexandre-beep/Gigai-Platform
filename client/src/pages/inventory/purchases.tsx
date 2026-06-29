@@ -19,9 +19,9 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import {
-  Plus, PackageOpen, Search, Eye, Pencil, XCircle, X, FileText, ChevronDown, CheckCircle2, Printer,
+  Plus, PackageOpen, Search, Eye, Pencil, XCircle, X, FileText, ChevronDown, CheckCircle2, Printer, Bell,
 } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useSearch, useLocation } from "wouter";
 
 type PurchaseRequest = {
   id: string;
@@ -92,6 +92,8 @@ type RawMaterial = { id: string; nome: string; unidade?: string | null };
 export default function PurchasesPage() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const searchString = useSearch();
+  const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [tipoFilter, setTipoFilter] = useState("");
@@ -99,6 +101,7 @@ export default function PurchasesPage() {
   const [openView, setOpenView] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<PurchaseRequest | null>(null);
+  const prefillApplied = useRef(false);
 
   // Approval dialog state
   const [openApprove, setOpenApprove] = useState(false);
@@ -235,6 +238,32 @@ export default function PurchasesPage() {
     setFUnidade(""); setFOs(""); setFTipo("estoque"); setFUrgencia("normal"); setFObs("");
     setEditingId(null);
   };
+
+  // Pré-preenchimento via query params vindos da Central de Suprimentos
+  useEffect(() => {
+    if (prefillApplied.current) return;
+    const params = new URLSearchParams(searchString);
+    if (params.get("new") !== "1") return;
+    prefillApplied.current = true;
+    const mat = params.get("material") || "";
+    const qty = params.get("quantidade") || "";
+    const un = params.get("unidade") || "";
+    const urg = params.get("urgencia") || "normal";
+    const obs = params.get("obs") || "";
+    setFSolicitante(user?.nome || user?.username || "");
+    setFMaterial(mat);
+    setFQuantidade(qty);
+    setFUnidade(un);
+    setFUrgencia(urg);
+    setFObs(obs);
+    setFTipo("estoque");
+    setFTelefone("");
+    setFOs("");
+    setEditingId(null);
+    setOpenForm(true);
+    // Limpa os params da URL sem recarregar a página
+    setLocation("/inventory/purchases", { replace: true });
+  }, [searchString, user]);
 
   const openNew = () => {
     resetForm();

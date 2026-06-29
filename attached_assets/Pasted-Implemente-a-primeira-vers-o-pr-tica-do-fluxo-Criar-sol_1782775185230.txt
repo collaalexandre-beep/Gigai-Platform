@@ -1,0 +1,83 @@
+Implemente a primeira versão prática do fluxo “Criar solicitação de compra” a partir da Central de Suprimentos.
+
+Antes de alterar código, leia:
+
+* `docs/05-inteligencia-operacional.md`
+* `docs/06-motores-de-inteligencia.md`
+* `docs/modulos/suprimentos.md`
+
+Objetivo:
+
+Permitir que um alerta de estoque na tela `/supplies/attention` gere uma solicitação de compra pré-preenchida, sem quebrar o layout atual e sem refatorar o projeto inteiro.
+
+Escopo desta etapa:
+
+1. Na Central de Suprimentos, o item de atenção relacionado a estoque deve ter ação:
+
+   * `Ver matéria-prima`
+   * `Criar solicitação de compra`
+
+2. Ao clicar em `Criar solicitação de compra`, o sistema deve abrir a tela/formulário existente de compras ou solicitação de compra, se já existir.
+
+3. O formulário deve vir pré-preenchido com:
+
+   * material selecionado
+   * descrição do material
+   * unidade de estoque/compra, se existir
+   * estoque atual
+   * estoque mínimo
+   * quantidade sugerida
+   * justificativa automática
+
+4. Regra inicial para quantidade sugerida:
+
+   * Se existir `estoqueIdeal`, sugerir:
+     `estoqueIdeal - estoqueAtual`
+   * Se não existir `estoqueIdeal`, sugerir:
+     `estoqueMinimo - estoqueAtual`
+   * Se o resultado for menor ou igual a zero, sugerir quantidade 1.
+
+5. Justificativa automática:
+   Para estoque no limite:
+   `Material no limite mínimo. Solicitação criada para avaliar reposição antes de compra urgente.`
+
+   Para estoque abaixo do mínimo:
+   `Material abaixo do estoque mínimo. Solicitação criada para evitar ruptura na produção.`
+
+   Para estoque zerado:
+   `Material sem saldo disponível. Solicitação criada como prioridade para compra ou substituição.`
+
+6. Criar solicitação com status inicial:
+
+   * `aguardando_aprovacao`
+     ou usar o status equivalente já existente no sistema.
+
+7. Não criar tabelas novas se já existir estrutura para `purchaseRequests`.
+
+8. Se a estrutura atual de `purchaseRequests` não suportar algum campo, adapte usando os campos já existentes e mantenha a implementação simples.
+
+9. Preservar:
+
+   * layout global
+   * menu lateral
+   * telas existentes
+   * rotas existentes
+   * funcionalidades existentes
+
+10. Não implementar ainda:
+
+* cotação com vários fornecedores
+* envio automático por WhatsApp
+* negociação automática
+* marketplace
+* IA real
+
+Critérios de aceite:
+
+* A Central de Suprimentos continua carregando.
+* O botão `Criar solicitação de compra` funciona.
+* A solicitação nasce vinculada ao material correto.
+* A justificativa é gerada automaticamente.
+* O usuário consegue revisar antes de salvar/aprovar.
+* Nenhuma tela existente quebra.
+* A aplicação continua compilando.

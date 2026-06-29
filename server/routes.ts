@@ -3485,6 +3485,7 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
         if (minimo <= 0) continue;
 
         if (atual <= 0) {
+          const qtdSugerida = Math.max(1, minimo);
           items.push({
             id: `estoque-zero-${mat.id}`,
             type: "urgent",
@@ -3500,8 +3501,16 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
             nextStep: "Comprar ou substituir imediatamente",
             priorityScore: 100,
             createdAt: mat.updatedAt?.toISOString(),
+            metadata: {
+              materialNome: mat.nome,
+              quantidadeSugerida: qtdSugerida,
+              unidade: un,
+              urgencia: "muito_urgente",
+              justificativa: "Material sem saldo disponível. Solicitação criada como prioridade para compra ou substituição.",
+            },
           });
         } else if (atual === minimo) {
+          const qtdSugerida = Math.max(1, minimo - atual);
           items.push({
             id: `estoque-limite-${mat.id}`,
             type: "attention",
@@ -3517,8 +3526,16 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
             nextStep: "Avaliar reposição",
             priorityScore: 60,
             createdAt: mat.updatedAt?.toISOString(),
+            metadata: {
+              materialNome: mat.nome,
+              quantidadeSugerida: Math.max(1, minimo),
+              unidade: un,
+              urgencia: "normal",
+              justificativa: "Material no limite mínimo. Solicitação criada para avaliar reposição antes de compra urgente.",
+            },
           });
         } else if (atual < minimo) {
+          const qtdSugerida = Math.max(1, minimo - atual);
           items.push({
             id: `estoque-baixo-${mat.id}`,
             type: "risk",
@@ -3534,6 +3551,13 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
             nextStep: "Criar solicitação de compra",
             priorityScore: 80,
             createdAt: mat.updatedAt?.toISOString(),
+            metadata: {
+              materialNome: mat.nome,
+              quantidadeSugerida: qtdSugerida,
+              unidade: un,
+              urgencia: "urgente",
+              justificativa: "Material abaixo do estoque mínimo. Solicitação criada para evitar ruptura na produção.",
+            },
           });
         }
       }
