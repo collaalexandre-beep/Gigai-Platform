@@ -656,6 +656,8 @@ export const rawMaterials = pgTable(
     descricao: text("descricao"),
     unidadeCompra: text("unidade_compra").notNull(),
     unidadeUso: text("unidade_uso"),
+    largura: decimal("largura", { precision: 10, scale: 4 }),
+    comprimento: decimal("comprimento", { precision: 10, scale: 4 }),
     custoUnitario: decimal("custo_unitario", { precision: 12, scale: 4 }),
     perdaPadrao: decimal("perda_padrao", { precision: 5, scale: 2 }),
     fornecedor: text("fornecedor"),

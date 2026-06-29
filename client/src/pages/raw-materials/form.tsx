@@ -1,8 +1,8 @@
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation, useParams } from "wouter";
-import { ChevronLeft, Save, Loader2, FlaskConical } from "lucide-react";
+import { ChevronLeft, Save, Loader2, FlaskConical, Ruler } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -47,6 +47,8 @@ function RawMaterialForm({ id, initial }: { id?: string; initial?: RawMaterial }
     defaultValues: initial
       ? {
           ...initial,
+          largura: initial.largura?.toString() || "",
+          comprimento: initial.comprimento?.toString() || "",
           custoUnitario: initial.custoUnitario?.toString() || "0",
           perdaPadrao: initial.perdaPadrao?.toString() || "0",
         } as any
@@ -57,6 +59,8 @@ function RawMaterialForm({ id, initial }: { id?: string; initial?: RawMaterial }
           descricao: "",
           unidadeCompra: "",
           unidadeUso: "",
+          largura: "",
+          comprimento: "",
           custoUnitario: "0",
           perdaPadrao: "0",
           fornecedor: "",
@@ -65,6 +69,20 @@ function RawMaterialForm({ id, initial }: { id?: string; initial?: RawMaterial }
           ativo: true,
         },
   });
+
+  // Cálculos automáticos de área e custo/m²
+  const [watchLargura, watchComprimento, watchCusto, watchUnidadeUso] = useWatch({
+    control: form.control,
+    name: ["largura", "comprimento", "custoUnitario", "unidadeUso"],
+  });
+  const areaM2 = Number(watchLargura) > 0 && Number(watchComprimento) > 0
+    ? Number(watchLargura) * Number(watchComprimento)
+    : null;
+  const custoM2 = areaM2 && Number(watchCusto) > 0
+    ? Number(watchCusto) / areaM2
+    : null;
+  const mostrarDimensoes = String(watchUnidadeUso || "").toLowerCase().replace("²", "2").includes("m2") ||
+    String(watchUnidadeUso || "").toLowerCase() === "m²";
 
   const mutation = useMutation({
     mutationFn: async (data: InsertRawMaterial) => {
@@ -238,7 +256,7 @@ function RawMaterialForm({ id, initial }: { id?: string; initial?: RawMaterial }
                       <FormItem>
                         <FormLabel>Un. de Compra *</FormLabel>
                         <FormControl>
-                          <Input placeholder="Ex: M2, KG, UN" {...field} data-testid="input-unidade-compra" />
+                          <Input placeholder="PC, KG, M2, UN" {...field} data-testid="input-unidade-compra" />
                         </FormControl>
                         <FormDescription>Como você compra</FormDescription>
                         <FormMessage />
@@ -252,7 +270,7 @@ function RawMaterialForm({ id, initial }: { id?: string; initial?: RawMaterial }
                       <FormItem>
                         <FormLabel>Un. de Uso</FormLabel>
                         <FormControl>
-                          <Input placeholder="Ex: M2, G, UN" {...field} value={field.value || ""} data-testid="input-unidade-uso" />
+                          <Input placeholder="M2, G, UN" {...field} value={field.value || ""} data-testid="input-unidade-uso" />
                         </FormControl>
                         <FormDescription>Como você usa</FormDescription>
                         <FormMessage />
@@ -261,12 +279,70 @@ function RawMaterialForm({ id, initial }: { id?: string; initial?: RawMaterial }
                   />
                 </div>
 
+                {/* Dimensões físicas — sempre visíveis para calcular área */}
+                <div className="rounded-lg border bg-muted/30 p-3 space-y-3">
+                  <div className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+                    <Ruler className="w-3.5 h-3.5" />
+                    Dimensões físicas (metros)
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <FormField
+                      control={form.control}
+                      name="largura"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs">Largura (m)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              step="0.001"
+                              placeholder="Ex: 1.3"
+                              {...field}
+                              value={field.value || ""}
+                              data-testid="input-largura"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="comprimento"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel className="text-xs">Comprimento (m)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              step="0.001"
+                              placeholder="Ex: 2.0"
+                              {...field}
+                              value={field.value || ""}
+                              data-testid="input-comprimento"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                  {areaM2 && (
+                    <div className="flex items-center justify-between rounded-md bg-background border px-3 py-2 text-sm">
+                      <span className="text-muted-foreground">Área calculada</span>
+                      <span className="font-semibold tabular-nums">
+                        {areaM2.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 4 })} m²
+                      </span>
+                    </div>
+                  )}
+                </div>
+
                 <FormField
                   control={form.control}
                   name="custoUnitario"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Custo Unitário (R$)</FormLabel>
+                      <FormLabel>Custo por Unidade de Compra (R$)</FormLabel>
                       <FormControl>
                         <Input
                           type="number"
@@ -278,6 +354,14 @@ function RawMaterialForm({ id, initial }: { id?: string; initial?: RawMaterial }
                         />
                       </FormControl>
                       <FormMessage />
+                      {custoM2 && (
+                        <div className="flex items-center justify-between rounded-md bg-primary/5 border border-primary/20 px-3 py-2 text-sm mt-1">
+                          <span className="text-muted-foreground">Custo por m²</span>
+                          <span className="font-bold text-primary tabular-nums">
+                            {custoM2.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 4 })}
+                          </span>
+                        </div>
+                      )}
                     </FormItem>
                   )}
                 />
