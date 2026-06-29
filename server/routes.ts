@@ -70,7 +70,7 @@ import {
   accountsPayable,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { calcMaintenanceItemStatus } from "./storage";
 import { generateProductSuggestion, suggestQuoteItem, generateSpecialQuote, adjustSpecialQuote, extractFromAdjustment, parseQuoteList } from "./ai";
 import { VEH_STEP_LABELS } from "./vehicle-wa";
@@ -2156,6 +2156,24 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
   app.post("/api/purchase-requests", async (req: Request, res: Response) => {
     try {
       const data = insertPurchaseRequestSchema.parse(req.body);
+      // Proteção contra duplicidade: verifica se já existe solicitação aberta para o mesmo material
+      const OPEN_STATUSES = [
+        "aguardando_informacoes", "aguardando_aprovacao", "aprovado",
+        "em_cotacao", "comprado", "aguardando_entrega",
+      ];
+      const existing = await db
+        .select()
+        .from(purchaseRequests)
+        .where(inArray(purchaseRequests.status, OPEN_STATUSES));
+      const duplicate = existing.find(
+        (pr) => pr.material.toLowerCase().trim() === (data.material || "").toLowerCase().trim()
+      );
+      if (duplicate) {
+        return res.status(409).json({
+          error: "Já existe uma solicitação de compra aberta para este material.",
+          existing: duplicate,
+        });
+      }
       const row = await storage.createPurchaseRequest(data);
       res.status(201).json(row);
     } catch (err) { handleError(res, err); }
@@ -3473,6 +3491,21 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
       }> = [];
 
       // 1. ESTOQUE CRÍTICO
+      const OPEN_PR_STATUSES = [
+        "aguardando_informacoes", "aguardando_aprovacao", "aprovado",
+        "em_cotacao", "comprado", "aguardando_entrega",
+      ];
+
+      // Busca todas as solicitações abertas para detectar duplicidade
+      const openPRs = await db
+        .select({ id: purchaseRequests.id, material: purchaseRequests.material })
+        .from(purchaseRequests)
+        .where(inArray(purchaseRequests.status, OPEN_PR_STATUSES));
+      // Mapa: nome do material (lowercase) → id da solicitação aberta
+      const openPRMap = new Map<string, string>(
+        openPRs.map((pr) => [pr.material.toLowerCase().trim(), pr.id])
+      );
+
       const materials = await db
         .select()
         .from(rawMaterials)
@@ -3484,24 +3517,30 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
         const un = mat.unidadeCompra || "un";
         if (minimo <= 0) continue;
 
+        const existingPRId = openPRMap.get(mat.nome.toLowerCase().trim());
+        const hasOpenPR = !!existingPRId;
+
         if (atual <= 0) {
           const qtdSugerida = Math.max(1, minimo);
+          const baseDesc = `Este material está sem saldo disponível. Verifique necessidade imediata de compra ou substituição.`;
           items.push({
             id: `estoque-zero-${mat.id}`,
             type: "urgent",
             title: `Estoque zerado: ${mat.nome}`,
-            description: `Este material está sem saldo disponível. Verifique necessidade imediata de compra ou substituição.`,
+            description: hasOpenPR
+              ? `${baseDesc} Já existe uma solicitação de compra aberta para este material.`
+              : baseDesc,
             module: "estoque",
             entityId: mat.id,
             entityType: "rawMaterial",
             actionLabel: "Ver matéria-prima",
             actionUrl: `/raw-materials/${mat.id}/edit`,
-            secondaryActionLabel: "Criar solicitação de compra",
+            secondaryActionLabel: hasOpenPR ? "Ver solicitação de compra" : "Criar solicitação de compra",
             secondaryActionUrl: `/inventory/purchases`,
-            nextStep: "Comprar ou substituir imediatamente",
+            nextStep: hasOpenPR ? "Acompanhar solicitação já aberta" : "Comprar ou substituir imediatamente",
             priorityScore: 100,
             createdAt: mat.updatedAt?.toISOString(),
-            metadata: {
+            metadata: hasOpenPR ? undefined : {
               materialNome: mat.nome,
               quantidadeSugerida: qtdSugerida,
               unidade: un,
@@ -3510,23 +3549,25 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
             },
           });
         } else if (atual === minimo) {
-          const qtdSugerida = Math.max(1, minimo - atual);
+          const baseDesc = `Estoque atual: ${atual} ${un}. Estoque mínimo configurado: ${minimo} ${un}. Recomenda-se avaliar reposição para evitar compra urgente.`;
           items.push({
             id: `estoque-limite-${mat.id}`,
             type: "attention",
             title: `Estoque no limite mínimo: ${mat.nome}`,
-            description: `Estoque atual: ${atual} ${un}. Estoque mínimo configurado: ${minimo} ${un}. Recomenda-se avaliar reposição para evitar compra urgente.`,
+            description: hasOpenPR
+              ? `${baseDesc} Já existe uma solicitação de compra aberta para este material.`
+              : baseDesc,
             module: "estoque",
             entityId: mat.id,
             entityType: "rawMaterial",
             actionLabel: "Ver matéria-prima",
             actionUrl: `/raw-materials/${mat.id}/edit`,
-            secondaryActionLabel: "Criar solicitação de compra",
+            secondaryActionLabel: hasOpenPR ? "Ver solicitação de compra" : "Criar solicitação de compra",
             secondaryActionUrl: `/inventory/purchases`,
-            nextStep: "Avaliar reposição",
+            nextStep: hasOpenPR ? "Acompanhar solicitação já aberta" : "Avaliar reposição",
             priorityScore: 60,
             createdAt: mat.updatedAt?.toISOString(),
-            metadata: {
+            metadata: hasOpenPR ? undefined : {
               materialNome: mat.nome,
               quantidadeSugerida: Math.max(1, minimo),
               unidade: un,
@@ -3536,22 +3577,25 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
           });
         } else if (atual < minimo) {
           const qtdSugerida = Math.max(1, minimo - atual);
+          const baseDesc = `Estoque atual: ${atual} ${un}. Mínimo configurado: ${minimo} ${un}. Há risco de falta de material para produção.`;
           items.push({
             id: `estoque-baixo-${mat.id}`,
             type: "risk",
             title: `Estoque abaixo do mínimo: ${mat.nome}`,
-            description: `Estoque atual: ${atual} ${un}. Mínimo configurado: ${minimo} ${un}. Há risco de falta de material para produção.`,
+            description: hasOpenPR
+              ? `${baseDesc} Já existe uma solicitação de compra aberta para este material.`
+              : baseDesc,
             module: "estoque",
             entityId: mat.id,
             entityType: "rawMaterial",
             actionLabel: "Ver matéria-prima",
             actionUrl: `/raw-materials/${mat.id}/edit`,
-            secondaryActionLabel: "Criar solicitação de compra",
+            secondaryActionLabel: hasOpenPR ? "Ver solicitação de compra" : "Criar solicitação de compra",
             secondaryActionUrl: `/inventory/purchases`,
-            nextStep: "Criar solicitação de compra",
+            nextStep: hasOpenPR ? "Acompanhar solicitação já aberta" : "Criar solicitação de compra",
             priorityScore: 80,
             createdAt: mat.updatedAt?.toISOString(),
-            metadata: {
+            metadata: hasOpenPR ? undefined : {
               materialNome: mat.nome,
               quantidadeSugerida: qtdSugerida,
               unidade: un,

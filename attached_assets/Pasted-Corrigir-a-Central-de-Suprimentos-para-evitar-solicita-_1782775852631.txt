@@ -1,0 +1,75 @@
+Corrigir a Central de Suprimentos para evitar solicitações de compra duplicadas para o mesmo material.
+
+Problema atual:
+Quando a Central de Suprimentos mostra um alerta de estoque e o usuário clica em “Criar solicitação de compra”, a solicitação é criada corretamente. Porém, ao voltar para a Central, o mesmo alerta continua aparecendo como se nenhuma ação tivesse sido tomada. Em uma operação com mais de uma pessoa, isso pode gerar solicitações duplicadas para o mesmo material.
+
+Objetivo:
+Quando já existir uma solicitação de compra aberta para um material, a Central de Suprimentos não deve permitir criar outra solicitação igual.
+
+Ajustes necessários:
+
+1. No endpoint `GET /api/supplies/attention`, ao gerar alertas de estoque, verificar se já existe uma solicitação de compra aberta para o mesmo material.
+
+Considerar como solicitação aberta qualquer status equivalente a:
+
+* aguardando aprovação
+* aguardando_aprovacao
+* pendente
+* aprovado
+* em cotação
+* em_cotacao
+* pedido enviado
+* pedido_enviado
+* aguardando entrega
+* aguardando_entrega
+
+Considerar como fechada qualquer status equivalente a:
+
+* cancelado
+* rejeitado
+* recebido
+* concluído
+* concluido
+* finalizado
+
+2. Se já existir solicitação aberta para o material, o card da Central deve mudar.
+
+Em vez de:
+`Criar solicitação de compra`
+
+Mostrar:
+`Ver solicitação de compra`
+
+E o texto do próximo passo deve ser:
+`Acompanhar solicitação já aberta`
+
+3. O título pode continuar informando o estoque, mas a descrição deve incluir:
+   `Já existe uma solicitação de compra aberta para este material.`
+
+4. O `actionUrl` deve levar para a tela de compras ou para a solicitação específica, se já houver rota individual.
+
+5. No frontend, após criar uma solicitação de compra, invalidar/recarregar a query da Central de Suprimentos para que o alerta seja atualizado imediatamente.
+
+Se estiver usando React Query, invalidar a query relacionada a:
+`/api/supplies/attention`
+
+6. No backend da criação de solicitação de compra, adicionar proteção contra duplicidade:
+   Antes de criar uma nova solicitação, verificar se já existe uma solicitação aberta para o mesmo material.
+
+Se já existir, não criar outra.
+Retornar a solicitação existente ou retornar mensagem amigável:
+`Já existe uma solicitação de compra aberta para este material.`
+
+7. Não criar tabelas novas nesta etapa.
+8. Não refatorar o projeto inteiro.
+9. Não alterar layout global.
+10. Preservar funcionalidades existentes.
+
+Critérios de aceite:
+
+* Criar solicitação pela Central funciona.
+* Ao voltar para a Central, o alerta não permite criar solicitação duplicada.
+* Se já houver solicitação aberta, aparece “Ver solicitação de compra”.
+* Duas pessoas não conseguem gerar solicitações duplicadas para o mesmo material.
+* A tela de Compras continua funcionando.
+* A aplicação continua compilando.

@@ -175,14 +175,32 @@ export default function PurchasesPage() {
   });
 
   const createMutation = useMutation({
-    mutationFn: async (payload: Record<string, unknown>) => apiRequest("POST", "/api/purchase-requests", payload),
+    mutationFn: async (payload: Record<string, unknown>) => {
+      const res = await fetch("/api/purchase-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (res.status === 409) {
+        throw new Error(json.error || "Solicitação duplicada");
+      }
+      if (!res.ok) throw new Error(json.error || "Erro ao criar solicitação");
+      return json;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/supplies/attention"] });
       setOpenForm(false);
       resetForm();
       toast({ title: "Solicitação criada", description: "Nova solicitação de compra registrada com sucesso." });
     },
-    onError: () => toast({ title: "Erro", description: "Não foi possível criar a solicitação.", variant: "destructive" }),
+    onError: (err: Error) => toast({
+      title: "Não foi possível criar",
+      description: err.message,
+      variant: "destructive",
+    }),
   });
 
   const updateMutation = useMutation({
