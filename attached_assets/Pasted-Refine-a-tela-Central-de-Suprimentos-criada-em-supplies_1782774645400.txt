@@ -1,0 +1,85 @@
+Refine a tela Central de Suprimentos criada em `/supplies/attention`.
+
+Objetivo:
+Melhorar a qualidade dos alertas sem alterar o layout global e sem refatorar o projeto inteiro.
+
+Ajustes necessários:
+
+1. Corrigir a lógica textual de estoque:
+
+* Se `estoqueAtual === estoqueMinimo`:
+
+  * título: `Estoque no limite mínimo: [material]`
+  * tipo: `attention`
+  * prioridade intermediária
+  * não classificar como risco, salvo se existir algum campo explícito indicando material crítico.
+
+* Se `estoqueAtual < estoqueMinimo` e `estoqueAtual > 0`:
+
+  * título: `Estoque abaixo do mínimo: [material]`
+  * tipo: `risk`.
+
+* Se `estoqueAtual <= 0`:
+
+  * título: `Estoque zerado: [material]`
+  * tipo: `urgent`.
+
+2. Melhorar a descrição dos alertas de estoque.
+
+Hoje está aparecendo algo como:
+
+`Atual: 2 PC | Mínimo: 2 PC`
+
+Trocar por textos mais claros:
+
+Para estoque no limite:
+`Estoque atual: 2 PC. Estoque mínimo configurado: 2 PC. Recomenda-se avaliar reposição para evitar compra urgente.`
+
+Para estoque abaixo do mínimo:
+`Estoque atual: 1 PC. Mínimo configurado: 2 PC. Há risco de falta de material para produção.`
+
+Para estoque zerado:
+`Este material está sem saldo disponível. Verifique necessidade imediata de compra ou substituição.`
+
+3. Adicionar em cada card um campo visual chamado:
+
+`Próximo passo sugerido`
+
+Exemplos:
+
+* Estoque no limite: `Avaliar reposição`
+* Estoque abaixo do mínimo: `Criar solicitação de compra`
+* Estoque zerado: `Comprar ou substituir imediatamente`
+* XML com divergência: `Conferir XML`
+* Conta vencida: `Ver contas a pagar`
+
+4. Para alertas de estoque, manter o botão atual `Ver matéria-prima`.
+
+5. Preparar uma segunda ação chamada `Criar solicitação de compra`, mas só ativar se já existir rota ou tela segura para criação de solicitação de compra.
+
+Caso ainda não exista fluxo seguro, deixar essa ação para a próxima etapa e não criar gambiarra.
+
+6. Preservar:
+
+* layout global;
+* menu lateral;
+* componentes atuais;
+* rotas existentes;
+* funcionalidades existentes.
+
+7. Não criar tabelas novas nesta etapa.
+
+8. Não implementar IA real nesta etapa.
+
+9. Não implementar marketplace, negociação automática ou análise avançada ainda.
+
+Critérios de aceite:
+
+* A tela `/supplies/attention` continua carregando.
+* O menu continua funcionando.
+* Estoque igual ao mínimo não aparece mais como “abaixo do mínimo”.
+* Estoque zerado aparece como urgente.
+* Estoque abaixo do mínimo aparece como risco.
+* Estoque igual ao mínimo aparece como atenção.
+* Cada card mostra um próximo passo sugerido.
+* Nenhuma tela existente quebra.
