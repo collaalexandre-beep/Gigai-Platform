@@ -27,7 +27,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { insertRawMaterialSchema, type RawMaterial, type InsertRawMaterial } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useEffect } from "react";
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -37,44 +36,35 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 
-export default function RawMaterialFormPage() {
-  const { id } = useParams<{ id?: string }>();
+// Formulário real — só renderiza quando tem dados (ou para criação)
+function RawMaterialForm({ id, initial }: { id?: string; initial?: RawMaterial }) {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const isEditing = !!id;
 
-  const { data: rawMaterial, isLoading: isLoadingData } = useQuery<RawMaterial>({
-    queryKey: [`/api/raw-materials/${id}`],
-    enabled: isEditing,
-  });
-
   const form = useForm<InsertRawMaterial>({
     resolver: zodResolver(insertRawMaterialSchema),
-    defaultValues: {
-      nome: "",
-      categoria: "outros",
-      codigoInterno: "",
-      descricao: "",
-      unidadeCompra: "",
-      unidadeUso: "",
-      custoUnitario: "0",
-      perdaPadrao: "0",
-      fornecedor: "",
-      marca: "",
-      observacoes: "",
-      ativo: true,
-    },
+    defaultValues: initial
+      ? {
+          ...initial,
+          custoUnitario: initial.custoUnitario?.toString() || "0",
+          perdaPadrao: initial.perdaPadrao?.toString() || "0",
+        } as any
+      : {
+          nome: "",
+          categoria: "outros",
+          codigoInterno: "",
+          descricao: "",
+          unidadeCompra: "",
+          unidadeUso: "",
+          custoUnitario: "0",
+          perdaPadrao: "0",
+          fornecedor: "",
+          marca: "",
+          observacoes: "",
+          ativo: true,
+        },
   });
-
-  useEffect(() => {
-    if (rawMaterial) {
-      form.reset({
-        ...rawMaterial,
-        custoUnitario: rawMaterial.custoUnitario?.toString() || "0",
-        perdaPadrao: rawMaterial.perdaPadrao?.toString() || "0",
-      } as any);
-    }
-  }, [rawMaterial, form]);
 
   const mutation = useMutation({
     mutationFn: async (data: InsertRawMaterial) => {
@@ -110,14 +100,6 @@ export default function RawMaterialFormPage() {
     mutation.mutate(data);
   }
 
-  if (isEditing && isLoadingData) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <Breadcrumb>
@@ -127,7 +109,7 @@ export default function RawMaterialFormPage() {
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
-            <BreadcrumbPage>{isEditing ? (rawMaterial?.nome || "Editar") : "Nova Matéria-prima"}</BreadcrumbPage>
+            <BreadcrumbPage>{isEditing ? (initial?.nome || "Editar") : "Nova Matéria-prima"}</BreadcrumbPage>
           </BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
@@ -409,4 +391,45 @@ export default function RawMaterialFormPage() {
       </Form>
     </div>
   );
+}
+
+export default function RawMaterialFormPage() {
+  const { id } = useParams<{ id?: string }>();
+  const [, setLocation] = useLocation();
+  const isEditing = !!id;
+
+  const { data: rawMaterial, isLoading } = useQuery<RawMaterial>({
+    queryKey: ["/api/raw-materials", id],
+    queryFn: async () => {
+      const res = await fetch(`/api/raw-materials/${id}`, { credentials: "include" });
+      if (!res.ok) throw new Error(`${res.status}`);
+      return res.json();
+    },
+    enabled: isEditing,
+    staleTime: 0, // sempre busca dado fresco ao abrir edição
+  });
+
+  // Mostra spinner enquanto carrega para modo edição
+  if (isEditing && isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Modo edição: aguarda dado antes de renderizar o form (evita defaultValues vazios)
+  if (isEditing && !rawMaterial) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
+        <p className="text-muted-foreground">Matéria-prima não encontrada.</p>
+        <Button variant="outline" onClick={() => setLocation("/raw-materials")}>
+          <ChevronLeft className="w-4 h-4 mr-1" /> Voltar
+        </Button>
+      </div>
+    );
+  }
+
+  // Usa o id como key para forçar re-mount ao trocar de item
+  return <RawMaterialForm key={id || "new"} id={id} initial={rawMaterial} />;
 }
