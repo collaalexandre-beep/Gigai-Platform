@@ -201,24 +201,43 @@ export default function ReceivingPage() {
       const form = new FormData();
       form.append("xml", file);
       const res = await fetch("/api/nfe/parse", { method: "POST", credentials: "include", body: form });
+
+      if (res.status === 401) {
+        toast({
+          title: "Sessão expirada",
+          description: "Faça login novamente para continuar.",
+          variant: "destructive",
+        });
+        setTimeout(() => { window.location.href = "/login"; }, 1500);
+        return;
+      }
+
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "Falha ao processar XML");
+        throw new Error(err.error ?? `Erro ${res.status} ao processar XML`);
       }
+
       const data = await res.json();
+
       if (data.alreadyImported) {
         toast({ title: "NF-e duplicada", description: "Esta chave de acesso já foi importada.", variant: "destructive" });
         return;
       }
-      if (!data.parsed.items || data.parsed.items.length === 0) {
-        toast({ title: "Aviso", description: "Nenhum item encontrado no XML. Verifique se o arquivo é uma NF-e válida.", variant: "destructive" });
+
+      if (!data.parsed?.items || data.parsed.items.length === 0) {
+        toast({
+          title: "Aviso: nenhum item encontrado",
+          description: "O XML foi lido mas não contém itens (det). Verifique se é uma NF-e de entrada válida.",
+          variant: "destructive",
+        });
       }
+
       setParsedData({ parsed: data.parsed, matchedSupplier: data.matchedSupplier, xmlContent: data.xmlContent });
       setItems(data.parsed.items ?? []);
       setDuplicatas(data.parsed.duplicatas ?? []);
       setStep("review");
     } catch (e: any) {
-      toast({ title: "Erro", description: e.message ?? "Não foi possível processar o XML.", variant: "destructive" });
+      toast({ title: "Erro ao processar XML", description: e.message ?? "Não foi possível processar o XML.", variant: "destructive" });
     } finally {
       setUploading(false);
     }
