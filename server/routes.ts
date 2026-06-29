@@ -1417,6 +1417,16 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
     }
   });
 
+  app.get("/api/raw-materials/:id", async (req: Request, res: Response) => {
+    try {
+      const material = await storage.getRawMaterial(getParam(req, "id"));
+      if (!material) return res.status(404).json({ error: "Matéria-prima não encontrada" });
+      res.json(material);
+    } catch (err) {
+      handleError(res, err);
+    }
+  });
+
   app.post("/api/raw-materials", async (req: Request, res: Response) => {
     try {
       const validated = validateBody(insertRawMaterialSchema, req.body);

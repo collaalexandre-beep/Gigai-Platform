@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
@@ -29,9 +29,11 @@ import { Badge } from "@/components/ui/badge";
 const LIMIT = 20;
 
 function useRawMaterialSearch() {
-  const [, setLocation] = useLocation();
+  const [location, setLocation] = useLocation();
+  // 'location' é usado como dependência para re-renderizar quando a URL muda
   const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
   return {
+    location,
     search: params.get("search") || "",
     categoria: params.get("categoria") || "",
     page: Number(params.get("page")) || 1,
@@ -59,9 +61,20 @@ const formatCurrency = (value: string | number | null) => {
 
 export default function RawMaterialsPage() {
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const { search, categoria, page, updateSearch, setPage } = useRawMaterialSearch();
   const [localSearch, setLocalSearch] = useState(search);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // busca ao vivo com debounce de 400ms
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      updateSearch("search", localSearch);
+    }, 400);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [localSearch]);
 
   const { data, isLoading } = useQuery<{ data: RawMaterial[]; total: number }>({
     queryKey: ["/api/raw-materials", { search, categoria, page }],
@@ -99,6 +112,7 @@ export default function RawMaterialsPage() {
 
   function handleSearchSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     updateSearch("search", localSearch);
   }
 
@@ -205,7 +219,7 @@ export default function RawMaterialsPage() {
                 <tr
                   key={item.id}
                   className="border-b last:border-b-0 hover-elevate cursor-pointer"
-                  onClick={() => window.location.href = `/raw-materials/${item.id}/edit`}
+                  onClick={() => setLocation(`/raw-materials/${item.id}/edit`)}
                   data-testid={`row-raw-material-${item.id}`}
                 >
                   <td className="px-4 py-3">
