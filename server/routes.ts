@@ -3496,15 +3496,38 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
         "em_cotacao", "comprado", "aguardando_entrega",
       ];
 
-      // Busca todas as solicitações abertas para detectar duplicidade
+      // Busca todas as solicitações abertas com dados completos para agrupamento inteligente
       const openPRs = await db
-        .select({ id: purchaseRequests.id, material: purchaseRequests.material })
+        .select({
+          id: purchaseRequests.id,
+          material: purchaseRequests.material,
+          status: purchaseRequests.status,
+          solicitanteNome: purchaseRequests.solicitanteNome,
+          quantidade: purchaseRequests.quantidade,
+          unidade: purchaseRequests.unidade,
+          urgencia: purchaseRequests.urgencia,
+        })
         .from(purchaseRequests)
         .where(inArray(purchaseRequests.status, OPEN_PR_STATUSES));
-      // Mapa: nome do material (lowercase) → id da solicitação aberta
-      const openPRMap = new Map<string, string>(
-        openPRs.map((pr) => [pr.material.toLowerCase().trim(), pr.id])
+
+      // Mapa: nome do material (lowercase) → dados da solicitação aberta
+      type OpenPR = typeof openPRs[number];
+      const openPRMap = new Map<string, OpenPR>(
+        openPRs.map((pr) => [pr.material.toLowerCase().trim(), pr])
       );
+
+      // IDs das PRs absorvidas no card combinado (não devem aparecer na seção 2)
+      const absorbedPRIds = new Set<string>();
+
+      // Mapa de nextStep por status da solicitação
+      const prNextStep: Record<string, string> = {
+        aguardando_informacoes: "Completar informações da solicitação",
+        aguardando_aprovacao: "Avaliar e aprovar solicitação",
+        aprovado: "Acompanhar pedido de compra",
+        em_cotacao: "Acompanhar cotação",
+        comprado: "Acompanhar entrega",
+        aguardando_entrega: "Acompanhar recebimento",
+      };
 
       const materials = await db
         .select()
@@ -3517,30 +3540,77 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
         const un = mat.unidadeCompra || "un";
         if (minimo <= 0) continue;
 
-        const existingPRId = openPRMap.get(mat.nome.toLowerCase().trim());
-        const hasOpenPR = !!existingPRId;
+        const openPR = openPRMap.get(mat.nome.toLowerCase().trim());
+        const hasOpenPR = !!openPR;
 
-        if (atual <= 0) {
+        if (hasOpenPR && openPR) {
+          // CARD COMBINADO: estoque crítico + solicitação em andamento
+          absorbedPRIds.add(openPR.id);
+
+          let combinedTitle: string;
+          let combinedType: "urgent" | "risk" | "attention";
+          let estoqueDesc: string;
+          let combinedPriority: number;
+
+          if (atual <= 0) {
+            combinedTitle = `Reposição urgente em andamento: ${mat.nome}`;
+            combinedType = "urgent";
+            estoqueDesc = `Estoque zerado (0 ${un}).`;
+            combinedPriority = 95;
+          } else if (atual < minimo) {
+            combinedTitle = `Reposição necessária em andamento: ${mat.nome}`;
+            combinedType = "risk";
+            estoqueDesc = `Estoque atual: ${atual} ${un}. Mínimo configurado: ${minimo} ${un}.`;
+            combinedPriority = 75;
+          } else {
+            // atual === minimo
+            combinedTitle = `Reposição em andamento: ${mat.nome}`;
+            combinedType = "attention";
+            estoqueDesc = `Estoque atual: ${atual} ${un}. Mínimo configurado: ${minimo} ${un}.`;
+            combinedPriority = 55;
+          }
+
+          const qtdInfo = openPR.quantidade
+            ? ` Quantidade solicitada: ${openPR.quantidade} ${openPR.unidade || un}.`
+            : "";
+          const solicitanteInfo = openPR.solicitanteNome
+            ? ` Solicitante: ${openPR.solicitanteNome}.`
+            : "";
+          const combinedDesc = `${estoqueDesc} Reposição já iniciada.${solicitanteInfo}${qtdInfo}`;
+
+          items.push({
+            id: `reposto-${mat.id}`,
+            type: combinedType,
+            title: combinedTitle,
+            description: combinedDesc,
+            module: "estoque",
+            entityId: mat.id,
+            entityType: "rawMaterial",
+            actionLabel: "Ver solicitações",
+            actionUrl: `/inventory/purchases`,
+            nextStep: prNextStep[openPR.status] ?? "Acompanhar solicitação",
+            priorityScore: combinedPriority,
+            createdAt: mat.updatedAt?.toISOString(),
+          });
+        } else if (atual <= 0) {
+          // Sem PR aberta — card de estoque zerado normal
           const qtdSugerida = Math.max(1, minimo);
-          const baseDesc = `Este material está sem saldo disponível. Verifique necessidade imediata de compra ou substituição.`;
           items.push({
             id: `estoque-zero-${mat.id}`,
             type: "urgent",
             title: `Estoque zerado: ${mat.nome}`,
-            description: hasOpenPR
-              ? `${baseDesc} Já existe uma solicitação de compra aberta para este material.`
-              : baseDesc,
+            description: `Este material está sem saldo disponível. Verifique necessidade imediata de compra ou substituição.`,
             module: "estoque",
             entityId: mat.id,
             entityType: "rawMaterial",
             actionLabel: "Ver matéria-prima",
             actionUrl: `/raw-materials/${mat.id}/edit`,
-            secondaryActionLabel: hasOpenPR ? "Ver solicitação de compra" : "Criar solicitação de compra",
+            secondaryActionLabel: "Criar solicitação de compra",
             secondaryActionUrl: `/inventory/purchases`,
-            nextStep: hasOpenPR ? "Acompanhar solicitação já aberta" : "Comprar ou substituir imediatamente",
+            nextStep: "Comprar ou substituir imediatamente",
             priorityScore: 100,
             createdAt: mat.updatedAt?.toISOString(),
-            metadata: hasOpenPR ? undefined : {
+            metadata: {
               materialNome: mat.nome,
               quantidadeSugerida: qtdSugerida,
               unidade: un,
@@ -3549,25 +3619,23 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
             },
           });
         } else if (atual === minimo) {
-          const baseDesc = `Estoque atual: ${atual} ${un}. Estoque mínimo configurado: ${minimo} ${un}. Recomenda-se avaliar reposição para evitar compra urgente.`;
+          // Sem PR aberta — card de limite mínimo normal
           items.push({
             id: `estoque-limite-${mat.id}`,
             type: "attention",
             title: `Estoque no limite mínimo: ${mat.nome}`,
-            description: hasOpenPR
-              ? `${baseDesc} Já existe uma solicitação de compra aberta para este material.`
-              : baseDesc,
+            description: `Estoque atual: ${atual} ${un}. Estoque mínimo configurado: ${minimo} ${un}. Recomenda-se avaliar reposição para evitar compra urgente.`,
             module: "estoque",
             entityId: mat.id,
             entityType: "rawMaterial",
             actionLabel: "Ver matéria-prima",
             actionUrl: `/raw-materials/${mat.id}/edit`,
-            secondaryActionLabel: hasOpenPR ? "Ver solicitação de compra" : "Criar solicitação de compra",
+            secondaryActionLabel: "Criar solicitação de compra",
             secondaryActionUrl: `/inventory/purchases`,
-            nextStep: hasOpenPR ? "Acompanhar solicitação já aberta" : "Avaliar reposição",
+            nextStep: "Avaliar reposição",
             priorityScore: 60,
             createdAt: mat.updatedAt?.toISOString(),
-            metadata: hasOpenPR ? undefined : {
+            metadata: {
               materialNome: mat.nome,
               quantidadeSugerida: Math.max(1, minimo),
               unidade: un,
@@ -3576,26 +3644,24 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
             },
           });
         } else if (atual < minimo) {
+          // Sem PR aberta — card de abaixo do mínimo normal
           const qtdSugerida = Math.max(1, minimo - atual);
-          const baseDesc = `Estoque atual: ${atual} ${un}. Mínimo configurado: ${minimo} ${un}. Há risco de falta de material para produção.`;
           items.push({
             id: `estoque-baixo-${mat.id}`,
             type: "risk",
             title: `Estoque abaixo do mínimo: ${mat.nome}`,
-            description: hasOpenPR
-              ? `${baseDesc} Já existe uma solicitação de compra aberta para este material.`
-              : baseDesc,
+            description: `Estoque atual: ${atual} ${un}. Mínimo configurado: ${minimo} ${un}. Há risco de falta de material para produção.`,
             module: "estoque",
             entityId: mat.id,
             entityType: "rawMaterial",
             actionLabel: "Ver matéria-prima",
             actionUrl: `/raw-materials/${mat.id}/edit`,
-            secondaryActionLabel: hasOpenPR ? "Ver solicitação de compra" : "Criar solicitação de compra",
+            secondaryActionLabel: "Criar solicitação de compra",
             secondaryActionUrl: `/inventory/purchases`,
-            nextStep: hasOpenPR ? "Acompanhar solicitação já aberta" : "Criar solicitação de compra",
+            nextStep: "Criar solicitação de compra",
             priorityScore: 80,
             createdAt: mat.updatedAt?.toISOString(),
-            metadata: hasOpenPR ? undefined : {
+            metadata: {
               materialNome: mat.nome,
               quantidadeSugerida: qtdSugerida,
               unidade: un,
@@ -3606,13 +3672,15 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
         }
       }
 
-      // 2. SOLICITAÇÕES DE COMPRA AGUARDANDO APROVAÇÃO
+      // 2. SOLICITAÇÕES DE COMPRA AGUARDANDO APROVAÇÃO (exceto as já absorvidas no card combinado)
       const pendingRequests = await db
         .select()
         .from(purchaseRequests)
         .where(eq(purchaseRequests.status, "aguardando_aprovacao"));
 
       for (const req of pendingRequests) {
+        // Pula solicitações já agrupadas com alertas de estoque
+        if (absorbedPRIds.has(req.id)) continue;
         const isUrgent = req.urgencia === "alta" || req.urgencia === "urgente";
         const urgenciaLabel = req.urgencia === "alta" ? "Alta" : req.urgencia === "urgente" ? "Urgente" : req.urgencia === "normal" ? "Normal" : req.urgencia || "Normal";
         items.push({

@@ -1,0 +1,82 @@
+Refine a Central de Suprimentos para evitar informações repetidas sobre o mesmo material.
+
+Problema atual:
+Quando um material está no limite mínimo e já existe uma solicitação de compra aberta para ele, a Central mostra dois cards separados:
+
+1. Estoque no limite mínimo
+2. Solicitação aguardando aprovação
+
+Isso gera duplicidade visual e pode confundir o usuário.
+
+Objetivo:
+Agrupar eventos relacionados ao mesmo material em um único card inteligente.
+
+Regras:
+
+1. Se um material estiver no limite, abaixo do mínimo ou zerado, mas já existir uma solicitação de compra aberta para ele, NÃO criar dois cards separados.
+
+2. Nesse caso, criar apenas um card com título:
+
+* Se estoque está no limite:
+  `Reposição em andamento: [material]`
+
+* Se estoque está abaixo do mínimo:
+  `Reposição necessária em andamento: [material]`
+
+* Se estoque está zerado:
+  `Reposição urgente em andamento: [material]`
+
+3. A descrição do card deve combinar as informações de estoque e da solicitação:
+
+Exemplo:
+`Estoque atual: 2 PC. Mínimo configurado: 2 PC. Já existe uma solicitação de compra aberta para este material. Solicitante: Administrador. Quantidade solicitada: 5 PC.`
+
+4. O próximo passo sugerido deve ser:
+
+* Se solicitação estiver aguardando aprovação:
+  `Avaliar e aprovar solicitação`
+
+* Se solicitação estiver aprovada:
+  `Acompanhar pedido de compra`
+
+* Se solicitação estiver em cotação:
+  `Acompanhar cotação`
+
+* Se solicitação estiver aguardando entrega:
+  `Acompanhar recebimento`
+
+5. O botão principal deve ser:
+
+`Ver solicitação`
+
+ou
+
+`Ver solicitações`
+
+dependendo do que já existir no sistema.
+
+6. Não mostrar separadamente o card de “Estoque no limite mínimo” quando já houver solicitação aberta para o mesmo material.
+
+7. Não mostrar separadamente o card de “Solicitação aguardando aprovação” quando ele já estiver agrupado com o alerta de estoque do mesmo material.
+
+8. Continuar mostrando solicitações de compra sem relação com estoque normalmente.
+
+9. Continuar mostrando alertas de estoque normalmente quando NÃO houver solicitação aberta.
+
+10. Não criar tabelas novas.
+
+11. Não refatorar o projeto inteiro.
+
+12. Não alterar layout global.
+
+13. Preservar funcionalidades existentes.
+
+Critérios de aceite:
+
+* Para o mesmo material, estoque + solicitação aberta aparecem em um único card.
+* A Central deixa de repetir informação.
+* O card mostra claramente que a reposição já está em andamento.
+* O próximo passo fica claro.
+* O botão leva para a solicitação ou lista de compras.
+* A tela continua carregando sem erro.
+* Nenhuma funcionalidade existente quebra.
