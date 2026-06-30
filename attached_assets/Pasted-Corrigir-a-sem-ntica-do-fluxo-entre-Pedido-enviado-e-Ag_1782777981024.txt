@@ -1,0 +1,115 @@
+Corrigir a semântica do fluxo entre “Pedido enviado” e “Aguardando entrega” na tela de Compras.
+
+Problema atual:
+Depois que uma solicitação é aprovada e o envio manual ao fornecedor é registrado, o status muda para “Pedido enviado”. Em seguida aparece um ícone de caminhão. Ao clicar, o modal mostra:
+
+“Confirma que o material está aguardando entrega?”
+
+Esse texto é confuso, porque o usuário não “confirma que está aguardando entrega”. O usuário deveria registrar que o fornecedor confirmou o pedido ou que o pedido foi aceito pelo fornecedor.
+
+Objetivo:
+Deixar o fluxo mais claro e natural para o usuário.
+
+Fluxo conceitual correto:
+
+1. `aguardando_aprovacao`
+
+   * Usuário avalia e aprova.
+
+2. `aprovado`
+
+   * Compra interna aprovada.
+   * Próxima ação: registrar envio manual ao fornecedor.
+
+3. `pedido_enviado`
+
+   * Pedido já foi enviado manualmente ao fornecedor.
+   * Próxima ação: registrar confirmação do fornecedor.
+
+4. `aguardando_entrega`
+
+   * Fornecedor confirmou o pedido.
+   * Pedido está aguardando recebimento físico ou XML.
+   * Próxima ação: registrar recebimento.
+
+5. `recebido`
+
+   * Material recebido.
+
+6. `concluido`
+
+   * Processo concluído.
+
+Ajustes necessários:
+
+1. Para solicitações com status `pedido_enviado`, alterar tooltip/ação do ícone de caminhão.
+
+De algo como:
+`Aguardando entrega`
+
+Para:
+`Registrar confirmação do fornecedor`
+
+2. Alterar o título do modal.
+
+De:
+`Aguardando entrega`
+
+Para:
+`Registrar confirmação do fornecedor`
+
+3. Alterar o texto do modal.
+
+De:
+`Confirma que o material [material] está aguardando entrega?`
+
+Para:
+`O fornecedor confirmou este pedido e a entrega está pendente? Ao confirmar, o sistema mudará o status para “Aguardando entrega”.`
+
+4. Alterar o botão de confirmação.
+
+De:
+`Confirmar`
+
+Para:
+`Registrar confirmação`
+
+5. Ao confirmar, alterar o status para:
+   `aguardando_entrega`
+
+6. Na Central de Suprimentos, ajustar próximos passos:
+
+* status `aprovado`:
+  `Registrar envio manual ao fornecedor`
+
+* status `pedido_enviado`:
+  `Aguardar ou registrar confirmação do fornecedor`
+
+* status `aguardando_entrega`:
+  `Acompanhar recebimento`
+
+* status `recebido`:
+  `Concluir processo`
+
+7. Se possível, usar ícones coerentes:
+
+* status `aprovado`: ícone de clipboard/check para registrar envio manual.
+* status `pedido_enviado`: ícone de caminhão ou relógio para confirmação/entrega.
+* status `aguardando_entrega`: ícone de recebimento/caixa, se existir.
+
+8. Não criar tabelas novas.
+9. Não refatorar o projeto inteiro.
+10. Não alterar layout global.
+11. Não implementar envio automático real.
+12. Não implementar WhatsApp/e-mail ainda.
+13. Preservar funcionalidades existentes.
+
+Critérios de aceite:
+
+* O usuário entende claramente que o sistema não enviou nada automaticamente.
+* O status `pedido_enviado` significa apenas que o pedido foi enviado manualmente ao fornecedor.
+* O próximo passo depois de `pedido_enviado` é registrar confirmação do fornecedor.
+* O modal não usa mais a frase “Confirma que está aguardando entrega?”.
+* Ao registrar confirmação, o status muda para `aguardando_entrega`.
+* A Central de Suprimentos mostra o próximo passo correto.
+* Nenhuma funcionalidade existente quebra.

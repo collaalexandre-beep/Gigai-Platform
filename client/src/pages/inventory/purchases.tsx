@@ -503,15 +503,17 @@ export default function PurchasesPage() {
                             <ClipboardCheck className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {/* pedido_enviado: marcar aguardando entrega */}
+                        {/* pedido_enviado: registrar confirmação do fornecedor */}
                         {r.status === "pedido_enviado" && (
                           <Button size="sm" variant="ghost"
                             className="h-7 w-7 p-0 text-purple-600 hover:text-purple-700 hover:bg-purple-50 dark:hover:bg-purple-950"
                             onClick={() => openConfirm(
-                              "Aguardando entrega",
-                              `Confirma que o material ${r.material} está aguardando entrega?`,
-                              () => transitionMutation.mutate({ id: r.id, status: "aguardando_entrega" })
-                            )} title="Marcar como aguardando entrega" data-testid={`button-awaiting-${r.id}`}>
+                              "Registrar confirmação do fornecedor",
+                              `O fornecedor confirmou este pedido e a entrega está pendente? Ao confirmar, o sistema mudará o status para "Aguardando entrega".`,
+                              () => transitionMutation.mutate({ id: r.id, status: "aguardando_entrega" }),
+                              "default",
+                              "Registrar confirmação"
+                            )} title="Registrar confirmação do fornecedor" data-testid={`button-awaiting-${r.id}`}>
                             <Truck className="h-3.5 w-3.5" />
                           </Button>
                         )}

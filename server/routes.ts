@@ -3555,7 +3555,7 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
         aguardando_informacoes: "Completar informações da solicitação",
         aguardando_aprovacao: "Avaliar e aprovar solicitação",
         aprovado: "Registrar envio manual ao fornecedor",
-        pedido_enviado: "Acompanhar confirmação/entrega",
+        pedido_enviado: "Aguardar ou registrar confirmação do fornecedor",
         em_cotacao: "Acompanhar cotação",
         comprado: "Acompanhar entrega",
         aguardando_entrega: "Acompanhar recebimento",
