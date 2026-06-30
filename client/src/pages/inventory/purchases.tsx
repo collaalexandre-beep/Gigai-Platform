@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/auth-context";
 import {
   Plus, PackageOpen, Search, Eye, Pencil, XCircle, X, FileText, ChevronDown, CheckCircle2, Printer, Bell,
-  Send, Truck, PackageCheck, ThumbsDown, CircleCheckBig, AlertTriangle,
+  ClipboardCheck, Truck, PackageCheck, ThumbsDown, CircleCheckBig, AlertTriangle,
 } from "lucide-react";
 import { Link, useSearch, useLocation } from "wouter";
 
@@ -237,16 +237,18 @@ export default function PurchasesPage() {
     open: boolean;
     title: string;
     description: string;
+    confirmLabel: string;
     onConfirm: () => void;
     variant?: "default" | "destructive";
-  }>({ open: false, title: "", description: "", onConfirm: () => {}, variant: "default" });
+  }>({ open: false, title: "", description: "", confirmLabel: "Confirmar", onConfirm: () => {}, variant: "default" });
 
   const openConfirm = (
     title: string,
     description: string,
     onConfirm: () => void,
-    variant: "default" | "destructive" = "default"
-  ) => setConfirmDialog({ open: true, title, description, onConfirm, variant });
+    variant: "default" | "destructive" = "default",
+    confirmLabel = "Confirmar"
+  ) => setConfirmDialog({ open: true, title, description, onConfirm, variant, confirmLabel });
 
   const closeConfirm = () => setConfirmDialog((d) => ({ ...d, open: false }));
 
@@ -487,16 +489,18 @@ export default function PurchasesPage() {
                             <ThumbsDown className="h-3.5 w-3.5" />
                           </Button>
                         </>)}
-                        {/* aprovado: enviar pedido ao fornecedor */}
+                        {/* aprovado: registrar envio manual ao fornecedor */}
                         {r.status === "aprovado" && (
                           <Button size="sm" variant="ghost"
                             className="h-7 w-7 p-0 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950"
                             onClick={() => openConfirm(
-                              "Enviar pedido ao fornecedor",
-                              `Confirma que o pedido de ${r.material} foi enviado ao fornecedor?`,
-                              () => transitionMutation.mutate({ id: r.id, status: "pedido_enviado" })
-                            )} title="Pedido enviado ao fornecedor" data-testid={`button-send-${r.id}`}>
-                            <Send className="h-3.5 w-3.5" />
+                              "Registrar envio ao fornecedor",
+                              `Você já enviou este pedido ao fornecedor por WhatsApp, e-mail, telefone ou outro meio? Ao confirmar, o sistema apenas registrará o envio manual.`,
+                              () => transitionMutation.mutate({ id: r.id, status: "pedido_enviado" }),
+                              "default",
+                              "Registrar envio"
+                            )} title="Registrar envio manual ao fornecedor" data-testid={`button-send-${r.id}`}>
+                            <ClipboardCheck className="h-3.5 w-3.5" />
                           </Button>
                         )}
                         {/* pedido_enviado: marcar aguardando entrega */}
@@ -763,7 +767,7 @@ export default function PurchasesPage() {
               disabled={transitionMutation.isPending || rejectMutation.isPending || cancelMutation.isPending}
               data-testid="button-confirm-action"
             >
-              {(transitionMutation.isPending || rejectMutation.isPending || cancelMutation.isPending) ? "Processando..." : "Confirmar"}
+              {(transitionMutation.isPending || rejectMutation.isPending || cancelMutation.isPending) ? "Processando..." : confirmDialog.confirmLabel}
             </Button>
           </DialogFooter>
         </DialogContent>

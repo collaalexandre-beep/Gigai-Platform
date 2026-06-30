@@ -1,0 +1,91 @@
+Corrigir a semântica da ação de envio ao fornecedor no fluxo de Compras.
+
+Problema atual:
+Após aprovar uma solicitação de compra, aparece um ícone de envio ao fornecedor. Esse ícone dá a entender que o sistema enviou automaticamente o pedido, mas ainda não existe integração real com WhatsApp, e-mail ou envio automático.
+
+Além disso, o modal pergunta “Confirma que o pedido foi enviado ao fornecedor?”, o que também pode confundir o usuário.
+
+Objetivo:
+Deixar claro que, nesta etapa, o sistema NÃO envia automaticamente ao fornecedor. Ele apenas permite registrar que o usuário já enviou o pedido manualmente.
+
+Ajustes necessários:
+
+1. Alterar o texto/tooltip do botão de envio.
+
+De:
+`Pedido enviado ao fornecedor`
+
+Para:
+`Registrar envio manual ao fornecedor`
+
+ou:
+`Marcar como enviado ao fornecedor`
+
+2. Alterar o título do modal.
+
+De:
+`Enviar pedido ao fornecedor`
+
+Para:
+`Registrar envio ao fornecedor`
+
+3. Alterar o texto do modal.
+
+De:
+`Confirma que o pedido de [material] foi enviado ao fornecedor?`
+
+Para:
+`Você já enviou este pedido ao fornecedor por WhatsApp, e-mail, telefone ou outro meio? Ao confirmar, o sistema apenas registrará o envio manual.`
+
+4. O botão de confirmação deve dizer:
+
+`Registrar envio`
+
+Não usar apenas `Confirmar`.
+
+5. O sistema não deve sugerir que realizou envio automático.
+
+6. Se possível, trocar o ícone de aviãozinho por um ícone menos ambíguo, como:
+
+* check
+* clipboard
+* external-link
+* send manual com tooltip claro
+
+Se trocar o ícone for trabalhoso, manter o ícone atual, mas com tooltip e textos claros.
+
+7. Ao registrar envio manual, mudar o status para:
+
+`pedido_enviado`
+
+ou status equivalente já usado no sistema.
+
+8. A Central de Suprimentos deve mostrar o próximo passo correto conforme o status:
+
+* `aprovado`:
+  `Registrar envio manual ao fornecedor`
+
+* `pedido_enviado`:
+  `Acompanhar confirmação/entrega`
+
+* `aguardando_entrega`:
+  `Acompanhar recebimento`
+
+9. Não implementar envio automático real nesta etapa.
+
+10. Não implementar WhatsApp, e-mail ou marketplace nesta etapa.
+
+11. Não criar tabelas novas.
+
+12. Não refatorar o projeto inteiro.
+
+13. Preservar layout global e funcionalidades existentes.
+
+Critérios de aceite:
+
+* Após aprovar uma solicitação, o sistema não dá a entender que enviou automaticamente.
+* O botão deixa claro que é um registro manual.
+* O modal deixa claro que o usuário já deve ter enviado por fora.
+* O status só muda para pedido enviado depois que o usuário registrar manualmente.
+* A Central de Suprimentos mostra o próximo passo correto.
+* Nenhuma funcionalidade existente quebra.

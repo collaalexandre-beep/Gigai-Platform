@@ -3554,8 +3554,8 @@ Retorne apenas o JSON, sem markdown, sem explicação.`;
       const prNextStep: Record<string, string> = {
         aguardando_informacoes: "Completar informações da solicitação",
         aguardando_aprovacao: "Avaliar e aprovar solicitação",
-        aprovado: "Enviar pedido ao fornecedor",
-        pedido_enviado: "Aguardar confirmação/entrega",
+        aprovado: "Registrar envio manual ao fornecedor",
+        pedido_enviado: "Acompanhar confirmação/entrega",
         em_cotacao: "Acompanhar cotação",
         comprado: "Acompanhar entrega",
         aguardando_entrega: "Acompanhar recebimento",
